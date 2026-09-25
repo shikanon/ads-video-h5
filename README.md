@@ -39,4 +39,4 @@ Pi Agent 使用 [`@earendil-works/pi-agent-core`](https://github.com/earendil-wo
 - 片段以裁切、缩放和拼接为主；保留源音轨，静音素材使用静音音轨。
 - 单机本地原型：一个工作区，无登录和多用户隔离。文件保存在运行服务的机器上。
 
-更详细的产品边界见 [简要 PRD](docs/PRD.md)。
+完整的页面流程、Logo 菜单和功能验收见 [产品需求文档](docs/PRD.md)。
