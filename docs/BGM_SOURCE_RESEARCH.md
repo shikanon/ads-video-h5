@@ -5,7 +5,7 @@
 ## 本地浏览器抓包
 
 - Pixabay：在中文音乐页输入“轻快”后，浏览器打开 `/zh/music/search/%E8%BD%BB%E5%BF%AB/`，页面展示曲目、试听和下载按钮。点击 `Baby Smile` 的下载按钮后，浏览器请求 `https://cdn.pixabay.com/download/audio/2024/02/08/audio_b816f864f0.mp3?filename=angel4leon-baby-smile-190123.mp3`。搜索属于页面导航；没有在本次流量中观察到公开的音乐搜索 JSON API。
-- 24bit：搜索框输入“舒缓”后，浏览器同时发送 `POST /api/player/searchOnlineMusicOne` 和 `POST /api/player/searchOnlineMusicTwo`，请求体为 `{"keyword":"%E8%88%92%E7%BC%93","page":1}`。另发送 `POST /api/player/setKeyword`。该次浏览器请求返回 HTTP 522，未拿到可验证的搜索结果 JSON；页面保留了上一次搜索结果。曲目页面链接形如 `/music/c/<id>`，但尚未验证可用的音频下载接口。
+- 24bit：搜索框输入“舒缓”后，浏览器同时发送 `POST /api/player/searchOnlineMusicOne` 和 `POST /api/player/searchOnlineMusicTwo`，请求体为 `{"keyword":"%E8%88%92%E7%BC%93","page":1}`。另发送 `POST /api/player/setKeyword`。该次浏览器请求返回 HTTP 522，未拿到可验证的搜索结果 JSON；页面保留了上一次搜索结果。点击历史结果的 `/music/c/<id>` 会打开曲目页。页面试听请求落在 `m801.music.126.net` 的带时效签名 FLAC 地址，返回 HTTP 206 范围内容；这证明试听可用，不等于 24bit 有可供轻剪使用的稳定下载 API，也不证明曲目用于视频的授权。
 
 ## 不带浏览器凭据的请求复现
 
