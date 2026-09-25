@@ -197,6 +197,25 @@ export async function createImagePromptWithPi(prompt: string, config: ModelConfi
   return imagePrompt;
 }
 
+export async function createMusicQueryWithPi(prompt: string, config: ModelConfig, history: ChatMessage[]): Promise<string> {
+  let query = '';
+  const schema = Type.Object({ query: Type.String() });
+  const tool: AgentTool<typeof schema> = {
+    name: 'submit_music_query', label: '提交 BGM 搜索词',
+    description: '从用户的背景音乐要求中提取适合在音乐站内搜索的简短关键词。', parameters: schema,
+    execute: async (_id, args) => {
+      query = args.query.trim().replace(/[\r\n]/g, ' ').replace(/(?:背景音乐|配乐|bgm)/gi, '').trim().slice(0, 60);
+      if (!query) throw new Error('BGM 搜索词为空。');
+      return { content: [{ type: 'text', text: '搜索词已校验。' }], details: { query } };
+    },
+  };
+  const context = history.slice(-6).map((item) => `${item.role}：${item.text}`).join('\n');
+  const agent = getAgent(config, [tool], `你是轻剪的 BGM 搜索助手。必须调用 submit_music_query，只提取用户想找的风格、情绪、乐器或场景关键词，不要声称已经搜索到曲目，也不要编造曲名。最近对话：${context}`);
+  await agent.prompt(prompt);
+  if (!query) throw new Error('Pi Agent 没有提交 BGM 搜索词，请重试。');
+  return query;
+}
+
 export async function answerWithPi(prompt: string, config: ModelConfig, media: MediaItem[], history: ChatMessage[]): Promise<string> {
   let reply = '';
   const schema = Type.Object({ text: Type.String() });

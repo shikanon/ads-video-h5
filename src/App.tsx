@@ -148,11 +148,13 @@ const hints = {
     "把素材剪成 15 秒竖屏短片，节奏轻快",
     "写一段温柔的口播，并生成独立音频",
     "生成一张暖色调的封面图",
+    "搜索轻快的 BGM",
   ],
   "en-US": [
     "Make a lively 15-second vertical video",
     "Write warm narration and generate audio",
     "Create a warm-toned cover image",
+    "Search for upbeat background music",
   ],
 };
 function duration(value?: number) {
@@ -222,7 +224,9 @@ function JobCard({
 }) {
   const t = labels[locale];
   const name =
-    job.kind === "plan"
+    job.kind === "music"
+      ? locale === "zh-CN" ? "BGM 搜索" : "Music search"
+      : job.kind === "plan"
       ? t.plan
       : job.kind === "audio"
         ? t.audio
@@ -437,6 +441,24 @@ function Message({
                 <span>{item.name}</span>
               </div>
             ))}
+          </div>
+        ) : null}
+        {message.musicSearch ? (
+          <div className="music-search-card">
+            <div className="music-search-heading">
+              <Music2 size={18} />
+              <strong>{locale === "zh-CN" ? "站内搜索 BGM" : "Find background music"}</strong>
+              <span>{message.musicSearch.query}</span>
+            </div>
+            <div className="music-source-list">
+              {message.musicSearch.sources.map((source) => (
+                <a key={source.name} href={source.url} target="_blank" rel="noopener noreferrer">
+                  <span><b>{source.name}</b><small>{source.note}</small></span>
+                  <ArrowRight size={17} />
+                </a>
+              ))}
+            </div>
+            <p>{locale === "zh-CN" ? "在原站下载并确认使用权后，回到轻剪上传音频；随后通过对话指定为 BGM。" : "Download from the source, check usage rights, then upload the audio and choose it in chat."}</p>
           </div>
         ) : null}
         {jobs.map((job) => (

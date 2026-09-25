@@ -1,7 +1,7 @@
 export type Format = '9:16' | '16:9' | '1:1';
 export type MediaKind = 'video' | 'image' | 'audio';
 export type ArtifactKind = 'image' | 'audio' | 'video';
-export type JobKind = 'plan' | 'image' | 'audio' | 'export';
+export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ModelKind = 'text' | 'image' | 'audio';
 
@@ -20,7 +20,8 @@ export interface MediaItem {
   shots?: Shot[];
   url: string;
   createdAt: string;
-  origin?: 'upload' | 'generated';
+  origin?: 'upload' | 'generated' | 'imported';
+  sourceUrl?: string;
 }
 
 export interface EditClip {
@@ -46,6 +47,12 @@ export interface ChatMessage {
   attachmentIds?: string[];
   artifactIds?: string[];
   jobId?: string;
+  musicSearch?: MusicSearch;
+}
+
+export interface MusicSearch {
+  query: string;
+  sources: Array<{ name: 'Pixabay' | '24bit'; url: string; note: string }>;
 }
 
 export interface Artifact {

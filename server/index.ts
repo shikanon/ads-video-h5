@@ -5,8 +5,9 @@ import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promis
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AppSettings, AppState, Artifact, ChatMessage, Job, JobKind, MediaItem, Session } from '../src/types';
-import { answerWithPi, createImagePromptWithPi, createNarrationWithPi, createPlanWithPi, detectImage, detectShots, probeAudio, probeVideo, renderPlan, runFFmpeg } from './core';
+import { answerWithPi, createImagePromptWithPi, createMusicQueryWithPi, createNarrationWithPi, createPlanWithPi, detectImage, detectShots, probeAudio, probeVideo, renderPlan, runFFmpeg } from './core';
 import { writePresetBgm } from './bgm';
+import { downloadPixabayAudio, musicSearchLinks, pixabayAudioUrl } from './music';
 import { getDefaultTextModelId, getModelConfig, listPublicModels, setDefaultTextModelId } from './modelRegistry';
 import { generateAudio, generateImage, ProviderError } from './providers';
 import { mountAdminRoutes } from './adminRoutes';
@@ -75,6 +76,7 @@ async function publicState(): Promise<AppState> {
 }
 function classify(message: string): JobKind {
   const lower = message.toLowerCase();
+  if (/https:\/\/cdn\.pixabay\.com\/download\/audio\//i.test(message) || /(?:搜索|查找|找|搜|推荐).{0,35}(?:bgm|背景音乐|配乐|音乐)|(?:bgm|背景音乐|配乐|音乐).{0,24}(?:搜索|查找|推荐)/i.test(message)) return 'music';
   if (/(?:bgm|背景音乐|配乐)/i.test(message) && !/(?:成片|导出|生成视频|制作视频|export|render)/i.test(message)) return 'plan';
   if (/\b(?:generate|create|write|make|record|synthesize)\s+(?:a |an |the )?(?:(?:short|warm|chinese|new)\s+)*(?:narration|voiceover|voice-over|speech|audio)\b/.test(lower)) return 'audio';
   if (/\b(?:generate|create|draw|make)\s+(?:a |an |the )?(?:(?:warm|new|simple|vertical)\s+)*(?:image|cover|poster|illustration|picture|thumbnail)\b/.test(lower)) return 'image';
@@ -134,6 +136,32 @@ async function performJob(job: Job): Promise<void> {
   const prompt = message.text;
   const history = session.messages.filter((item) => item.createdAt <= message.createdAt);
   const attached = (message.attachmentIds || []).map((id) => state.media.find((item) => item.id === id)).filter((item): item is MediaItem => Boolean(item));
+  if (job.kind === 'music') {
+    if (/https:\/\/cdn\.pixabay\.com\//i.test(prompt)) {
+      const url = pixabayAudioUrl(prompt);
+      if (!url) throw new Error('请提供 Pixabay 官方 CDN 的 MP3 下载地址。');
+      const downloaded = await downloadPixabayAudio(url);
+      job.progress = 55; await saveState();
+      const id = randomUUID();
+      const file = path.join(mediaDir, id);
+      try {
+        await writeFile(file, downloaded.bytes, { mode: 0o600 });
+        const duration = await probeAudio(file);
+        state.media.push({ id, name: downloaded.name, mimeType: 'audio/mpeg', kind: 'audio', duration, url: `/api/media/${id}`, createdAt: now(), origin: 'imported', sourceUrl: url.toString() });
+        state.bgmBySession[session.id] = id;
+      } catch (error) { await rm(file, { force: true }); throw error; }
+      addReply(session, job, `已下载并导入「${downloaded.name}」，试听请到素材库；这首音乐已作为当前对话的 BGM。发送“生成成片”即可混音导出。发布前请核对 Pixabay 许可与曲目限制。`);
+      return;
+    }
+    const textConfig = await getModelConfig('text', session.modelId);
+    if (!textConfig) throw new Error('文本模型尚未配置，请在管理后台设置 API Key 后重试。');
+    const query = await createMusicQueryWithPi(prompt, textConfig, history);
+    const result = musicSearchLinks(query);
+    addReply(session, job, `已整理 BGM 搜索词「${result.query}」。在下方打开原站试听和下载；下载后添加音频素材，并说“把这段音频作为 BGM”。24bit 曲目的使用权需逐首确认。`);
+    const reply = session.messages.find((item) => item.role === 'assistant' && item.jobId === job.id);
+    if (reply) reply.musicSearch = result;
+    return;
+  }
   const coverIntent = /(?:用|把|将|设置|设为|作为|指定|采用|use|set|make).{0,24}(?:封面|cover|thumbnail|poster)|(?:封面|cover|thumbnail|poster).{0,24}(?:设为|作为|使用|用作|as|for)/i.test(prompt);
   const removeCover = /(?:不要|移除|去掉|取消|remove|without|clear).{0,12}(?:封面|cover|thumbnail|poster)/i.test(prompt);
   const withCover = (plan: Session['plan']): NonNullable<Session['plan']> => {
@@ -151,7 +179,8 @@ async function performJob(job: Job): Promise<void> {
   const selectNarration = !bgmIntent && /(把|将|用|带|带上|含|包含|加上|加入|合入|配上).{0,12}(口播|配音|旁白|音频)|(?:口播|配音|旁白|音频).{0,12}(加入|合入|配上)|(?:add|include|mix|with).{0,24}(?:narration|voiceover|voice-over|audio)/i.test(prompt);
   const removeBgm = /(?:不要|移除|去掉|关闭|取消|remove|without|mute).{0,12}(?:bgm|背景音乐|配乐|background music)/i.test(prompt);
   if (removeBgm) delete state.bgmBySession[session.id];
-  else if (bgmIntent) state.bgmBySession[session.id] = attached.find((item) => item.kind === 'audio')?.id || 'preset';
+  else if (bgmIntent) state.bgmBySession[session.id] = /(?:内置|默认|preset).{0,10}(?:bgm|背景音乐|配乐)|(?:bgm|背景音乐|配乐).{0,10}(?:内置|默认|preset)/i.test(prompt)
+    ? 'preset' : attached.find((item) => item.kind === 'audio')?.id || state.bgmBySession[session.id] || 'preset';
   if (removeNarration) delete state.narrationBySession[session.id];
   if (selectNarration && !removeNarration && (job.kind === 'plan' || job.kind === 'export')) {
     const attachedAudio = attached.find((item) => item.kind === 'audio');
@@ -254,7 +283,7 @@ async function processQueue() {
         const message = error instanceof Error ? error.message : '处理失败';
         job.error = error instanceof ProviderError
           ? `${error.message}（${error.code}${error.status ? ` / HTTP ${error.status}` : ''}）`
-          : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|图片描述|口播文案/.test(message)
+          : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件/.test(message)
             ? message : '生成失败，请检查模型配置、素材格式或网络后重试。';
         const session = getSession(job.sessionId);
         if (session) {

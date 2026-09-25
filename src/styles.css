@@ -300,6 +300,46 @@ a {
   padding: 4px 6px;
   color: #666974;
 }
+.music-search-card {
+  width: min(100%, 350px);
+  padding: 14px;
+  border: 1px solid #f1dfd6;
+  border-radius: 17px;
+  background: #fffbf7;
+  box-shadow: 0 6px 20px #2c242008;
+}
+.music-search-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #d76d4c;
+  font-size: 13px;
+}
+.music-search-heading span {
+  margin-left: auto;
+  max-width: 42%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #77737a;
+  font-size: 12px;
+}
+.music-source-list { display: grid; gap: 8px; margin-top: 12px; }
+.music-source-list a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #f1ebe7;
+  border-radius: 12px;
+  color: #2b2d36;
+  background: #fff;
+  text-decoration: none;
+}
+.music-source-list a span { display: grid; gap: 3px; min-width: 0; }
+.music-source-list a small { color: #77737a; font-size: 11px; line-height: 1.4; }
+.music-search-card p { margin: 11px 1px 0; color: #77737a; font-size: 11px; line-height: 1.55; }
 .job-card,
 .artifact-card {
   width: min(100%, 350px);
