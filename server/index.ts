@@ -5,7 +5,8 @@ import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promis
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AppSettings, AppState, Artifact, ChatMessage, Job, JobKind, MediaItem, Session } from '../src/types';
-import { answerWithPi, createImagePromptWithPi, createNarrationWithPi, createPlanWithPi, detectImage, probeVideo, renderPlan } from './core';
+import { answerWithPi, createImagePromptWithPi, createNarrationWithPi, createPlanWithPi, detectImage, detectShots, probeAudio, probeVideo, renderPlan, runFFmpeg } from './core';
+import { writePresetBgm } from './bgm';
 import { getDefaultTextModelId, getModelConfig, listPublicModels, setDefaultTextModelId } from './modelRegistry';
 import { generateAudio, generateImage, ProviderError } from './providers';
 import { mountAdminRoutes } from './adminRoutes';
@@ -18,6 +19,8 @@ const exportDir = path.join(dataDir, 'exports');
 const tmpDir = path.join(dataDir, 'uploads');
 const stateFile = path.join(dataDir, 'app-state.json');
 const port = Number(process.env.PORT || 8787);
+const publicBase = `/${(process.env.PUBLIC_BASE_PATH || '').replace(/^\/+|\/+$/g, '')}`.replace(/^\/$/, '');
+const publicUrl = (url: string) => `${publicBase}${url}`;
 await Promise.all([mediaDir, artifactDir, exportDir, tmpDir].map((dir) => mkdir(dir, { recursive: true })));
 
 interface StoredState {
@@ -29,6 +32,7 @@ interface StoredState {
   settings: Omit<AppSettings, 'defaultModelId'>;
   artifactFiles: Record<string, string>;
   narrationBySession: Record<string, string>;
+  bgmBySession: Record<string, string>;
 }
 const now = () => new Date().toISOString();
 function newSession(modelId: string | null): Session {
@@ -36,7 +40,7 @@ function newSession(modelId: string | null): Session {
   return { id: randomUUID(), title: '新对话', modelId, createdAt: timestamp, updatedAt: timestamp, messages: [], plan: null };
 }
 const firstSession = newSession(await getDefaultTextModelId());
-const emptyState = (): StoredState => ({ activeSessionId: firstSession.id, sessions: [firstSession], media: [], artifacts: [], jobs: [], settings: { language: 'zh-CN', chatBackground: null }, artifactFiles: {}, narrationBySession: {} });
+const emptyState = (): StoredState => ({ activeSessionId: firstSession.id, sessions: [firstSession], media: [], artifacts: [], jobs: [], settings: { language: 'zh-CN', chatBackground: null }, artifactFiles: {}, narrationBySession: {}, bgmBySession: {} });
 let state: StoredState = await readFile(stateFile, 'utf8').then((text) => ({ ...emptyState(), ...JSON.parse(text) as Partial<StoredState> })).catch(() => emptyState());
 function normalizePlanSummary(plan: NonNullable<Session['plan']>): NonNullable<Session['plan']> {
   const core = plan.summary.split(/[；;]/).filter((part) => !/(封面|cover|thumbnail|poster)/i.test(part)).join('；').replace(/[。.!！\s；;]+$/, '') || '已整理剪辑方案';
@@ -45,6 +49,7 @@ function normalizePlanSummary(plan: NonNullable<Session['plan']>): NonNullable<S
 }
 if (!Array.isArray(state.sessions) || !state.sessions.length) state.sessions = [firstSession];
 state.narrationBySession ||= {};
+state.bgmBySession ||= {};
 for (const session of state.sessions) if (session.plan) session.plan = normalizePlanSummary(session.plan);
 for (const artifact of state.artifacts) if (artifact.plan) artifact.plan = normalizePlanSummary(artifact.plan);
 if (!state.sessions.some((session) => session.id === state.activeSessionId)) state.activeSessionId = state.sessions[0].id;
@@ -66,10 +71,11 @@ const extFor = (mime: string) => mime === 'image/jpeg' ? 'jpg' : mime === 'image
 
 async function publicState(): Promise<AppState> {
   const [models, defaultModelId, textConfig] = await Promise.all([listPublicModels(), getDefaultTextModelId(), getModelConfig('text')]);
-  return { activeSessionId: state.activeSessionId, sessions: state.sessions, media: state.media, artifacts: state.artifacts, jobs: state.jobs, settings: { ...state.settings, defaultModelId }, models, mode: textConfig ? 'pi' : 'unconfigured' };
+  return { activeSessionId: state.activeSessionId, sessions: state.sessions, media: state.media.map((item) => ({ ...item, url: publicUrl(item.url), shots: item.shots?.map((shot) => ({ ...shot, thumbnailUrl: publicUrl(shot.thumbnailUrl) })) })), artifacts: state.artifacts.map((item) => ({ ...item, url: publicUrl(item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.coverUrl ? { coverUrl: publicUrl(item.coverUrl) } : {}) })), jobs: state.jobs, settings: { ...state.settings, defaultModelId }, models, mode: textConfig ? 'pi' : 'unconfigured' };
 }
 function classify(message: string): JobKind {
   const lower = message.toLowerCase();
+  if (/(?:bgm|背景音乐|配乐)/i.test(message) && !/(?:成片|导出|生成视频|制作视频|export|render)/i.test(message)) return 'plan';
   if (/\b(?:generate|create|write|make|record|synthesize)\s+(?:a |an |the )?(?:(?:short|warm|chinese|new)\s+)*(?:narration|voiceover|voice-over|speech|audio)\b/.test(lower)) return 'audio';
   if (/\b(?:generate|create|draw|make)\s+(?:a |an |the )?(?:(?:warm|new|simple|vertical)\s+)*(?:image|cover|poster|illustration|picture|thumbnail)\b/.test(lower)) return 'image';
   if (/(生成|画|制作).{0,10}(封面|图片|海报)/.test(message) && !/(生成|制作).{0,10}(成片|视频)/.test(message)) return 'image';
@@ -142,6 +148,10 @@ async function performJob(job: Job): Promise<void> {
   };
   const removeNarration = /(不要|移除|去掉|关闭).{0,8}(口播|配音|旁白|音频)|(?:remove|mute|disable|without).{0,24}(?:narration|voiceover|voice-over|audio)/i.test(prompt);
   const selectNarration = /(把|将|用|带|带上|含|包含|加上|加入|合入|配上).{0,12}(口播|配音|旁白|音频)|(?:口播|配音|旁白|音频).{0,12}(加入|合入|配上)|(?:add|include|mix|with).{0,24}(?:narration|voiceover|voice-over|audio)/i.test(prompt);
+  const bgmIntent = /(?:bgm|背景音乐|配乐|background music)/i.test(prompt);
+  const removeBgm = /(?:不要|移除|去掉|关闭|取消|remove|without|mute).{0,12}(?:bgm|背景音乐|配乐|background music)/i.test(prompt);
+  if (removeBgm) delete state.bgmBySession[session.id];
+  else if (bgmIntent) state.bgmBySession[session.id] = attached.find((item) => item.kind === 'audio')?.id || 'preset';
   if (removeNarration) delete state.narrationBySession[session.id];
   if (selectNarration && !removeNarration && (job.kind === 'plan' || job.kind === 'export')) {
     const attachedAudio = attached.find((item) => item.kind === 'audio');
@@ -151,8 +161,8 @@ async function performJob(job: Job): Promise<void> {
     if (!latestAudio) throw new Error('当前对话还没有口播音频，请先通过对话生成口播。');
     state.narrationBySession[session.id] = latestAudio.id;
   }
-  if (job.kind === 'plan' && (removeNarration || selectNarration)) {
-    addReply(session, job, removeNarration ? '已从后续成片中移除口播音轨。' : '已将现有口播加入成片方案，发送“生成成片”即可导出。');
+  if (job.kind === 'plan' && (removeNarration || selectNarration || bgmIntent) && !/(?:剪|分镜|片段|拼接|调整|时长|画幅|比例|排序|制作视频)/.test(prompt)) {
+    addReply(session, job, bgmIntent ? (removeBgm ? '已从后续成片中移除背景音乐。' : `已为后续成片选择${state.bgmBySession[session.id] === 'preset' ? '内置轻快配乐' : '所选音频'}，发送“生成成片”即可导出。`) : removeNarration ? '已从后续成片中移除口播音轨。' : '已将现有口播加入成片方案，发送“生成成片”即可导出。');
     return;
   }
   if (job.kind === 'plan' && (coverIntent || removeCover) && !/(剪|片段|时长|画幅|比例|排序|调整|修改|拼接|trim|clip|duration|aspect|ratio|reorder|edit)/i.test(prompt)) {
@@ -179,16 +189,20 @@ async function performJob(job: Job): Promise<void> {
     job.progress = 10; await saveState();
     const narrationId = state.narrationBySession[session.id];
     const narrationFile = narrationId && state.artifactFiles[narrationId] ? path.join(artifactDir, state.artifactFiles[narrationId]) : undefined;
+    const bgmId = state.bgmBySession[session.id];
+    const bgmFile = bgmId === 'preset' ? path.join(dataDir, 'preset-bgm.wav') : bgmId && state.media.some((item) => item.id === bgmId && item.kind === 'audio') ? path.join(mediaDir, bgmId) : undefined;
+    if (bgmId && !bgmFile) throw new Error('背景音乐素材已被移除，请重新选择。');
+    if (bgmId === 'preset') await writePresetBgm(bgmFile!);
     const plan = session.plan;
-    const result = await renderPlan(plan, state.media, mediaDir, exportDir, narrationFile);
+    const result = await renderPlan(plan, state.media, mediaDir, exportDir, narrationFile, bgmFile);
     const id = result.id;
     const cover = plan.coverMediaId ? state.media.find((item) => item.id === plan.coverMediaId && item.kind === 'image') : undefined;
     if (plan.coverMediaId && !cover) throw new Error('封面图片素材已被移除，请重新指定。');
     if (cover) await copyFile(path.join(mediaDir, cover.id), path.join(exportDir, `${id}-cover.${extFor(cover.mimeType)}`));
     const version = state.artifacts.filter((item) => item.sessionId === session.id && item.kind === 'video').length + 1;
-    const artifact: Artifact = { id, sessionId: session.id, messageId: message.id, kind: 'video', name: `轻剪成片-v${version}.mp4`, url: `/api/artifacts/${id}`, downloadUrl: `/api/download/${id}`, createdAt: now(), version, duration: plan.targetSeconds, format: plan.format, plan: structuredClone(plan), hasNarration: Boolean(narrationFile), ...(cover ? { coverUrl: `/api/artifacts/${id}/cover`, coverMimeType: cover.mimeType } : {}) };
+    const artifact: Artifact = { id, sessionId: session.id, messageId: message.id, kind: 'video', name: `轻剪成片-v${version}.mp4`, url: `/api/artifacts/${id}`, downloadUrl: `/api/download/${id}`, createdAt: now(), version, duration: plan.targetSeconds, format: plan.format, plan: structuredClone(plan), hasNarration: Boolean(narrationFile), hasBgm: Boolean(bgmFile), ...(cover ? { coverUrl: `/api/artifacts/${id}/cover`, coverMimeType: cover.mimeType } : {}) };
     state.artifacts.push(artifact); job.artifactId = id;
-    addReply(session, job, `成片 v${version} 已生成，可以预览并下载。${narrationFile ? '已合入口播音频。' : ''}`, id);
+    addReply(session, job, `成片 v${version} 已生成，可以预览并下载。${narrationFile ? '已合入口播音频。' : ''}${bgmFile ? '已合入背景音乐。' : ''}`, id);
     return;
   }
   const textConfig = await getModelConfig('text', session.modelId);
@@ -217,11 +231,11 @@ async function performJob(job: Job): Promise<void> {
     return;
   }
   const editable = state.media.filter((item) => item.kind === 'video' || item.kind === 'image');
-  const isEditRequest = /(剪|片段|分割|裁|时长|比例|画幅|排序|节奏|拼接|视频|调整|修改|做一个)|(?:trim|split|cut|clip|duration|aspect|ratio|reorder|pace|edit|video)/i.test(prompt);
+  const isEditRequest = /(剪|分镜|镜头|片段|分割|裁|时长|比例|画幅|排序|节奏|拼接|视频|调整|修改|做一个)|(?:trim|split|cut|clip|duration|aspect|ratio|reorder|pace|edit|video)/i.test(prompt);
   if (isEditRequest && editable.length) {
     const plan = withCover(await createPlanWithPi(prompt, textConfig, editable, history, session.plan, attached));
     session.plan = { ...plan, version: (session.plan?.version || 0) + 1 };
-    addReply(session, job, `${plan.summary} 已整理 ${plan.clips.length} 个片段，合计约 ${plan.targetSeconds} 秒。继续告诉我怎么调整，或发送“生成成片”。`);
+    addReply(session, job, `${plan.summary} 已整理 ${plan.clips.length} 个片段，合计约 ${plan.targetSeconds} 秒。${bgmIntent ? '已加入背景音乐。' : ''}继续告诉我怎么调整，或发送“生成成片”。`);
   } else addReply(session, job, await answerWithPi(prompt, textConfig, state.media, history));
 }
 let processing = false;
@@ -258,7 +272,7 @@ async function processQueue() {
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 mountAdminRoutes(app);
-const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: 300 * 1024 * 1024, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/')) });
+const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: 300 * 1024 * 1024, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
 app.get('/api/state', async (_request, response) => response.json(await publicState()));
 app.post('/api/sessions', async (_request, response) => { const session = newSession(await getDefaultTextModelId()); state.sessions.unshift(session); state.activeSessionId = session.id; await saveState(); response.json(await publicState()); });
 app.post('/api/sessions/:id/activate', async (request, response) => { if (!getSession(request.params.id)) return response.status(404).json({ error: '对话不存在。' }); state.activeSessionId = request.params.id; await saveState(); response.json(await publicState()); });
@@ -279,17 +293,20 @@ app.post('/api/chat', async (request, response) => {
 });
 app.post('/api/media', upload.array('files', 6), async (request, response) => {
   const files = (request.files || []) as Express.Multer.File[];
-  if (!files.length) return response.status(400).json({ error: '请选择视频或图片文件。' });
+  if (!files.length) return response.status(400).json({ error: '请选择视频、图片或音频文件。' });
   const moved: string[] = [];
   try {
     const items: MediaItem[] = [];
     for (const file of files) {
-      let mimeType = file.mimetype; let duration: number | undefined;
+      let mimeType = file.mimetype; let duration: number | undefined; let kind: MediaItem['kind'];
       if (file.mimetype.startsWith('image/')) { const detected = detectImage(await readFile(file.path)); if (!detected) throw new Error('图片格式仅支持 PNG、JPEG 或 WebP。'); mimeType = detected; }
       else if (file.mimetype.startsWith('video/')) duration = (await probeVideo(file.path)).duration;
-      else throw new Error('仅支持视频和图片素材。');
+      else if (file.mimetype.startsWith('audio/')) { if (!['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg'].includes(mimeType)) throw new Error('音频仅支持 MP3、WAV 或 OGG。'); duration = await probeAudio(file.path); }
+      else throw new Error('仅支持视频、图片和音频素材。');
+      kind = file.mimetype.startsWith('video/') ? 'video' : file.mimetype.startsWith('audio/') ? 'audio' : 'image';
+      const shots = kind === 'video' ? await detectShots(file.path, duration!, file.filename) : undefined;
       const target = path.join(mediaDir, file.filename); await rename(file.path, target); moved.push(target);
-      items.push({ id: file.filename, name: shortName(file.originalname), mimeType, kind: duration ? 'video' : 'image', ...(duration ? { duration } : {}), url: `/api/media/${file.filename}`, createdAt: now(), origin: 'upload' });
+      items.push({ id: file.filename, name: shortName(file.originalname), mimeType, kind, ...(duration ? { duration } : {}), ...(shots ? { shots } : {}), url: `/api/media/${file.filename}`, createdAt: now(), origin: 'upload' });
     }
     state.media.push(...items); await saveState(); response.json(await publicState());
   } catch (error) { await Promise.all([...files.map((file) => file.path), ...moved].map((file) => rm(file, { force: true }))); response.status(400).json({ error: error instanceof Error ? error.message : '素材解析失败。' }); }
@@ -303,6 +320,17 @@ app.delete('/api/media/:id', async (request, response) => {
   await saveState(); await rm(path.join(mediaDir, item.id), { force: true }); response.json(await publicState());
 });
 app.get('/api/media/:id', (request, response) => { const item = state.media.find((media) => media.id === request.params.id); if (!item) return response.status(404).json({ error: '素材不存在。' }); response.type(item.mimeType).sendFile(path.join(mediaDir, item.id)); });
+app.get('/api/media/:id/shots/:index', async (request, response) => {
+  const item = state.media.find((media) => media.id === request.params.id && media.kind === 'video');
+  const index = Number(request.params.index);
+  if (!item?.shots?.[index] || !Number.isInteger(index)) return response.status(404).json({ error: '镜头不存在。' });
+  const shot = item.shots[index];
+  const thumbnail = path.join(mediaDir, `${item.id}-shot-${index}.jpg`);
+  try {
+    await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-ss', String((shot.start + shot.end) / 2), '-i', path.join(mediaDir, item.id), '-frames:v', '1', '-vf', 'scale=320:-2', thumbnail], 30_000);
+    response.type('image/jpeg').sendFile(thumbnail);
+  } catch { response.status(500).json({ error: '缩略图生成失败。' }); }
+});
 app.get('/api/jobs/:id', (request, response) => { const job = state.jobs.find((item) => item.id === request.params.id); if (!job) return response.status(404).json({ error: '任务不存在。' }); response.json(job); });
 app.post('/api/jobs/:id/retry', async (request, response) => {
   const job = state.jobs.find((item) => item.id === request.params.id);

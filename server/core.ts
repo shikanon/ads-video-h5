@@ -7,7 +7,7 @@ import { Agent, type AgentTool } from '@earendil-works/pi-agent-core';
 import { createModels, createProvider, type Model } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { Type } from 'typebox';
-import type { ChatMessage, EditPlan, Format, MediaItem } from '../src/types';
+import type { ChatMessage, EditPlan, Format, MediaItem, Shot } from '../src/types';
 import type { ModelConfig } from './modelRegistry';
 
 const ffmpeg = ffmpegPath || 'ffmpeg';
@@ -40,6 +40,30 @@ export async function probeVideo(file: string): Promise<{ duration: number; hasA
   const duration = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
   if (!Number.isFinite(duration) || duration < 0.5) throw new Error('视频时长太短，无法剪辑。');
   return { duration, hasAudio: /Audio:/.test(result) };
+}
+
+export async function probeAudio(file: string): Promise<number> {
+  let result = '';
+  try { result = await runFFmpeg(['-hide_banner', '-i', file], 20_000); }
+  catch (error) { result = error instanceof Error ? error.message : String(error); }
+  const match = result.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!match || !/Audio:/.test(result)) throw new Error('无法读取音频，请上传有效的 MP3、WAV 或 OGG 文件。');
+  const duration = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+  if (!Number.isFinite(duration) || duration < 1 || duration > 600) throw new Error('背景音乐时长需在 1 秒至 10 分钟之间。');
+  return duration;
+}
+
+export async function detectShots(file: string, duration: number, mediaId: string): Promise<Shot[]> {
+  const log = await runFFmpeg(['-hide_banner', '-nostats', '-i', file, '-vf', "select='gt(scene,0.25)',showinfo", '-an', '-f', 'null', '-'], 120_000);
+  const cuts = [...log.matchAll(/pts_time:([\d.]+)/g)]
+    .map((match) => Number(match[1]))
+    .filter((time) => Number.isFinite(time) && time > 0.5 && time < duration - 0.5);
+  const unique = cuts.filter((time, index) => index === 0 || time - cuts[index - 1] >= 0.5);
+  const selected = unique.length <= 7 ? unique : Array.from({ length: 7 }, (_, index) => unique[Math.round(index * (unique.length - 1) / 6)]);
+  const points = [0, ...selected, duration];
+  return points.slice(0, -1).map((start, index) => ({
+    start: +start.toFixed(2), end: +points[index + 1].toFixed(2), thumbnailUrl: `/api/media/${mediaId}/shots/${index}`,
+  }));
 }
 
 export function detectImage(bytes: Buffer): 'image/png' | 'image/jpeg' | 'image/webp' | null {
@@ -109,7 +133,7 @@ function getAgent(config: ModelConfig, tools: AgentTool[], systemPrompt: string)
 }
 
 export async function createPlanWithPi(prompt: string, config: ModelConfig, media: MediaItem[], history: ChatMessage[], previous: EditPlan | null, attached: MediaItem[] = []): Promise<EditPlan> {
-  const sources = media.filter((item) => item.kind !== 'audio').map((item) => ({ id: item.id, name: item.name, kind: item.kind, duration: item.duration || null }));
+  const sources = media.filter((item) => item.kind !== 'audio').map((item) => ({ id: item.id, name: item.name, kind: item.kind, duration: item.duration || null, shots: item.shots?.map((shot, index) => ({ number: index + 1, start: shot.start, end: shot.end })) }));
   let proposed: EditPlan | null = null;
   const schema = Type.Object({
     format: Type.Union([Type.Literal('9:16'), Type.Literal('16:9'), Type.Literal('1:1')]),
@@ -129,7 +153,7 @@ export async function createPlanWithPi(prompt: string, config: ModelConfig, medi
     },
   };
   const context = history.slice(-12).map((message) => `${message.role === 'user' ? '用户' : '助手'}：${message.text}`).join('\n');
-  const agent = getAgent(config, [tool], `你是轻剪的剪辑 Agent。必须调用 propose_edit 提交方案，不能只用文字回答。只能使用给出的 sourceId。每段至少 0.5 秒、最多 8 段、总长不超过 60 秒。图片素材只能从 0 秒开始，可持续 0.5 至 60 秒；${allowImageClips ? '用户明确要求图片进入视频画面，可用图片作片段。' : '用户没有明确要求图片进入视频画面，clips 只能用视频，图片只能作封面或视觉参考。'}如果当前消息附加图片且用户说“这张图片”或“所选图片”，必须使用所附图片的 ID，不能换成素材库中其他图片。视频片段不得超过素材时长。coverMediaId 仅在用户要求设置封面时填写真实图片 ID。默认 9:16，约 15 秒。没有画面理解能力，不可声称看过视频内容、识别精彩镜头或语义场景。素材：${JSON.stringify(sources)}。当前消息附件：${JSON.stringify(attached.map((item) => ({ id: item.id, name: item.name, kind: item.kind })))}。上一版方案：${JSON.stringify(previous)}。最近对话：${context}`);
+  const agent = getAgent(config, [tool], `你是轻剪的剪辑 Agent。必须调用 propose_edit 提交方案，不能只用文字回答。只能使用给出的 sourceId。每段至少 0.5 秒、最多 8 段、总长不超过 60 秒。shots 是 FFmpeg 自动检测的镜头边界；用户要求按分镜剪辑时，优先使用这些边界，并按用户要求选择、排序或拼接。图片素材只能从 0 秒开始，可持续 0.5 至 60 秒；${allowImageClips ? '用户明确要求图片进入视频画面，可用图片作片段。' : '用户没有明确要求图片进入视频画面，clips 只能用视频，图片只能作封面或视觉参考。'}如果当前消息附加图片且用户说“这张图片”或“所选图片”，必须使用所附图片的 ID，不能换成素材库中其他图片。视频片段不得超过素材时长。coverMediaId 仅在用户要求设置封面时填写真实图片 ID。默认 9:16，约 15 秒。没有画面理解能力，不可声称看过视频内容、识别精彩镜头或语义场景。素材：${JSON.stringify(sources)}。当前消息附件：${JSON.stringify(attached.map((item) => ({ id: item.id, name: item.name, kind: item.kind })))}。上一版方案：${JSON.stringify(previous)}。最近对话：${context}`);
   await agent.prompt(prompt);
   if (!proposed) throw new Error('Pi Agent 没有提交有效剪辑方案，请换一种说法重试。');
   return proposed;
@@ -191,7 +215,7 @@ export async function answerWithPi(prompt: string, config: ModelConfig, media: M
   return reply;
 }
 
-export async function renderPlan(plan: EditPlan, media: MediaItem[], mediaDir: string, exportDir: string, narrationFile?: string): Promise<{ id: string; file: string }> {
+export async function renderPlan(plan: EditPlan, media: MediaItem[], mediaDir: string, exportDir: string, narrationFile?: string, bgmFile?: string): Promise<{ id: string; file: string }> {
   const id = randomUUID();
   const tempDir = path.join(exportDir, `tmp-${id}`);
   await mkdir(tempDir, { recursive: true });
@@ -224,10 +248,16 @@ export async function renderPlan(plan: EditPlan, media: MediaItem[], mediaDir: s
     const merged = path.join(tempDir, 'merged.mp4');
     await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', '-movflags', '+faststart', merged]);
     const output = path.join(exportDir, `${id}.mp4`);
-    if (narrationFile) {
-      await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', merged, '-i', narrationFile,
-        '-filter_complex', '[0:a]volume=0.25[bg];[bg][1:a]amix=inputs=2:duration=first:dropout_transition=0[a]',
-        '-map', '0:v:0', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', output]);
+    if (narrationFile || bgmFile) {
+      const inputs = ['-i', merged, ...(bgmFile ? ['-stream_loop', '-1', '-i', bgmFile] : []), ...(narrationFile ? ['-i', narrationFile] : [])];
+      const tracks = ['[0:a]volume=' + (narrationFile ? '0.18' : bgmFile ? '0.2' : '0.25') + '[original]'];
+      const labels = ['[original]'];
+      if (bgmFile) { tracks.push('[1:a]volume=' + (narrationFile ? '0.24' : '0.36') + '[music]'); labels.push('[music]'); }
+      if (narrationFile) { const index = bgmFile ? 2 : 1; tracks.push(`[${index}:a]volume=1[voice]`); labels.push('[voice]'); }
+      tracks.push(`${labels.join('')}amix=inputs=${labels.length}:duration=first:dropout_transition=0[a]`);
+      await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', ...inputs,
+        '-filter_complex', tracks.join(';'), '-map', '0:v:0', '-map', '[a]', '-t', String(plan.targetSeconds),
+        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', output]);
     } else await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', merged, '-c', 'copy', output]);
     return { id, file: output };
   } finally { await rm(tempDir, { recursive: true, force: true }); }

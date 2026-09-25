@@ -5,12 +5,19 @@ export type JobKind = 'plan' | 'image' | 'audio' | 'export';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ModelKind = 'text' | 'image' | 'audio';
 
+export interface Shot {
+  start: number;
+  end: number;
+  thumbnailUrl: string;
+}
+
 export interface MediaItem {
   id: string;
   name: string;
   mimeType: string;
   kind: MediaKind;
   duration?: number;
+  shots?: Shot[];
   url: string;
   createdAt: string;
   origin?: 'upload' | 'generated';
@@ -57,6 +64,7 @@ export interface Artifact {
   mediaId?: string;
   plan?: EditPlan;
   hasNarration?: boolean;
+  hasBgm?: boolean;
   coverUrl?: string;
   coverMimeType?: string;
 }

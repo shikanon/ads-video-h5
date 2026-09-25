@@ -1571,6 +1571,13 @@ a {
   font-size: 13px;
   font-weight: 600;
 }
+.shot-list { width: 100%; max-height: 40dvh; overflow: auto; }
+.shot-list p { font-size: 12px; margin: 4px 0 10px; color: #fff; }
+.shot-list > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.shot-list button { display: flex; gap: 8px; align-items: center; text-align: left; padding: 6px; border: 1px solid #ffffff44; border-radius: 10px; background: #ffffff18; color: white; }
+.shot-list img { width: 70px; height: 48px; object-fit: cover; border-radius: 6px; }
+.shot-list span { font-size: 12px; font-weight: 700; }
+.shot-list small { display: block; font-size: 11px; font-weight: 400; opacity: .8; margin-top: 3px; }
 .timeline-preview {
   display: block;
   position: relative;

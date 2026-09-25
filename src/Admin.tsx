@@ -27,9 +27,10 @@ interface ModelForm {
 const blankForm = (): ModelForm => ({ id: null, name: '', provider: 'ark', kind: 'text', modelId: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', enabled: true, apiKey: '' });
 const kindName: Record<ModelKind, string> = { text: '文本对话', image: '图片生成', audio: '口播音频' };
 const tokenKey = 'qingjian-admin-token';
+const apiPath = (url: string) => `${import.meta.env.BASE_URL.replace(/\/$/, '')}${url}`;
 
 async function request<T>(url: string, token: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetch(apiPath(url), {
     ...init,
     headers: { Authorization: `Bearer ${token}`, ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
   });
@@ -142,7 +143,7 @@ export default function Admin() {
   return (
     <div className="admin-page">
       <header className="admin-topbar">
-        <a href="/" className="admin-back"><ArrowLeft size={18} /> 返回轻剪</a>
+        <a href={import.meta.env.BASE_URL} className="admin-back"><ArrowLeft size={18} /> 返回轻剪</a>
         <div className="admin-brand">轻剪<span>.</span> <small>管理后台</small></div>
         {token ? <button type="button" className="admin-signout" onClick={() => { sessionStorage.removeItem(tokenKey); setToken(''); setModels([]); }}>退出管理</button> : <span />}
       </header>

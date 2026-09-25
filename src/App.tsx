@@ -42,6 +42,8 @@ type Page =
   | "privacy"
   | "timeline";
 type Locale = "zh-CN" | "en-US";
+const apiPath = (url: string) => `${import.meta.env.BASE_URL.replace(/\/$/, "")}${url}`;
+const landscapeUrl = `${import.meta.env.BASE_URL}travel-cover.png`;
 const labels = {
   "zh-CN": {
     chat: "对话",
@@ -178,7 +180,7 @@ async function getState(response: Response): Promise<AppState> {
 }
 async function api(url: string, method = "GET", body?: unknown) {
   return getState(
-    await fetch(url, {
+    await fetch(apiPath(url), {
       method,
       headers:
         body === undefined ? undefined : { "Content-Type": "application/json" },
@@ -510,7 +512,7 @@ export default function App() {
       );
       if (!job) return;
       try {
-        const response = await fetch(`/api/jobs/${job.id}`);
+        const response = await fetch(apiPath(`/api/jobs/${job.id}`));
         if (response.ok) await refresh();
       } catch {
         /* next poll */
@@ -580,13 +582,13 @@ export default function App() {
     const selected = Array.from(files);
     if (
       selected.some(
-        (f) => !f.type.startsWith("video/") && !f.type.startsWith("image/"),
+        (f) => !f.type.startsWith("video/") && !f.type.startsWith("image/") && !f.type.startsWith("audio/"),
       )
     ) {
       setError(
         locale === "zh-CN"
-          ? "只支持视频和图片。"
-          : "Only videos and images are supported.",
+          ? "只支持视频、图片和音频。"
+          : "Only videos, images and audio are supported.",
       );
       return;
     }
@@ -594,7 +596,7 @@ export default function App() {
     const form = new FormData();
     selected.forEach((f) => form.append("files", f));
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/media");
+    xhr.open("POST", apiPath("/api/media"));
     setError("");
     setUploadProgress(0);
     xhr.upload.onprogress = (e) => {
@@ -614,7 +616,7 @@ export default function App() {
           ...new Set([
             ...ids,
             ...result.media
-              .filter((m) => !oldIds.has(m.id) && m.kind === "image")
+              .filter((m) => !oldIds.has(m.id) && (m.kind === "image" || m.kind === "audio"))
               .map((m) => m.id),
           ]),
         ]);
@@ -1289,12 +1291,12 @@ export default function App() {
                 <button
                   type="button"
                   className={
-                    state?.settings.chatBackground === "/travel-cover.png"
+                    state?.settings.chatBackground === landscapeUrl || state?.settings.chatBackground === "/travel-cover.png"
                       ? "selected"
                       : ""
                   }
                   onClick={() =>
-                    void patch({ chatBackground: "/travel-cover.png" })
+                    void patch({ chatBackground: landscapeUrl })
                   }
                 >
                   <span className="bg-swatch landscape" />
@@ -1529,7 +1531,7 @@ export default function App() {
         <input
           ref={fileInput}
           type="file"
-          accept="video/*,image/*"
+          accept="video/*,image/*,audio/mpeg,audio/wav,audio/x-wav,audio/ogg"
           multiple
           hidden
           onChange={(e) => upload(e.target.files)}
@@ -1592,7 +1594,7 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <a className="admin-link" href="/admin">
+            <a className="admin-link" href={`${import.meta.env.BASE_URL}admin`}>
               {locale === "zh-CN" ? "管理后台" : "Admin console"}
               <ChevronRight size={16} />
             </a>
@@ -1628,6 +1630,19 @@ export default function App() {
               <img src={mediaPreview.url} alt={mediaPreview.name} />
             )}
             <strong>{mediaPreview.name}</strong>
+            {mediaPreview.shots?.length ? (
+              <div className="shot-list" aria-label="自动识别的分镜">
+                <p>自动识别 {mediaPreview.shots.length} 个镜头 · 点击缩略图查看分镜</p>
+                <div>
+                  {mediaPreview.shots.map((shot, index) => (
+                    <button key={index} type="button" onClick={() => { setMediaPreview(null); shortcut(`请将「${mediaPreview.name}」的第 ${index + 1} 个镜头（${shot.start}–${shot.end} 秒）整理成剪辑方案，并配上轻快背景音乐`); }}>
+                      <img src={shot.thumbnailUrl} alt={`镜头 ${index + 1}`} loading="lazy" />
+                      <span>镜头 {index + 1}<small>{duration(shot.start)}–{duration(shot.end)}</small></span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

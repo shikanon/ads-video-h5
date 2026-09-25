@@ -7,6 +7,6 @@ import './admin.css';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {window.location.pathname === '/admin' ? <Admin /> : <App />}
+    {window.location.pathname.replace(/\/$/, '').endsWith('/admin') ? <Admin /> : <App />}
   </React.StrictMode>,
 );
