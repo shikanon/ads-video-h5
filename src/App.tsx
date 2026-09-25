@@ -207,6 +207,10 @@ function Visual({ item }: { item: MediaItem }) {
     </span>
   );
 }
+function ClipVisual({ item, start }: { item: MediaItem; start: number }) {
+  const thumbnail = item.kind === "video" ? item.shots?.find((shot) => start >= shot.start - 0.05 && start < shot.end - 0.05)?.thumbnailUrl : undefined;
+  return thumbnail ? <img src={thumbnail} alt={`${item.name} ${duration(start)}`} loading="lazy" /> : <Visual item={item} />;
+}
 function JobCard({
   job,
   locale,
@@ -907,7 +911,7 @@ export default function App() {
                         >
                           <span className="clip-visual">
                             {source ? (
-                              <Visual item={source} />
+                              <ClipVisual item={source} start={part.start} />
                             ) : (
                               <Film size={22} />
                             )}
@@ -1439,7 +1443,7 @@ export default function App() {
                         }}
                       >
                         <span className="timeline-visual">
-                          {source ? <Visual item={source} /> : null}
+                          {source ? <ClipVisual item={source} start={part.start} /> : null}
                         </span>
                         <span>
                           {locale === "zh-CN" ? "片段" : "Clip"} {index + 1}

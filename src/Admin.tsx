@@ -152,13 +152,13 @@ export default function Admin() {
         <main className="admin-login">
           <div className="admin-login-icon"><KeyRound size={28} /></div>
           <h1>管理后台</h1>
-          <p>在这里维护厂商模型与 API Key。配置只保存在本机服务端，不会显示在轻剪 H5 中。</p>
+          <p>在这里维护厂商模型与 API Key。配置只保存在服务端，不会显示在轻剪 H5 中。</p>
           <form onSubmit={(event) => void signIn(event)}>
             <label htmlFor="admin-token">管理员令牌</label>
             <input id="admin-token" type="password" autoComplete="off" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} placeholder="输入本地管理员令牌" required />
             <button type="submit" disabled={busy || !tokenInput.trim()}>{busy ? '验证中…' : '进入管理后台'}</button>
           </form>
-          <p className="admin-login-help">首次启动时，令牌生成在服务端 <code>data/admin-token</code> 文件中。</p>
+          <p className="admin-login-help">管理员令牌保存在服务端数据目录的 <code>admin-token</code> 文件中。</p>
           {error ? <div className="admin-alert" role="alert">{error}</div> : null}
         </main>
       ) : (
