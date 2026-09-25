@@ -1,238 +1,1660 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowRight, Check, Clock3, Film, ImagePlus, Play, Plus, Scissors, Send, Sparkles, X } from 'lucide-react';
-import type { ChatMessage, EditClip, MediaItem, ProjectState } from './types';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  ArrowDownToLine,
+  ArrowLeft,
+  ArrowRight,
+  ChevronRight,
+  Clock3,
+  Film,
+  Image as ImageIcon,
+  ImagePlus,
+  Library,
+  Menu,
+  Mic2,
+  Music2,
+  Plus,
+  RotateCcw,
+  Send,
+  Settings2,
+  Sparkles,
+  Trash2,
+  UserRound,
+  WandSparkles,
+  X,
+} from "lucide-react";
+import type {
+  AppSettings,
+  AppState,
+  Artifact,
+  ChatMessage,
+  Job,
+  MediaItem,
+} from "./types";
 
-const exampleMessage = '把这段旅行素材剪成 15 秒竖屏短片，节奏轻快';
-const exampleScenes = [
-  { title: '出发 · 拥抱风景', time: '4.8s', position: '35% 70%' },
-  { title: '海岸 · 日落时分', time: '5.2s', position: '58% 26%' },
-  { title: '漫步 · 收获美好', time: '4.6s', position: '80% 82%' },
+type Page =
+  | "chat"
+  | "history"
+  | "media"
+  | "films"
+  | "settings"
+  | "profile"
+  | "terms"
+  | "privacy"
+  | "timeline";
+type Locale = "zh-CN" | "en-US";
+const labels = {
+  "zh-CN": {
+    chat: "对话",
+    history: "对话历史",
+    media: "素材库",
+    films: "成片库",
+    settings: "设置",
+    profile: "用户中心",
+    terms: "用户协议",
+    privacy: "隐私政策",
+    timeline: "剪辑拼接",
+    newChat: "新对话",
+    hero: "一句话，剪出好视频",
+    sub: "添加素材，告诉轻剪你想要的节奏",
+    input: "继续说说你想怎么剪…",
+    add: "添加素材",
+    download: "下载",
+    retry: "重试",
+    back: "返回对话",
+    emptyMedia: "还没有素材",
+    emptyFilms: "还没有生成成片",
+    emptyHistory: "还没有对话记录",
+    plan: "剪辑方案",
+    voice: "口播文案",
+    audio: "独立音频",
+    image: "生成图片",
+    video: "成片视频",
+    all: "全部",
+    videos: "视频",
+    images: "图片",
+    audios: "音频",
+    model: "默认对话模型",
+    language: "界面语言",
+    background: "对话背景",
+    default: "默认背景",
+    landscape: "暖色风景",
+    custom: "本地图片",
+    reset: "恢复默认",
+    visitor: "访客",
+    visitorHint: "当前为本机使用。账号登录与跨设备同步尚未开放。",
+    unconfigured: "模型尚未配置，请管理员在后台设置。",
+    legalDraft: "本地原型说明 · 正式上线前需由运营方确认完整条款",
+    viewTimeline: "查看剪辑拼接",
+    makeVideo: "对话生成成片",
+  },
+  "en-US": {
+    chat: "Chat",
+    history: "History",
+    media: "Media",
+    films: "Exports",
+    settings: "Settings",
+    profile: "Profile",
+    terms: "Terms",
+    privacy: "Privacy",
+    timeline: "Edit preview",
+    newChat: "New chat",
+    hero: "Make a video with one sentence",
+    sub: "Add media and tell Qingjian your idea",
+    input: "Describe your next edit…",
+    add: "Add media",
+    download: "Download",
+    retry: "Retry",
+    back: "Back to chat",
+    emptyMedia: "No media yet",
+    emptyFilms: "No exported videos yet",
+    emptyHistory: "No chats yet",
+    plan: "Edit plan",
+    voice: "Narration script",
+    audio: "Audio track",
+    image: "Generated image",
+    video: "Exported video",
+    all: "All",
+    videos: "Videos",
+    images: "Images",
+    audios: "Audio",
+    model: "Default chat model",
+    language: "Language",
+    background: "Chat background",
+    default: "Default",
+    landscape: "Warm landscape",
+    custom: "Local image",
+    reset: "Reset",
+    visitor: "Guest",
+    visitorHint:
+      "Local use only. Accounts and cross-device sync are not available yet.",
+    unconfigured: "No model is configured. Set one up in the admin console.",
+    legalDraft: "Local prototype notice · final terms require operator review before launch",
+    viewTimeline: "View timeline",
+    makeVideo: "Export in chat",
+  },
+} as const;
+const menuPages: Page[] = [
+  "chat",
+  "media",
+  "films",
+  "history",
+  "profile",
+  "settings",
 ];
-
-function seconds(value: number) {
-  const whole = Math.round(value);
-  return `${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
+const hints = {
+  "zh-CN": [
+    "把素材剪成 15 秒竖屏短片，节奏轻快",
+    "写一段温柔的口播，并生成独立音频",
+    "生成一张暖色调的封面图",
+  ],
+  "en-US": [
+    "Make a lively 15-second vertical video",
+    "Write warm narration and generate audio",
+    "Create a warm-toned cover image",
+  ],
+};
+function duration(value?: number) {
+  const n = Math.max(0, Math.floor(value || 0));
+  return `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
 }
-
-async function readJson(response: Response): Promise<ProjectState> {
-  const json = await response.json() as ProjectState & { error?: string };
-  if (!response.ok) throw new Error(json.error || '请求失败，请重试。');
+function date(value: string, locale: Locale) {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString(locale, { month: "short", day: "numeric" });
+}
+async function getState(response: Response): Promise<AppState> {
+  let json: (AppState & { error?: string }) | undefined;
+  try {
+    json = await response.json();
+  } catch {
+    /* handled below */
+  }
+  if (!response.ok)
+    throw new Error(json?.error || `请求失败 (${response.status})`);
+  if (!json?.sessions || !json?.media)
+    throw new Error("服务返回的数据不完整。");
   return json;
 }
-
-function MediaThumb({ item, onRemove }: { item: MediaItem; onRemove: () => void }) {
-  return (
-    <div className="media-tile">
-      <video src={item.url} muted playsInline preload="metadata" aria-label={item.name} />
-      <span className="media-duration">{seconds(item.duration)}</span>
-      <button type="button" className="media-remove" aria-label={`删除素材 ${item.name}`} onClick={onRemove}><X size={16} strokeWidth={2.4} /></button>
-    </div>
+async function api(url: string, method = "GET", body?: unknown) {
+  return getState(
+    await fetch(url, {
+      method,
+      headers:
+        body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
   );
 }
-
-function ChatBubble({ message }: { message: ChatMessage }) {
+function Visual({ item }: { item: MediaItem }) {
+  if (item.kind === "image")
+    return <img src={item.url} alt={item.name} loading="lazy" />;
+  if (item.kind === "video")
+    return (
+      <video
+        src={item.url}
+        muted
+        playsInline
+        preload="metadata"
+        aria-label={item.name}
+      />
+    );
   return (
-    <div className={`chat-row ${message.role}`}>
-      {message.role === 'assistant' ? <span className="chat-avatar ai"><Sparkles size={18} fill="currentColor" strokeWidth={1.6} /></span> : null}
-      <div className="chat-bubble">{message.text}</div>
-      {message.role === 'user' ? <span className="chat-avatar person"><span /></span> : null}
-    </div>
+    <span className="music-visual">
+      <Music2 size={22} />
+    </span>
   );
 }
-
-function SceneCard({ index, item, clip }: { index: number; item?: MediaItem; clip?: EditClip }) {
-  const example = exampleScenes[index % exampleScenes.length];
+function JobCard({
+  job,
+  locale,
+  retry,
+}: {
+  job: Job;
+  locale: Locale;
+  retry: (id: string) => void;
+}) {
+  const t = labels[locale];
+  const name =
+    job.kind === "plan"
+      ? t.plan
+      : job.kind === "audio"
+        ? t.audio
+        : job.kind === "image"
+          ? t.image
+          : t.video;
+  const status =
+    job.status === "queued"
+      ? locale === "zh-CN"
+        ? "排队中"
+        : "Queued"
+      : job.status === "running"
+        ? locale === "zh-CN"
+          ? "生成中"
+          : "Generating"
+        : job.status === "failed"
+          ? locale === "zh-CN"
+            ? "生成失败"
+            : "Failed"
+          : locale === "zh-CN"
+            ? "已完成"
+            : "Done";
   return (
-    <div className="scene-card">
-      <div className="scene-image">
-        {item ? <video src={item.url} muted playsInline preload="metadata" aria-hidden="true" /> : <img src="/travel-cover.png" alt="" style={{ objectPosition: example.position }} />}
-        <span className="scene-number">{index + 1}</span>
-        <span className="scene-duration">{clip ? `${(clip.end - clip.start).toFixed(1)}s` : example.time}</span>
+    <div className={`job-card ${job.status}`} aria-live="polite">
+      <div className="job-head">
+        <span className="job-icon">
+          <Sparkles size={16} />
+        </span>
+        <strong>{name}</strong>
+        <span className="job-status">{status}</span>
       </div>
-      <span className="scene-title">{item ? item.name : example.title}</span>
+      {job.status === "queued" || job.status === "running" ? (
+        <div
+          className="progress-track"
+          role="progressbar"
+          aria-label={status}
+          aria-valuenow={job.progress || 0}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <span
+            style={{
+              width: `${Math.max(5, Math.min(100, job.progress || 5))}%`,
+            }}
+          />
+        </div>
+      ) : null}
+      {job.status === "failed" ? (
+        <div className="job-error">
+          <span>{job.error || status}</span>
+          <button type="button" onClick={() => retry(job.id)}>
+            <RotateCcw size={14} />
+            {t.retry}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
-
+function ArtifactCard({
+  artifact,
+  locale,
+  open,
+  add,
+}: {
+  artifact: Artifact;
+  locale: Locale;
+  open: (artifact: Artifact) => void;
+  add?: (artifact: Artifact) => void;
+}) {
+  const t = labels[locale];
+  if (artifact.kind === "audio")
+    return (
+      <div className="artifact-card audio-card">
+        {artifact.text ? (
+          <div className="narration-block">
+            <h3>{t.voice}</h3>
+            <p>{artifact.text}</p>
+          </div>
+        ) : null}
+        <div className="audio-title">
+          <span>
+            <Music2 size={19} />
+          </span>
+          <strong>
+            {t.audio}
+            <small>{artifact.name}</small>
+          </strong>
+        </div>
+        <audio
+          controls
+          preload="metadata"
+          src={artifact.url}
+          aria-label={artifact.name}
+        />
+        <a
+          className="artifact-download"
+          href={artifact.downloadUrl}
+          download={artifact.name}
+        >
+          <ArrowDownToLine size={16} />
+          {t.download}
+        </a>
+      </div>
+    );
+  if (artifact.kind === "image")
+    return (
+      <div className="artifact-card image-card">
+        <button
+          type="button"
+          className="artifact-visual"
+          onClick={() => open(artifact)}
+        >
+          <img src={artifact.url} alt={artifact.name} loading="lazy" />
+        </button>
+        <div className="artifact-caption">
+          <span>
+            <ImageIcon size={16} />
+            {artifact.name}
+          </span>
+          <a
+            href={artifact.downloadUrl}
+            download={artifact.name}
+            aria-label={t.download}
+          >
+            <ArrowDownToLine size={18} />
+          </a>
+        </div>
+        {artifact.mediaId && add ? (
+          <button
+            type="button"
+            className="artifact-add"
+            onClick={() => add(artifact)}
+          >
+            <Plus size={15} />
+            {locale === "zh-CN" ? "加入当前对话" : "Add to chat"}
+          </button>
+        ) : null}
+      </div>
+    );
+  return (
+    <div className="artifact-card video-card">
+      <button
+        type="button"
+        className="artifact-visual"
+        onClick={() => open(artifact)}
+      >
+        <video
+          src={artifact.url}
+          poster={artifact.coverUrl}
+          muted
+          playsInline
+          preload="metadata"
+          aria-label={artifact.name}
+        />
+        <span className="play-mark">
+          <Film size={22} />
+        </span>
+      </button>
+      <div className="artifact-caption">
+        <span>
+          <Film size={16} />
+          {artifact.name}
+        </span>
+        <a
+          href={artifact.downloadUrl}
+          download={artifact.name}
+          aria-label={t.download}
+        >
+          <ArrowDownToLine size={18} />
+        </a>
+      </div>
+    </div>
+  );
+}
+function Message({
+  message,
+  state,
+  locale,
+  retry,
+  open,
+  add,
+}: {
+  message: ChatMessage;
+  state: AppState;
+  locale: Locale;
+  retry: (id: string) => void;
+  open: (artifact: Artifact) => void;
+  add: (artifact: Artifact) => void;
+}) {
+  const jobs = state.jobs.filter((x) => x.messageId === message.id);
+  const artifacts = state.artifacts.filter((x) => x.messageId === message.id);
+  const attachments = (message.attachmentIds || [])
+    .map((id) => state.media.find((x) => x.id === id))
+    .filter((x): x is MediaItem => Boolean(x));
+  return (
+    <article className={`message-row ${message.role}`}>
+      {message.role === "assistant" ? (
+        <span className="avatar assistant-avatar">
+          <Sparkles size={16} fill="currentColor" />
+        </span>
+      ) : null}
+      <div className="message-main">
+        {message.text ? (
+          <div className="message-bubble">{message.text}</div>
+        ) : null}
+        {attachments.length ? (
+          <div className="sent-attachments">
+            {attachments.map((item) => (
+              <div key={item.id}>
+                <Visual item={item} />
+                <span>{item.name}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {jobs.map((job) => (
+          <JobCard key={job.id} job={job} locale={locale} retry={retry} />
+        ))}
+        {artifacts.map((artifact) => (
+          <ArtifactCard
+            key={artifact.id}
+            artifact={artifact}
+            locale={locale}
+            open={open}
+            add={add}
+          />
+        ))}
+      </div>
+      {message.role === "user" ? (
+        <span className="avatar user-avatar">
+          <UserRound size={16} />
+        </span>
+      ) : null}
+    </article>
+  );
+}
 export default function App() {
-  const [project, setProject] = useState<ProjectState | null>(null);
-  const [prompt, setPrompt] = useState('');
-  const [busy, setBusy] = useState<'upload' | 'chat' | 'export' | null>(null);
-  const [error, setError] = useState('');
-  const [showHistory, setShowHistory] = useState(false);
+  const [state, setState] = useState<AppState | null>(null);
+  const [page, setPage] = useState<Page>("chat");
+  const [drawer, setDrawer] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [pending, setPending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState<"all" | "video" | "image" | "audio">(
+    "all",
+  );
+  const [imagePreview, setImagePreview] = useState<Artifact | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<MediaItem | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<Artifact | null>(null);
+  const [timelineCurrentPlan, setTimelineCurrentPlan] = useState(false);
+  const [selectedClip, setSelectedClip] = useState(0);
+  const [localBackground, setLocalBackground] = useState<string | null>(() =>
+    localStorage.getItem("qingjian-local-bg"),
+  );
+  const stateRef = useRef<AppState | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const bgInput = useRef<HTMLInputElement>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    fetch('/api/project').then(readJson).then(setProject).catch(() => setError('服务暂时不可用，请确认本地服务已启动。'));
+  const chatScroll = useRef<HTMLDivElement>(null);
+  const chatScrollY = useRef(0);
+  const visibleSessionId = useRef<string | null>(null);
+  const chatAtBottom = useRef(true);
+  const composerInput = useRef<HTMLTextAreaElement>(null);
+  const previewVideo = useRef<HTMLVideoElement>(null);
+  const apply = useCallback((next: AppState) => {
+    stateRef.current = next;
+    setState(next);
   }, []);
-
-  async function uploadFiles(files: FileList | null) {
-    if (!files?.length) return;
-    setError('');
-    setBusy('upload');
-    const form = new FormData();
-    Array.from(files).forEach((file) => form.append('videos', file));
+  const refresh = useCallback(async () => {
     try {
-      setProject(await readJson(await fetch('/api/media', { method: 'POST', body: form })));
+      apply(await api("/api/state"));
+      setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '上传失败。');
+      setError(cause instanceof Error ? cause.message : "无法连接服务。");
+    }
+  }, [apply]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  useEffect(() => {
+    if (
+      !state?.jobs.some((j) => j.status === "queued" || j.status === "running")
+    )
+      return;
+    const timer = window.setInterval(async () => {
+      const job = stateRef.current?.jobs.find(
+        (j) => j.status === "queued" || j.status === "running",
+      );
+      if (!job) return;
+      try {
+        const response = await fetch(`/api/jobs/${job.id}`);
+        if (response.ok) await refresh();
+      } catch {
+        /* next poll */
+      }
+    }, 2200);
+    return () => window.clearInterval(timer);
+  }, [state?.jobs, refresh]);
+  useEffect(() => {
+    if (!drawer) return;
+    window.history.pushState({ qingjianDrawer: true }, "");
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDrawer(false);
+    };
+    const onBack = () => setDrawer(false);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("popstate", onBack);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("popstate", onBack);
+      if (window.history.state?.qingjianDrawer) window.history.back();
+    };
+  }, [drawer]);
+  const locale: Locale = state?.settings.language || "zh-CN";
+  const t = labels[locale];
+  const session = state?.sessions.find((s) => s.id === state.activeSessionId);
+  useLayoutEffect(() => {
+    if (page !== "chat" || !chatScroll.current || !state?.activeSessionId) return;
+    const view = chatScroll.current;
+    view.scrollTop = visibleSessionId.current === state.activeSessionId
+      ? chatScrollY.current
+      : view.scrollHeight;
+    visibleSessionId.current = state.activeSessionId;
+  }, [page, state?.activeSessionId]);
+  useEffect(() => {
+    if (page === "chat" && chatAtBottom.current && chatScroll.current) {
+      chatScroll.current.scrollTop = chatScroll.current.scrollHeight;
+    }
+  }, [page, session?.messages.length]);
+  const artifacts =
+    state?.artifacts.filter((a) => a.sessionId === session?.id) || [];
+  const latestVideo =
+    artifacts.filter((a) => a.kind === "video").at(-1) || null;
+  const background =
+    state?.settings.chatBackground === "local"
+      ? localBackground
+      : state?.settings.chatBackground;
+  function nav(next: Page) {
+    setDrawer(false);
+    setPage(next);
+    setError("");
+  }
+  async function mutate(url: string, method: string, body?: unknown) {
+    setPending(true);
+    setError("");
+    try {
+      apply(await api(url, method, body));
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "操作失败，请重试。");
+      return false;
     } finally {
-      setBusy(null);
-      if (fileInput.current) fileInput.current.value = '';
+      setPending(false);
     }
   }
-
-  async function removeMedia(id: string) {
-    setError('');
-    try {
-      setProject(await readJson(await fetch(`/api/media/${id}`, { method: 'DELETE' })));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '删除素材失败。');
-    }
-  }
-
-  async function sendMessage() {
-    const text = prompt.trim();
-    if (!text || busy) return;
-    if (!project?.media.length) {
-      setError('先添加一段视频，再告诉我你想怎么剪。');
-      fileInput.current?.click();
+  function upload(files: FileList | null) {
+    if (!files?.length) return;
+    const selected = Array.from(files);
+    if (
+      selected.some(
+        (f) => !f.type.startsWith("video/") && !f.type.startsWith("image/"),
+      )
+    ) {
+      setError(
+        locale === "zh-CN"
+          ? "只支持视频和图片。"
+          : "Only videos and images are supported.",
+      );
       return;
     }
-    setError('');
-    setBusy('chat');
-    setPrompt('');
-    try {
-      const next = await readJson(await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
-      }));
-      setProject(next);
-      requestAnimationFrame(() => chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }));
-    } catch (cause) {
-      setPrompt(text);
-      setError(cause instanceof Error ? cause.message : '剪辑方案生成失败。');
-    } finally {
-      setBusy(null);
+    const oldIds = new Set(stateRef.current?.media.map((m) => m.id) || []);
+    const form = new FormData();
+    selected.forEach((f) => form.append("files", f));
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/media");
+    setError("");
+    setUploadProgress(0);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable)
+        setUploadProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      setUploadProgress(null);
+      try {
+        const result = JSON.parse(xhr.responseText) as AppState & {
+          error?: string;
+        };
+        if (xhr.status < 200 || xhr.status >= 300)
+          throw new Error(result.error || "上传失败。");
+        apply(result);
+        setAttachments((ids) => [
+          ...new Set([
+            ...ids,
+            ...result.media
+              .filter((m) => !oldIds.has(m.id) && m.kind === "image")
+              .map((m) => m.id),
+          ]),
+        ]);
+        nav("chat");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "上传失败。");
+      }
+    };
+    xhr.onerror = () => {
+      setUploadProgress(null);
+      setError("网络中断，上传失败。");
+    };
+    xhr.send(form);
+    if (fileInput.current) fileInput.current.value = "";
+  }
+  async function send() {
+    const message = prompt.trim();
+    if (
+      !message ||
+      !state ||
+      pending ||
+      uploadProgress !== null
+    )
+      return;
+    if (
+      await mutate("/api/chat", "POST", {
+        sessionId: state.activeSessionId,
+        message,
+        attachmentIds: attachments,
+      })
+    ) {
+      setPrompt("");
+      setAttachments([]);
+      requestAnimationFrame(() =>
+        chatEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" }),
+      );
     }
   }
-
-  async function exportVideo() {
-    if (!project?.plan || busy) return;
-    setError('');
-    setBusy('export');
-    try {
-      setProject(await readJson(await fetch('/api/export', { method: 'POST' })));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '生成成片失败。');
-    } finally {
-      setBusy(null);
+  async function newChat() {
+    if (await mutate("/api/sessions", "POST", {})) {
+      setPrompt("");
+      setAttachments([]);
+      nav("chat");
     }
   }
-
-  const media = project?.media || [];
-  const messages = project?.messages || [];
-  const plan = project?.plan;
-  const firstSource = media[0];
-  const scenes = plan?.clips || exampleScenes.map(() => undefined);
-
+  async function activate(id: string) {
+    if (
+      await mutate(
+        `/api/sessions/${encodeURIComponent(id)}/activate`,
+        "POST",
+        {},
+      )
+    ) {
+      setPrompt("");
+      setAttachments([]);
+      nav("chat");
+    }
+  }
+  async function remove(id: string) {
+    if (
+      !window.confirm(
+        locale === "zh-CN"
+          ? "删除素材后，关联的剪辑方案可能无法继续导出。确定删除吗？"
+          : "Deleting this media may prevent export. Delete it?",
+      )
+    )
+      return;
+    if (await mutate(`/api/media/${encodeURIComponent(id)}`, "DELETE"))
+      setAttachments((ids) => ids.filter((x) => x !== id));
+  }
+  function shortcut(text: string) {
+    setPrompt(text);
+    nav("chat");
+    requestAnimationFrame(() => composerInput.current?.focus());
+  }
+  function open(artifact: Artifact) {
+    if (artifact.kind === "video") {
+      setSelectedVideo(artifact);
+      setTimelineCurrentPlan(false);
+      setSelectedClip(0);
+      nav("timeline");
+    } else setImagePreview(artifact);
+  }
+  function addArtifact(artifact: Artifact) {
+    if (!artifact.mediaId) return;
+    setAttachments((ids) =>
+      ids.includes(artifact.mediaId!) ? ids : [...ids, artifact.mediaId!],
+    );
+    nav("chat");
+    requestAnimationFrame(() => composerInput.current?.focus());
+  }
+  async function patch(settings: Partial<AppSettings>) {
+    await mutate("/api/settings", "PATCH", settings);
+  }
+  function backgroundFile(file?: File) {
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 1024 * 1024) {
+      setError("请选择不超过 1 MB 的图片。");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result || "");
+      localStorage.setItem("qingjian-local-bg", value);
+      setLocalBackground(value);
+      void patch({ chatBackground: "local" });
+    };
+    reader.readAsDataURL(file);
+    if (bgInput.current) bgInput.current.value = "";
+  }
+  const plan = session?.plan;
+  const timelineArtifact = timelineCurrentPlan ? null : selectedVideo || latestVideo;
+  const timelinePlan = timelineArtifact ? timelineArtifact.plan : plan;
+  const clip = timelinePlan?.clips[selectedClip];
+  const clipSource = state?.media.find((m) => m.id === clip?.sourceId);
+  const timelineUrl = timelineArtifact?.url || clipSource?.url;
   return (
     <div className="page-backdrop">
       <main className="app-shell">
         <header className="topbar">
-          <div className="brand" aria-label="轻剪">轻剪<span className="brand-dot">.</span></div>
-          <button type="button" className="history-button" onClick={() => setShowHistory(true)}><Clock3 size={20} /> 历史</button>
-        </header>
-
-        <section className="intro" aria-labelledby="hero-title">
-          <h1 id="hero-title">一句话，<span>剪出好视频</span></h1>
-          <p>上传素材，告诉我你想要的节奏</p>
-        </section>
-
-        <section className="upload-section" aria-label="视频素材">
-          <div className="upload-grid">
-            {media.map((item) => <MediaThumb key={item.id} item={item} onRemove={() => void removeMedia(item.id)} />)}
-            {!media.length ? <>
-              <div className="sample-tile"><img src="/travel-cover.png" alt="示例旅行素材画面" /><span>示例</span></div>
-              <div className="sample-tile second"><img src="/travel-cover.png" alt="示例海岸素材画面" /><span>示例</span></div>
-            </> : null}
-            <button type="button" className="add-tile" onClick={() => fileInput.current?.click()} disabled={busy === 'upload'}>
-              {busy === 'upload' ? <span className="loading-ring" /> : <Plus size={28} strokeWidth={1.8} />}
-              <span>{busy === 'upload' ? '上传中' : '添加素材'}</span>
+          {page === "chat" ? (
+            <button
+              type="button"
+              className="brand"
+              onClick={() => setDrawer(true)}
+              aria-label="打开菜单"
+            >
+              轻剪<span>.</span>
+              <Menu size={17} />
             </button>
-          </div>
-          <input ref={fileInput} type="file" accept="video/*" multiple hidden onChange={(event) => void uploadFiles(event.target.files)} />
-        </section>
-
-        <section className="conversation" aria-label="剪辑对话">
-          {messages.length ? messages.map((message, index) => <ChatBubble key={`${index}-${message.role}`} message={message} />) : (
-            <>
-              <div className="example-caption">对话示例</div>
-              <ChatBubble message={{ role: 'user', text: exampleMessage }} />
-              <ChatBubble message={{ role: 'assistant', text: '上传你的视频，我会先整理片段，再为你生成可下载的成片。' }} />
-            </>
+          ) : (
+            <button
+              type="button"
+              className="top-back"
+              onClick={() =>
+                nav(
+                  page === "terms" || page === "privacy" ? "settings" : "chat",
+                )
+              }
+              aria-label={t.back}
+            >
+              <ArrowLeft size={23} />
+            </button>
           )}
-          {busy === 'chat' ? <div className="chat-row assistant"><span className="chat-avatar ai"><Sparkles size={18} fill="currentColor" /></span><div className="chat-bubble thinking"><i /><i /><i /> 正在整理剪辑方案</div></div> : null}
-          <div ref={chatEnd} />
-        </section>
-
-        <section className="workspace" aria-labelledby="plan-title">
-          <div className="section-heading">
-            <div>
-              <h2 id="plan-title">{plan ? '剪辑方案' : '成片预览'}</h2>
-              <p>{plan ? plan.summary : '素材就绪后，对话生成你的专属剪辑方案'}</p>
-            </div>
-            <span className="aspect-label">{plan?.format || '9:16'} {plan?.format === '16:9' ? '横屏' : plan?.format === '1:1' ? '方形' : '竖屏'}</span>
-          </div>
-
-          <div className="scene-track">
-            {scenes.map((clip, index) => (
-              <SceneCard key={`${clip?.sourceId || 'demo'}-${index}`} index={index} item={clip ? media.find((entry) => entry.id === clip.sourceId) : undefined} clip={clip} />
-            ))}
-          </div>
-
-          <div className="preview-stage">
-            {project?.exportId ? (
-              <video controls playsInline src={`/api/export/${project.exportId}`} aria-label="生成的成片预览" />
-            ) : firstSource ? (
-              <video controls playsInline src={firstSource.url} aria-label="原素材预览" />
-            ) : (
-              <img src="/travel-cover.png" alt="旅行视频画面示例" />
-            )}
-            {!project?.exportId ? <span className="preview-tag">{firstSource ? '原素材预览' : '示例画面'}</span> : <span className="preview-tag ready"><Check size={14} /> 成片已生成</span>}
-            {!firstSource && !project?.exportId ? <span className="preview-play"><Play size={26} fill="currentColor" /></span> : null}
-            <span className="preview-length">{plan ? seconds(plan.targetSeconds) : '00:15'}</span>
-          </div>
-
-          <div className="action-row">
-            <button className="generate-button" type="button" onClick={() => void exportVideo()} disabled={!plan || Boolean(busy)}>
-              {busy === 'export' ? <span className="loading-ring light" /> : <Scissors size={21} />}
-              <span>{busy === 'export' ? '正在生成成片' : project?.exportId ? '重新生成' : '生成成片'}</span>
-              {busy !== 'export' ? <ArrowRight size={19} /> : null}
+          {page !== "chat" ? <h1 className="page-title">{t[page]}</h1> : null}
+          {page === "chat" ? (
+            <button
+              type="button"
+              className="top-history"
+              onClick={() => nav("history")}
+            >
+              <Clock3 size={19} />
+              {t.history}
             </button>
-            {project?.exportId ? (
-              <a className="download-button" href={`/api/download/${project.exportId}`} download="qingjian-export.mp4"><ArrowDownToLine size={20} />下载视频</a>
+          ) : page === "history" ? (
+            <button
+              type="button"
+              className="top-plus"
+              onClick={() => void newChat()}
+              aria-label={t.newChat}
+            >
+              <Plus size={22} />
+            </button>
+          ) : (
+            <span className="top-spacer" />
+          )}
+        </header>
+        {page !== "chat" && error ? (
+          <div className="subpage-error" role="alert">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError("")}
+              aria-label="关闭"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        ) : null}
+        {page === "chat" ? (
+          <>
+            <div
+              className="chat-scroll"
+              ref={chatScroll}
+              onScroll={(event) => {
+                const view = event.currentTarget;
+                chatScrollY.current = view.scrollTop;
+                chatAtBottom.current = view.scrollHeight - view.clientHeight - view.scrollTop < 80;
+              }}
+              style={
+                background
+                  ? {
+                      backgroundImage: `linear-gradient(#fffdfadd,#fffdfadd),url(${background})`,
+                    }
+                  : undefined
+              }
+            >
+              {!state ? (
+                <div className="loading-state" role="status">
+                  <Sparkles size={23} />
+                  {locale === "zh-CN" ? "正在加载对话…" : "Loading chat…"}
+                </div>
+              ) : null}
+              {state && !session?.messages.length ? (
+                <section className="chat-empty">
+                  <div className="empty-sparkle">
+                    <Sparkles size={29} fill="currentColor" />
+                  </div>
+                  <h1>{t.hero}</h1>
+                  <p>{t.sub}</p>
+                  <div className="suggestions">
+                    {hints[locale].map((hint, index) => (
+                      <button
+                        type="button"
+                        key={hint}
+                        onClick={() => shortcut(hint)}
+                      >
+                        {index === 0 ? (
+                          <Film size={18} />
+                        ) : index === 1 ? (
+                          <Mic2 size={18} />
+                        ) : (
+                          <ImageIcon size={18} />
+                        )}
+                        <span>{hint}</span>
+                        <ArrowRight size={16} />
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="add-media-inline"
+                    onClick={() => fileInput.current?.click()}
+                  >
+                    <Plus size={18} />
+                    {t.add}
+                  </button>
+                </section>
+              ) : null}
+              {session?.messages.length ? (
+                <section className="message-list" aria-label={t.chat}>
+                  {session.messages.map((message) => (
+                    <Message
+                      key={message.id}
+                      message={message}
+                      state={state!}
+                      locale={locale}
+                      retry={(id) =>
+                        void mutate(`/api/jobs/${id}/retry`, "POST", {})
+                      }
+                      open={open}
+                      add={addArtifact}
+                    />
+                  ))}
+                </section>
+              ) : null}
+              {plan ? (
+                <section className="plan-card">
+                  <div className="section-head">
+                    <div>
+                      <h2>{t.plan}</h2>
+                      <p>{plan.summary}</p>
+                    </div>
+                    <span className="format-chip">{plan.format}</span>
+                  </div>
+                  {plan.coverMediaId ? (
+                    <div className="plan-cover">
+                      <img src={state?.media.find((item) => item.id === plan.coverMediaId)?.url} alt="成片封面" />
+                      <span>{locale === "zh-CN" ? "当前封面" : "Current cover"}</span>
+                    </div>
+                  ) : null}
+                  <div className="clip-strip">
+                    {plan.clips.map((part, index) => {
+                      const source = state?.media.find(
+                        (m) => m.id === part.sourceId,
+                      );
+                      return (
+                        <button
+                          type="button"
+                          className="clip-card"
+                          key={`${part.sourceId}-${index}`}
+                          onClick={() => {
+                            setSelectedClip(index);
+                            setSelectedVideo(null);
+                            setTimelineCurrentPlan(true);
+                            nav("timeline");
+                          }}
+                        >
+                          <span className="clip-visual">
+                            {source ? (
+                              <Visual item={source} />
+                            ) : (
+                              <Film size={22} />
+                            )}
+                            <b>{index + 1}</b>
+                          </span>
+                          <span>{source?.name || `片段 ${index + 1}`}</span>
+                          <small>{duration(part.end - part.start)}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    className="plan-open"
+                    onClick={() => {
+                      setSelectedVideo(null);
+                      setTimelineCurrentPlan(true);
+                      nav("timeline");
+                    }}
+                  >
+                    {t.viewTimeline}
+                    <ChevronRight size={17} />
+                  </button>
+                </section>
+              ) : null}
+              <div ref={chatEnd} />
+            </div>
+            <form
+              className="composer-wrap"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void send();
+              }}
+            >
+              {state?.mode === "unconfigured" ? (
+                <div className="model-warning">
+                  <Settings2 size={14} />
+                  {t.unconfigured}
+                </div>
+              ) : null}
+              {uploadProgress !== null ? (
+                <div className="upload-progress" role="status">
+                  {locale === "zh-CN" ? "上传素材" : "Uploading"} ·{" "}
+                  {uploadProgress}%
+                  <span style={{ width: `${uploadProgress}%` }} />
+                </div>
+              ) : null}
+              {error ? (
+                <div className="error-banner" role="alert">
+                  <span>{error}</span>
+                  <button
+                    type="button"
+                    onClick={() => setError("")}
+                    aria-label="关闭"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : null}
+              <div className="composer">
+                {attachments.length ? (
+                  <div className="composer-attachments">
+                    {attachments.map((id) => {
+                      const item = state?.media.find((m) => m.id === id);
+                      return item ? (
+                        <div className="composer-attachment" key={id}>
+                          <Visual item={item} />
+                          <span>
+                            {item.name}
+                            <small>
+                              {locale === "zh-CN" ? "本地素材" : "Local media"}
+                            </small>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAttachments((ids) =>
+                                ids.filter((x) => x !== id),
+                              )
+                            }
+                            aria-label={`移除 ${item.name}`}
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                ) : null}
+                <textarea
+                  ref={composerInput}
+                  aria-label={t.input}
+                  placeholder={t.input}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={attachments.length ? 2 : 1}
+                  maxLength={3000}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      !e.shiftKey &&
+                      !e.nativeEvent.isComposing
+                    ) {
+                      e.preventDefault();
+                      void send();
+                    }
+                  }}
+                />
+                <div className="composer-actions">
+                  <button
+                    type="button"
+                    className="attach-button"
+                    onClick={() => fileInput.current?.click()}
+                    aria-label={t.add}
+                  >
+                    <ImagePlus size={21} />
+                  </button>
+                  <button
+                    type="button"
+                    className="library-button"
+                    onClick={() => nav("media")}
+                    aria-label={t.media}
+                  >
+                    <Library size={18} />
+                  </button>
+                  <button
+                    type="submit"
+                    className="send-button"
+                    disabled={
+                      pending ||
+                      uploadProgress !== null ||
+                      !prompt.trim()
+                    }
+                    aria-label="发送"
+                  >
+                    <Send size={20} fill="currentColor" />
+                  </button>
+                </div>
+              </div>
+            </form>
+          </>
+        ) : null}
+        {page === "history" ? (
+          <section className="subpage-content">
+            {state?.sessions.length ? (
+              <div className="history-list">
+                {state.sessions
+                  .slice()
+                  .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+                  .map((item) => (
+                    <button
+                      type="button"
+                      className={`history-row ${item.id === state.activeSessionId ? "active" : ""}`}
+                      key={item.id}
+                      onClick={() => void activate(item.id)}
+                    >
+                      <span className="history-icon">
+                        <Sparkles size={18} />
+                      </span>
+                      <span>
+                        <strong>{item.title || t.newChat}</strong>
+                        <small>
+                          {date(item.updatedAt, locale)} ·{" "}
+                          {item.messages.length}{" "}
+                          {locale === "zh-CN" ? "条消息" : "messages"}
+                        </small>
+                      </span>
+                      <ChevronRight size={17} />
+                    </button>
+                  ))}
+              </div>
             ) : (
-              <button className="download-button" type="button" disabled><ArrowDownToLine size={20} />下载视频</button>
+              <div className="empty-state">
+                <Clock3 size={28} />
+                <h2>{t.emptyHistory}</h2>
+                <button type="button" onClick={() => void newChat()}>
+                  {t.newChat}
+                </button>
+              </div>
             )}
-          </div>
-          <p className="mode-hint"><Film size={13} /> {project?.mode === 'pi' ? 'Pi Agent 已连接 · FFmpeg 本地生成' : '当前为演示剪辑规则 · 配置模型密钥后启用 Pi Agent'}</p>
-        </section>
-
-        {error ? <div role="alert" className="error-banner"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="关闭提示"><X size={16} /></button></div> : null}
-
-        <form className="composer-wrap" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}>
-          <div className="composer">
-            <button type="button" className="attach-button" onClick={() => fileInput.current?.click()} aria-label="添加视频"><ImagePlus size={23} /></button>
-            <input aria-label="剪辑要求" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="继续说说你想怎么剪…" maxLength={1000} />
-            <button type="submit" className="send-button" aria-label="发送剪辑要求" disabled={!prompt.trim() || Boolean(busy)}><Send size={21} fill="currentColor" /></button>
-          </div>
-        </form>
+          </section>
+        ) : null}
+        {page === "media" ? (
+          <section className="subpage-content">
+            <div className="filter-tabs" role="tablist">
+              {(["all", "video", "image", "audio"] as const).map((value) => (
+                <button
+                  type="button"
+                  key={value}
+                  role="tab"
+                  aria-selected={filter === value}
+                  className={filter === value ? "active" : ""}
+                  onClick={() => setFilter(value)}
+                >
+                  {value === "all"
+                    ? t.all
+                    : value === "video"
+                      ? t.videos
+                      : value === "image"
+                        ? t.images
+                        : t.audios}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="add-row"
+              onClick={() => fileInput.current?.click()}
+            >
+              <Plus size={19} />
+              {t.add}
+            </button>
+            {state?.media.filter((m) => filter === "all" || m.kind === filter)
+              .length ? (
+              <div className="media-list">
+                {state.media
+                  .filter((m) => filter === "all" || m.kind === filter)
+                  .map((item) => (
+                    <article className="library-item" key={item.id}>
+                      <button
+                        type="button"
+                        className="library-preview"
+                        onClick={() => setMediaPreview(item)}
+                        aria-label={`预览 ${item.name}`}
+                      >
+                        <Visual item={item} />
+                      </button>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <small>
+                          {item.kind} · {date(item.createdAt, locale)}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttachments((ids) =>
+                            ids.includes(item.id) ? ids : [...ids, item.id],
+                          );
+                          nav("chat");
+                        }}
+                        aria-label={`选择 ${item.name}`}
+                      >
+                        <Plus size={19} />
+                      </button>
+                      <button
+                        type="button"
+                        className="delete-media"
+                        onClick={() => void remove(item.id)}
+                        aria-label={`删除 ${item.name}`}
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </article>
+                  ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <Library size={28} />
+                <h2>{t.emptyMedia}</h2>
+              </div>
+            )}
+          </section>
+        ) : null}
+        {page === "films" ? (
+          <section className="subpage-content">
+            {state?.jobs
+              .filter((j) => j.kind === "export" && j.status !== "succeeded")
+              .map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  locale={locale}
+                  retry={(id) =>
+                    void mutate(`/api/jobs/${id}/retry`, "POST", {})
+                  }
+                />
+              ))}
+            {state?.artifacts.some((a) => a.kind === "video") ? (
+              <div className="film-list">
+                {state.artifacts
+                  .filter((a) => a.kind === "video")
+                  .slice()
+                  .reverse()
+                  .map((item) => (
+                    <div className="film-library-card" key={item.id}>
+                      <ArtifactCard
+                        artifact={item}
+                        locale={locale}
+                        open={open}
+                      />
+                      <div className="film-meta">
+                        <span>
+                          V{item.version} · {date(item.createdAt, locale)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void activate(item.sessionId)}
+                        >
+                          {t.back}
+                          <ArrowRight size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : !state?.jobs.some((j) => j.kind === "export") ? (
+              <div className="empty-state">
+                <Film size={28} />
+                <h2>{t.emptyFilms}</h2>
+                <p>
+                  {locale === "zh-CN"
+                    ? "在对话中要求生成成片，完成后可在这里下载。"
+                    : "Ask for an export in chat, then download it here."}
+                </p>
+                <button type="button" onClick={() => nav("chat")}>
+                  {t.back}
+                </button>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+        {page === "settings" ? (
+          <section className="subpage-content settings-page">
+            <div className="setting-group">
+              <h2>{t.model}</h2>
+              <select
+                value={state?.settings.defaultModelId || ""}
+                onChange={(e) =>
+                  void patch({ defaultModelId: e.target.value || null })
+                }
+                aria-label={t.model}
+              >
+                <option value="">
+                  {locale === "zh-CN" ? "自动选择" : "Auto select"}
+                </option>
+                {state?.models
+                  .filter((m) => m.kind === "text" && m.enabled)
+                  .map((m) => (
+                    <option value={m.id} key={m.id}>
+                      {m.name} · {m.provider}
+                    </option>
+                  ))}
+              </select>
+              <p>
+                {locale === "zh-CN"
+                  ? "用于之后创建的新对话。"
+                  : "Used for new chats."}
+              </p>
+            </div>
+            <div className="setting-group">
+              <h2>{t.language}</h2>
+              <div className="choice-row">
+                <button
+                  type="button"
+                  className={locale === "zh-CN" ? "selected" : ""}
+                  onClick={() => void patch({ language: "zh-CN" })}
+                >
+                  简体中文
+                </button>
+                <button
+                  type="button"
+                  className={locale === "en-US" ? "selected" : ""}
+                  onClick={() => void patch({ language: "en-US" })}
+                >
+                  English
+                </button>
+              </div>
+            </div>
+            <div className="setting-group">
+              <h2>{t.background}</h2>
+              <div className="background-options">
+                <button
+                  type="button"
+                  className={!background ? "selected" : ""}
+                  onClick={() => void patch({ chatBackground: null })}
+                >
+                  <span className="bg-swatch default" />
+                  {t.default}
+                </button>
+                <button
+                  type="button"
+                  className={
+                    state?.settings.chatBackground === "/travel-cover.png"
+                      ? "selected"
+                      : ""
+                  }
+                  onClick={() =>
+                    void patch({ chatBackground: "/travel-cover.png" })
+                  }
+                >
+                  <span className="bg-swatch landscape" />
+                  {t.landscape}
+                </button>
+                <button
+                  type="button"
+                  className={
+                    state?.settings.chatBackground === "local" ? "selected" : ""
+                  }
+                  onClick={() => bgInput.current?.click()}
+                >
+                  <span className="bg-swatch custom">+</span>
+                  {t.custom}
+                </button>
+              </div>
+              {background ? (
+                <button
+                  type="button"
+                  className="reset-link"
+                  onClick={() => void patch({ chatBackground: null })}
+                >
+                  {t.reset}
+                </button>
+              ) : null}
+            </div>
+            <div className="setting-group setting-links">
+              <button type="button" onClick={() => nav("terms")}>
+                {t.terms}
+                <ChevronRight size={18} />
+              </button>
+              <button type="button" onClick={() => nav("privacy")}>
+                {t.privacy}
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </section>
+        ) : null}
+        {page === "profile" ? (
+          <section className="subpage-content">
+            <div className="profile-card">
+              <span>
+                <UserRound size={30} />
+              </span>
+              <h2>{t.visitor}</h2>
+              <p>{t.visitorHint}</p>
+            </div>
+          </section>
+        ) : null}
+        {page === "terms" || page === "privacy" ? (
+          <section className="subpage-content legal-page">
+            <h2>{page === "terms" ? t.terms : t.privacy}</h2>
+            <p>{t.legalDraft}</p>
+            {page === "terms" ? (
+              locale === "zh-CN" ? (
+                <>
+                  <h3>使用与内容</h3>
+                  <p>轻剪目前是单机原型。你应只上传自己有权使用的素材，并检查生成文案、图片、音频和成片是否适合发布。生成结果可能不准确，需要人工确认。</p>
+                  <h3>任务与文件</h3>
+                  <p>剪辑、生成和导出任务可能因为素材格式、网络或模型服务失败。你可以在页面重试；下载前请确认最终文件可以播放。删除素材可能使关联方案无法再次导出。</p>
+                </>
+              ) : (
+                <>
+                  <h3>Content and use</h3>
+                  <p>Qingjian is currently a local prototype. Upload only media you have the right to use, and review generated text, images, audio, and videos before publishing. Results may be inaccurate.</p>
+                  <h3>Jobs and files</h3>
+                  <p>Jobs may fail because of media formats, network issues, or model services. You can retry them in the app. Check exported files before use. Removing media may prevent an edit plan from being exported again.</p>
+                </>
+              )
+            ) : locale === "zh-CN" ? (
+              <>
+                <h3>本地存储</h3>
+                <p>上传素材、对话、任务和生成结果保存在运行轻剪服务的设备上。对话背景的本地图片保存在当前浏览器中。清除浏览器数据不会自动删除服务端文件。</p>
+                <h3>模型处理</h3>
+                <p>为完成请求，服务端会将对话内容和必要的素材信息发送至已配置的文本模型；生成图片时会发送图片描述及你选择的参考图；生成口播时会发送口播文本。模型 API Key 由服务端保存，不会显示在普通页面中。</p>
+                <h3>删除</h3>
+                <p>你可以在素材库删除素材。当前原型没有账号和跨设备同步，也没有批量清除所有本机数据的页面。</p>
+              </>
+            ) : (
+              <>
+                <h3>Local storage</h3>
+                <p>Uploads, chats, jobs, and generated results are stored on the device running Qingjian. A custom chat background is stored in this browser. Clearing browser data does not delete server files.</p>
+                <h3>Model processing</h3>
+                <p>The server sends chat content and necessary media information to the configured text model. Image generation sends a description and any reference image you select. Narration generation sends the script. API keys stay on the server and are not shown in the app.</p>
+                <h3>Deletion</h3>
+                <p>You can remove media from the library. This prototype has no accounts, cross-device sync, or bulk data deletion page.</p>
+              </>
+            )}
+          </section>
+        ) : null}
+        {page === "timeline" ? (
+          <section className="timeline-page">
+            <div className="timeline-preview">
+              {timelineUrl ? (
+                <video
+                  key={timelineUrl}
+                  ref={previewVideo}
+                  src={timelineUrl}
+                  poster={timelineArtifact?.coverUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  onLoadedMetadata={() => {
+                    if (!timelineArtifact && clip && previewVideo.current)
+                      previewVideo.current.currentTime = clip.start;
+                  }}
+                />
+              ) : (
+                <div className="no-preview">
+                  <Film size={31} />
+                  <span>
+                    {locale === "zh-CN" ? "暂无视频预览" : "No video preview"}
+                  </span>
+                </div>
+              )}
+            </div>
+            {timelinePlan ? (
+              <div className="timeline-panel">
+                <div className="timeline-ruler">
+                  <span>00:00</span>
+                  <span>{duration(timelinePlan.targetSeconds / 2)}</span>
+                  <span>{duration(timelinePlan.targetSeconds)}</span>
+                </div>
+                <div className="timeline-clips">
+                  {timelinePlan.clips.map((part, index) => {
+                    const source = state?.media.find(
+                      (m) => m.id === part.sourceId,
+                    );
+                    return (
+                      <button
+                        type="button"
+                        className={selectedClip === index ? "selected" : ""}
+                        key={`${part.sourceId}-${index}`}
+                        onClick={() => {
+                          setSelectedClip(index);
+                          if (timelineArtifact && previewVideo.current)
+                            previewVideo.current.currentTime = timelinePlan.clips
+                              .slice(0, index)
+                              .reduce((sum, p) => sum + p.end - p.start, 0);
+                        }}
+                      >
+                        <span className="timeline-visual">
+                          {source ? <Visual item={source} /> : null}
+                        </span>
+                        <span>
+                          {locale === "zh-CN" ? "片段" : "Clip"} {index + 1}
+                        </span>
+                        <small>{duration(part.end - part.start)}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+                {timelineArtifact?.hasNarration ? (
+                  <div className="audio-track">
+                    <Music2 size={18} />
+                    {t.audio}
+                    <span />
+                  </div>
+                ) : null}
+              </div>
+            ) : timelineArtifact ? (
+              <p className="timeline-snapshot-note">
+                {locale === "zh-CN"
+                  ? "此历史成片未保存片段快照，仍可播放和下载。"
+                  : "This older export has no saved clip snapshot. You can still play and download it."}
+              </p>
+            ) : null}
+            <div className="quick-tools">
+              {[
+                ["裁剪", "把当前片段裁剪到 "],
+                ["分割", "在当前片段的 "],
+                ["排序", "调整片段顺序为 "],
+                ["配音", "为这支短片生成口播并配音"],
+              ].map(([name, value], index) => (
+                <button
+                  type="button"
+                  key={name}
+                  onClick={() =>
+                    shortcut(
+                      locale === "zh-CN"
+                        ? value
+                        : [
+                            "Trim this clip to ",
+                            "Split this clip at ",
+                            "Reorder clips as ",
+                            "Add narration and voiceover",
+                          ][index],
+                    )
+                  }
+                >
+                  {index === 3 ? (
+                    <Mic2 size={22} />
+                  ) : index === 2 ? (
+                    <Library size={22} />
+                  ) : (
+                    <WandSparkles size={22} />
+                  )}
+                  <span>
+                    {locale === "zh-CN"
+                      ? name
+                      : ["Trim", "Split", "Reorder", "Voiceover"][index]}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="timeline-chat-button"
+              onClick={() =>
+                shortcut(
+                  locale === "zh-CN"
+                    ? "请根据当前方案生成成片"
+                    : "Export the current plan as a video",
+                )
+              }
+            >
+              {t.makeVideo}
+              <ArrowRight size={18} />
+            </button>
+            {timelineArtifact ? (
+              <a
+                className="timeline-download"
+                href={timelineArtifact.downloadUrl}
+                download={timelineArtifact.name}
+              >
+                <ArrowDownToLine size={17} />
+                {t.download}
+              </a>
+            ) : null}
+          </section>
+        ) : null}
+        <input
+          ref={fileInput}
+          type="file"
+          accept="video/*,image/*"
+          multiple
+          hidden
+          onChange={(e) => upload(e.target.files)}
+        />
+        <input
+          ref={bgInput}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => backgroundFile(e.target.files?.[0])}
+        />
       </main>
-
-      {showHistory ? <div className="dialog-backdrop" onClick={() => setShowHistory(false)}><section className="history-dialog" role="dialog" aria-modal="true" aria-label="对话历史" onClick={(event) => event.stopPropagation()}><div className="dialog-header"><h2>对话历史</h2><button onClick={() => setShowHistory(false)} aria-label="关闭对话历史"><X size={20} /></button></div>{messages.length ? <div className="history-list">{messages.map((message, index) => <p key={index}><strong>{message.role === 'user' ? '你' : '轻剪'}</strong>{message.text}</p>)}</div> : <div className="history-empty"><Sparkles size={25} /><p>还没有剪辑对话</p><span>上传视频后，用一句话开始创作</span></div>}</section></div> : null}
+      {drawer ? (
+        <div className="drawer-overlay" onClick={() => setDrawer(false)}>
+          <nav
+            className="drawer"
+            aria-label="主菜单"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="drawer-heading">
+              <strong>
+                轻剪<span>.</span>
+              </strong>
+              <button
+                type="button"
+                onClick={() => setDrawer(false)}
+                aria-label="关闭"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <button
+              type="button"
+              className="drawer-new"
+              onClick={() => void newChat()}
+            >
+              <Plus size={19} />
+              {t.newChat}
+            </button>
+            <div className="drawer-links">
+              {menuPages.map((item, index) => (
+                <button
+                  type="button"
+                  key={item}
+                  className={page === item ? "active" : ""}
+                  onClick={() => nav(item)}
+                >
+                  {
+                    [
+                      <Sparkles size={19} />,
+                      <Library size={19} />,
+                      <Film size={19} />,
+                      <Clock3 size={19} />,
+                      <UserRound size={19} />,
+                      <Settings2 size={19} />,
+                    ][index]
+                  }
+                  <span>{t[item]}</span>
+                  {page === item ? <i /> : null}
+                </button>
+              ))}
+            </div>
+            <a className="admin-link" href="/admin">
+              {locale === "zh-CN" ? "管理后台" : "Admin console"}
+              <ChevronRight size={16} />
+            </a>
+            <div className="drawer-footer">
+              <UserRound size={17} />
+              {t.visitor}
+            </div>
+          </nav>
+        </div>
+      ) : null}
+      {mediaPreview ? (
+        <div className="preview-overlay" onClick={() => setMediaPreview(null)}>
+          <div
+            className="media-preview-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={mediaPreview.name}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="close-preview"
+              onClick={() => setMediaPreview(null)}
+              aria-label="关闭"
+            >
+              <X size={22} />
+            </button>
+            {mediaPreview.kind === "video" ? (
+              <video src={mediaPreview.url} controls playsInline />
+            ) : mediaPreview.kind === "audio" ? (
+              <audio src={mediaPreview.url} controls />
+            ) : (
+              <img src={mediaPreview.url} alt={mediaPreview.name} />
+            )}
+            <strong>{mediaPreview.name}</strong>
+          </div>
+        </div>
+      ) : null}
+      {imagePreview ? (
+        <div className="preview-overlay" onClick={() => setImagePreview(null)}>
+          <div
+            className="image-preview-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={imagePreview.name}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setImagePreview(null)}
+              aria-label="关闭"
+            >
+              <X size={22} />
+            </button>
+            <img src={imagePreview.url} alt={imagePreview.name} />
+            <a href={imagePreview.downloadUrl} download={imagePreview.name}>
+              <ArrowDownToLine size={17} />
+              {t.download}
+            </a>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
