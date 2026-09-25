@@ -147,8 +147,8 @@ async function performJob(job: Job): Promise<void> {
     return normalizePlanSummary({ ...plan, coverMediaId: candidate.id });
   };
   const removeNarration = /(不要|移除|去掉|关闭).{0,8}(口播|配音|旁白|音频)|(?:remove|mute|disable|without).{0,24}(?:narration|voiceover|voice-over|audio)/i.test(prompt);
-  const selectNarration = /(把|将|用|带|带上|含|包含|加上|加入|合入|配上).{0,12}(口播|配音|旁白|音频)|(?:口播|配音|旁白|音频).{0,12}(加入|合入|配上)|(?:add|include|mix|with).{0,24}(?:narration|voiceover|voice-over|audio)/i.test(prompt);
   const bgmIntent = /(?:bgm|背景音乐|配乐|background music)/i.test(prompt);
+  const selectNarration = !bgmIntent && /(把|将|用|带|带上|含|包含|加上|加入|合入|配上).{0,12}(口播|配音|旁白|音频)|(?:口播|配音|旁白|音频).{0,12}(加入|合入|配上)|(?:add|include|mix|with).{0,24}(?:narration|voiceover|voice-over|audio)/i.test(prompt);
   const removeBgm = /(?:不要|移除|去掉|关闭|取消|remove|without|mute).{0,12}(?:bgm|背景音乐|配乐|background music)/i.test(prompt);
   if (removeBgm) delete state.bgmBySession[session.id];
   else if (bgmIntent) state.bgmBySession[session.id] = attached.find((item) => item.kind === 'audio')?.id || 'preset';

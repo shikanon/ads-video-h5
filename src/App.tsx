@@ -1452,7 +1452,14 @@ export default function App() {
                 {timelineArtifact?.hasNarration ? (
                   <div className="audio-track">
                     <Music2 size={18} />
-                    {t.audio}
+                    {locale === "zh-CN" ? "口播音轨" : "Narration track"}
+                    <span />
+                  </div>
+                ) : null}
+                {timelineArtifact?.hasBgm ? (
+                  <div className="audio-track">
+                    <Music2 size={18} />
+                    {locale === "zh-CN" ? "背景音乐" : "Background music"}
                     <span />
                   </div>
                 ) : null}

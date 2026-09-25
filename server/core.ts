@@ -153,7 +153,7 @@ export async function createPlanWithPi(prompt: string, config: ModelConfig, medi
     },
   };
   const context = history.slice(-12).map((message) => `${message.role === 'user' ? '用户' : '助手'}：${message.text}`).join('\n');
-  const agent = getAgent(config, [tool], `你是轻剪的剪辑 Agent。必须调用 propose_edit 提交方案，不能只用文字回答。只能使用给出的 sourceId。每段至少 0.5 秒、最多 8 段、总长不超过 60 秒。shots 是 FFmpeg 自动检测的镜头边界；用户要求按分镜剪辑时，优先使用这些边界，并按用户要求选择、排序或拼接。图片素材只能从 0 秒开始，可持续 0.5 至 60 秒；${allowImageClips ? '用户明确要求图片进入视频画面，可用图片作片段。' : '用户没有明确要求图片进入视频画面，clips 只能用视频，图片只能作封面或视觉参考。'}如果当前消息附加图片且用户说“这张图片”或“所选图片”，必须使用所附图片的 ID，不能换成素材库中其他图片。视频片段不得超过素材时长。coverMediaId 仅在用户要求设置封面时填写真实图片 ID。默认 9:16，约 15 秒。没有画面理解能力，不可声称看过视频内容、识别精彩镜头或语义场景。素材：${JSON.stringify(sources)}。当前消息附件：${JSON.stringify(attached.map((item) => ({ id: item.id, name: item.name, kind: item.kind })))}。上一版方案：${JSON.stringify(previous)}。最近对话：${context}`);
+  const agent = getAgent(config, [tool], `你是轻剪的剪辑 Agent。必须调用 propose_edit 提交方案，不能只用文字回答。只能使用给出的 sourceId。每段至少 0.5 秒、最多 8 段、总长不超过 60 秒。shots 是 FFmpeg 自动检测的镜头边界；用户要求按分镜剪辑时，优先使用这些边界，并按用户要求选择、排序或拼接。系统有内置轻快背景音乐，即使用户没有上传音频，也可在导出时加入 BGM；不要声称必须先补充音乐素材。图片素材只能从 0 秒开始，可持续 0.5 至 60 秒；${allowImageClips ? '用户明确要求图片进入视频画面，可用图片作片段。' : '用户没有明确要求图片进入视频画面，clips 只能用视频，图片只能作封面或视觉参考。'}如果当前消息附加图片且用户说“这张图片”或“所选图片”，必须使用所附图片的 ID，不能换成素材库中其他图片。视频片段不得超过素材时长。coverMediaId 仅在用户要求设置封面时填写真实图片 ID。默认 9:16，约 15 秒。没有画面理解能力，不可声称看过视频内容、识别精彩镜头或语义场景。素材：${JSON.stringify(sources)}。当前消息附件：${JSON.stringify(attached.map((item) => ({ id: item.id, name: item.name, kind: item.kind })))}。上一版方案：${JSON.stringify(previous)}。最近对话：${context}`);
   await agent.prompt(prompt);
   if (!proposed) throw new Error('Pi Agent 没有提交有效剪辑方案，请换一种说法重试。');
   return proposed;
