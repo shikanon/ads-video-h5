@@ -1,6 +1,6 @@
 # 轻剪服务端部署
 
-当前测试部署位于 `https://101.47.18.93/qingjian/`，由 Nginx 转发到本机 `127.0.0.1:8787`。`/` 仍属于服务器原有服务。轻剪的所有路径均在 `/qingjian/` 下；访问需要 Nginx Basic Auth，管理后台还需要独立管理员令牌。
+当前测试域名为 `https://video.shikanon.com/`，由 Nginx 转发到本机 `127.0.0.1:8787`；原 IP 入口 `https://101.47.18.93/qingjian/` 继续可用，IP 的 `/` 仍属于服务器原有服务。域名首页展示轻剪，静态资源和 API 仍使用 `/qingjian/` 路径；访问需要 Nginx Basic Auth，管理后台还需要独立管理员令牌。
 
 ## 目录与服务
 
@@ -8,8 +8,12 @@
 - 持久数据：`/data/qingjian`（管理员令牌、加密模型配置、素材、成片）
 - systemd：`qingjian.service`
 - Nginx：`/etc/nginx/sites-enabled/video-posttrain-lab` 中的 `/qingjian/` 路由
+- 域名站点：[`ops/nginx/video.shikanon.com.conf`](../ops/nginx/video.shikanon.com.conf) 安装为 `/etc/nginx/sites-enabled/qingjian-domain`，不改动 IP 站点
+- 域名证书：`/etc/letsencrypt/live/video.shikanon.com/`，由服务器现有 `vpl-cert-renew.timer` 续期并在成功续期后重载 Nginx
 
 服务只监听 loopback，不直接开放 8787。`PUBLIC_BASE_PATH=/qingjian` 为 API 返回的素材与成片链接加前缀，`VITE_BASE_PATH=/qingjian/` 控制构建产物的资源路径。
+
+域名 DNS 的 A 记录指向 `101.47.18.93`。HTTP 的 `/.well-known/acme-challenge/` 从 `/var/www/acme` 提供证书验证，其余 HTTP 请求跳转到 HTTPS。域名专用 HTTPS server block 复用轻剪预览的 Basic Auth 和现有管理令牌；根路径只显示轻剪，`/qingjian/` 保持资源和 API 路径。更新 Nginx 前先备份现有配置并执行 `nginx -t`，成功后再 `systemctl reload nginx`；检查证书 SAN、域名根路径、受保护 API、原 IP 入口及原有站点。
 
 ## 更新
 
