@@ -68,7 +68,7 @@ systemctl restart qingjian
 
 healthy=0
 for _ in $(seq 1 30); do
-  if curl --fail --silent --output /dev/null http://127.0.0.1:8787/api/state \
+  if curl --fail --silent --output /dev/null http://127.0.0.1:8787/api/health \
     && curl --fail --silent --output /dev/null http://127.0.0.1:8787/qingjian/; then
     healthy=1
     break

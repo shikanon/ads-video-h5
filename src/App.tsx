@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -29,6 +29,7 @@ import type {
   ChatMessage,
   Job,
   MediaItem,
+  PublicUser,
   Session,
 } from "./types";
 
@@ -83,8 +84,7 @@ const labels = {
     landscape: "暖色风景",
     custom: "本地图片",
     reset: "恢复默认",
-    visitor: "访客",
-    visitorHint: "当前为本机使用。账号登录与跨设备同步尚未开放。",
+    visitorHint: "你的会话、素材和成片仅在此帐号中可见。",
     unconfigured: "模型尚未配置，请管理员在后台设置。",
     legalDraft: "本地原型说明 · 正式上线前需由运营方确认完整条款",
     viewTimeline: "查看剪辑拼接",
@@ -127,9 +127,7 @@ const labels = {
     landscape: "Warm landscape",
     custom: "Local image",
     reset: "Reset",
-    visitor: "Guest",
-    visitorHint:
-      "Local use only. Accounts and cross-device sync are not available yet.",
+    visitorHint: "Your chats, media and exports are private to this account.",
     unconfigured: "No model is configured. Set one up in the admin console.",
     legalDraft: "Local prototype notice · final terms require operator review before launch",
     viewTimeline: "View timeline",
@@ -483,7 +481,7 @@ function Message({
     </article>
   );
 }
-export default function App() {
+export default function App({ user, onLogout }: { user: PublicUser; onLogout: () => Promise<void> }) {
   const [state, setState] = useState<AppState | null>(null);
   const [page, setPage] = useState<Page>("chat");
   const [drawer, setDrawer] = useState(false);
@@ -492,6 +490,10 @@ export default function App() {
   const [pending, setPending] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordPending, setPasswordPending] = useState(false);
   const [filter, setFilter] = useState<"all" | "video" | "image" | "audio">(
     "all",
   );
@@ -501,7 +503,7 @@ export default function App() {
   const [timelineCurrentPlan, setTimelineCurrentPlan] = useState(false);
   const [selectedClip, setSelectedClip] = useState(0);
   const [localBackground, setLocalBackground] = useState<string | null>(() =>
-    localStorage.getItem("qingjian-local-bg"),
+    localStorage.getItem(`qingjian-local-bg:${user.id}`),
   );
   const drafts = useRef<Record<string, { prompt: string; attachments: string[] }>>({});
   const stateRef = useRef<AppState | null>(null);
@@ -764,12 +766,25 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = () => {
       const value = String(reader.result || "");
-      localStorage.setItem("qingjian-local-bg", value);
+      localStorage.setItem(`qingjian-local-bg:${user.id}`, value);
       setLocalBackground(value);
       void patch({ chatBackground: "local" });
     };
     reader.readAsDataURL(file);
     if (bgInput.current) bgInput.current.value = "";
+  }
+  async function changePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPasswordMessage("");
+    setPasswordPending(true);
+    try {
+      const response = await fetch(apiPath("/api/auth/password"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "修改失败，请重试。");
+      setCurrentPassword(""); setNewPassword("");
+      setPasswordMessage(locale === "zh-CN" ? "密码已更新。" : "Password updated.");
+    } catch (cause) { setPasswordMessage(cause instanceof Error ? cause.message : "修改失败。"); }
+    finally { setPasswordPending(false); }
   }
   const plan = session?.plan;
   const timelineArtifact = timelineCurrentPlan ? null : selectedVideo || latestVideo;
@@ -1398,9 +1413,18 @@ export default function App() {
               <span>
                 <UserRound size={30} />
               </span>
-              <h2>{t.visitor}</h2>
+              <h2>{user.displayName}</h2>
+              <strong className="profile-email">{user.email}</strong>
               <p>{t.visitorHint}</p>
             </div>
+            <form className="profile-password" onSubmit={(event) => void changePassword(event)}>
+              <h3>{locale === "zh-CN" ? "修改密码" : "Change password"}</h3>
+              <label>{locale === "zh-CN" ? "当前密码" : "Current password"}<input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
+              <label>{locale === "zh-CN" ? "新密码（至少 10 位）" : "New password (10+ characters)"}<input type="password" autoComplete="new-password" minLength={10} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></label>
+              {passwordMessage ? <p role="status">{passwordMessage}</p> : null}
+              <button type="submit" disabled={passwordPending}>{passwordPending ? "…" : locale === "zh-CN" ? "更新密码" : "Update password"}</button>
+            </form>
+            <button className="profile-logout" type="button" onClick={() => void onLogout()}>{locale === "zh-CN" ? "退出登录" : "Sign out"}</button>
           </section>
         ) : null}
         {page === "terms" || page === "privacy" ? (
@@ -1411,14 +1435,14 @@ export default function App() {
               locale === "zh-CN" ? (
                 <>
                   <h3>使用与内容</h3>
-                  <p>轻剪目前是单机原型。你应只上传自己有权使用的素材，并检查生成文案、图片、音频和成片是否适合发布。生成结果可能不准确，需要人工确认。</p>
+                  <p>你应只上传自己有权使用的素材，并检查生成文案、图片、音频和成片是否适合发布。生成结果可能不准确，需要人工确认。</p>
                   <h3>任务与文件</h3>
                   <p>剪辑、生成和导出任务可能因为素材格式、网络或模型服务失败。你可以在页面重试；下载前请确认最终文件可以播放。删除素材可能使关联方案无法再次导出。</p>
                 </>
               ) : (
                 <>
                   <h3>Content and use</h3>
-                  <p>Qingjian is currently a local prototype. Upload only media you have the right to use, and review generated text, images, audio, and videos before publishing. Results may be inaccurate.</p>
+                  <p>Upload only media you have the right to use, and review generated text, images, audio, and videos before publishing. Results may be inaccurate.</p>
                   <h3>Jobs and files</h3>
                   <p>Jobs may fail because of media formats, network issues, or model services. You can retry them in the app. Check exported files before use. Removing media may prevent an edit plan from being exported again.</p>
                 </>
@@ -1430,7 +1454,7 @@ export default function App() {
                 <h3>模型处理</h3>
                 <p>为完成请求，服务端会将对话内容和必要的素材信息发送至已配置的文本模型；生成图片时会发送图片描述及你选择的参考图；生成口播时会发送口播文本。模型 API Key 由服务端保存，不会显示在普通页面中。</p>
                 <h3>删除</h3>
-                <p>你可以在素材库删除素材。当前原型没有账号和跨设备同步，也没有批量清除所有本机数据的页面。</p>
+                <p>你可以在素材库删除素材。帐号数据保存在轻剪服务端，目前没有批量清除全部帐号数据的页面。</p>
               </>
             ) : (
               <>
@@ -1439,7 +1463,7 @@ export default function App() {
                 <h3>Model processing</h3>
                 <p>The server sends chat content and necessary media information to the configured text model. Image generation sends a description and any reference image you select. Narration generation sends the script. API keys stay on the server and are not shown in the app.</p>
                 <h3>Deletion</h3>
-                <p>You can remove media from the library. This prototype has no accounts, cross-device sync, or bulk data deletion page.</p>
+                <p>You can remove media from the library. Account data is stored on the Qingjian server. There is currently no bulk account-data deletion page.</p>
               </>
             )}
           </section>
@@ -1682,7 +1706,7 @@ export default function App() {
             </a>
             <div className="drawer-footer">
               <UserRound size={17} />
-              {t.visitor}
+              {user.displayName}
             </div>
           </nav>
         </div>

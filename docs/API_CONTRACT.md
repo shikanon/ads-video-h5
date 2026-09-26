@@ -4,6 +4,12 @@
 
 | 方法与路径 | 请求 | 响应/行为 |
 | --- | --- | --- |
+| `GET /api/health` | 无 | 无敏感信息的服务健康状态 |
+| `GET /api/auth/me` | Cookie | 当前帐号资料；未登录返回 401 |
+| `POST /api/auth/register` | `{displayName,email,password}` | 创建帐号并设置登录 Cookie |
+| `POST /api/auth/login` | `{email,password}` | 验证密码并设置登录 Cookie |
+| `POST /api/auth/logout` | Cookie | 撤销当前登录会话并清除 Cookie |
+| `PATCH /api/auth/password` | `{currentPassword,newPassword}` | 更新密码并撤销该帐号的其他会话 |
 | `GET /api/state` | 无 | `AppState`，包含当前会话、素材、任务和成片 |
 | `POST /api/sessions` | `{}` | `AppState`，创建并激活新对话 |
 | `POST /api/sessions/:id/activate` | `{}` | `AppState`，切换历史会话 |
@@ -23,6 +29,8 @@
 | `PATCH /api/settings` | `Partial<AppSettings>` | `AppState`，默认模型/语言/聊天背景 |
 
 音乐接口使用本次浏览器抓到的路由、请求体及常见浏览器头重放，不会复用个人 Cookie 或绕过 Cloudflare。上游拒绝时返回可识别的错误；见 [抓包记录及限制](BGM_SOURCE_RESEARCH.md)。
+
+除健康状态、注册、登录与登录状态查询外，普通 `/api` 接口都要求登录 Cookie。会话、素材、任务、成片及其文件按帐号校验归属；跨帐号 ID 返回 404。服务端拒绝来源不符的跨站写请求。管理后台继续使用独立管理员令牌，不使用普通帐号 Cookie。
 
 需要复用测试浏览器会话时，使用 `scripts/music-browser-client.js` 中的 `window.qingjianMusicBrowser` 方法，并在对应站点原页面上下文运行；`fetch` 由 Chrome 自动附带同源凭据，脚本不读取 Cookie。服务端 `/api/music/*` 与浏览器上下文方法是两条不同传输路径，当前网络仅浏览器会话路径已完成 24bit 的搜索到音频流读取验证。
 

@@ -1757,3 +1757,4 @@ a {
   font-size: 12px;
 }
 .loading-state svg { color: #f27b5d; }
+.profile-email{display:block;margin-top:4px;font-size:13px;font-weight:500;color:#8a8586;overflow-wrap:anywhere}.profile-password{display:flex;flex-direction:column;gap:13px;margin-top:27px}.profile-password h3{margin:0 0 2px;font-size:17px}.profile-password label{display:flex;flex-direction:column;gap:8px;color:#6d6c73;font-size:13px}.profile-password input{height:45px;border:1px solid #e9e2dd;border-radius:11px;padding:0 12px;background:#fff;outline:none;color:#252935}.profile-password input:focus{border-color:#fa7253}.profile-password p{margin:0;font-size:13px;color:#d25740}.profile-password button{height:45px;border:0;border-radius:11px;background:#fa7253;color:white;font-weight:650}.profile-logout{width:100%;height:45px;margin-top:22px;border:1px solid #e7dfda;border-radius:11px;background:#fff;color:#765f58;font-weight:600}

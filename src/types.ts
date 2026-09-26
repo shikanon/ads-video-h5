@@ -4,6 +4,7 @@ export type ArtifactKind = 'image' | 'audio' | 'video';
 export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ModelKind = 'text' | 'image' | 'audio';
+export interface PublicUser { id: string; email: string; displayName: string; }
 
 export interface Shot {
   start: number;
@@ -12,6 +13,7 @@ export interface Shot {
 }
 
 export interface MediaItem {
+  ownerId?: string;
   id: string;
   name: string;
   mimeType: string;
@@ -56,6 +58,7 @@ export interface MusicSearch {
 }
 
 export interface Artifact {
+  ownerId?: string;
   id: string;
   sessionId: string;
   messageId: string;
@@ -77,6 +80,7 @@ export interface Artifact {
 }
 
 export interface Job {
+  ownerId?: string;
   id: string;
   sessionId: string;
   messageId: string;
@@ -90,6 +94,7 @@ export interface Job {
 }
 
 export interface Session {
+  ownerId?: string;
   id: string;
   title: string;
   modelId: string | null;
