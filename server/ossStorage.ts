@@ -25,7 +25,7 @@ export function createOssStorage() {
     async put(ownerId: string, category: AssetCategory, id: string, file: string, mimeType: string) {
       const name = key(ownerId, category, id);
       const headers = { 'Content-Type': mimeType, 'x-oss-object-acl': 'private' };
-      if ((await stat(file)).size >= 5 * 1024 * 1024) await client.multipartUpload(name, file, { partSize: 5 * 1024 * 1024, parallel: 2, timeout: 180_000, mime: mimeType, headers });
+      if ((await stat(file)).size >= 5 * 1024 * 1024) await client.multipartUpload(name, file, { partSize: 512 * 1024, parallel: 2, timeout: 180_000, mime: mimeType, headers });
       else await client.put(name, file, { timeout: 180_000, mime: mimeType, headers });
     },
     async ensure(ownerId: string, category: AssetCategory, id: string, file: string) {
