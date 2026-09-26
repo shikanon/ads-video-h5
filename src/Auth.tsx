@@ -1,12 +1,13 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
-import { ArrowRight, Eye, EyeOff, Film, ImagePlus, LockKeyhole, Mail, MessageCircle, UserRound, Download } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, ImagePlus, LockKeyhole, Mail, MessageCircle, Pause, Play, UserRound, Download } from 'lucide-react';
 import type { PublicUser } from './types';
 import './auth.css';
 
 const Workspace = lazy(() => import('./App'));
 type Screen = 'landing' | 'login' | 'register';
 const apiPath = (url: string) => `${import.meta.env.BASE_URL.replace(/\/$/, '')}${url}`;
-const heroImage = `${import.meta.env.BASE_URL}travel-cover.png`;
+const heroImage = `${import.meta.env.BASE_URL}amalfi-coast-hero.jpg`;
+const heroVideo = `${import.meta.env.BASE_URL}amalfi-coast-loop.mp4`;
 function screenFromUrl(): Screen {
   return window.location.hash === '#/login' ? 'login' : window.location.hash === '#/register' ? 'register' : 'landing';
 }
@@ -19,6 +20,7 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -78,15 +80,20 @@ export default function Auth() {
           <button className="auth-primary" type="button" onClick={() => go('register')}>开始创作 <ArrowRight size={20} /></button>
           <div className="auth-signin-hint">已有帐号？<button type="button" onClick={() => go('login')}>直接登录</button></div>
         </div>
-        <div className="auth-hero-scene" aria-label="暖色旅行视频与对话剪辑示意">
-          <div className="auth-video-frame"><img src={heroImage} alt="日落海边旅行视频示意" /><span className="auth-play"><Film size={22} /></span><span className="auth-video-caption">把旅行，剪成想分享的故事</span></div>
+        <div className="auth-hero-scene" aria-label="海岸旅行视频与对话剪辑示意">
+          <div className={`auth-video-frame${previewPlaying ? ' is-playing' : ''}`}>
+            <img src={heroImage} alt="阳光下的地中海海岸、蓝色海面与山间建筑" />
+            {previewPlaying ? <video src={heroVideo} autoPlay muted loop playsInline poster={heroImage} onError={() => setPreviewPlaying(false)} aria-label="海岸与花朵旅行视频预览" /> : null}
+            <button className="auth-play" type="button" onClick={() => setPreviewPlaying((value) => !value)} aria-label={previewPlaying ? '暂停视频预览' : '播放视频预览'}>{previewPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={22} fill="currentColor" />}</button>
+            <span className="auth-video-caption">把旅行，剪成想分享的故事</span>
+          </div>
           <div className="auth-bubble auth-bubble-one">帮我剪一支 15 秒旅行短片</div>
           <div className="auth-bubble auth-bubble-two">好的，先从最动人的镜头开始 ✦</div>
           <div className="auth-timeline" style={{ backgroundImage: `url(${heroImage})` }}><span /><span /><span /><span /></div>
         </div>
         <div className="auth-features"><div><MessageCircle size={22} /><strong>对话剪辑</strong><span>说出想法，持续调整</span></div><div><ImagePlus size={22} /><strong>口播与配图</strong><span>创作所需，一起完成</span></div><div><Download size={22} /><strong>成片下载</strong><span>预览确认，保存本地</span></div></div>
       </main> : <main className="auth-form-layout">
-        <div className="auth-form-visual"><img src={heroImage} alt="暖色海边旅行画面" /><div><span>轻剪.</span><p>好视频，从一句话开始。</p></div></div>
+        <div className="auth-form-visual"><img src={heroImage} alt="阳光下的地中海海岸风景" /><div><span>轻剪.</span><p>好视频，从一句话开始。</p></div></div>
         <section className="auth-form-section">
           <div className="auth-form-intro"><h1>{screen === 'login' ? '欢迎回来' : '创建轻剪帐号'}</h1><p>{screen === 'login' ? '继续用对话，剪出好视频。' : '加入轻剪，开启你的创作之旅。'}</p></div>
           <form onSubmit={submit} className="auth-form">
