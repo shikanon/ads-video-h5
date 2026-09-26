@@ -1,6 +1,6 @@
 # 轻剪 HTML 视频特效
 
-后台 `/admin` →「HTML 视频特效」可编辑特效源码和默认文案，预览时间轴，渲染 MP4 并下载。对话内输入「生成阳光开场特效视频，标题『去看更大的世界』」可直接调用启用模板；生成视频归属当前会话，同时进入成片库和素材库。
+本地后台 `/admin`（线上 `https://video.shikanon.com/qingjian/admin`）→「HTML 视频特效」可编辑特效源码和默认文案，预览时间轴，渲染 MP4 并下载。对话内输入「生成阳光开场特效视频，标题『去看更大的世界』」可直接调用启用模板；生成视频归属当前会话，同时进入成片库和素材库。
 
 ## 动效组件与模板
 
@@ -14,7 +14,7 @@
 | 照片推镜 | 真人照片缓慢平移与信息卡片 | [photo-drift.mp4](../public/effects/photo-drift.mp4) |
 | 故事收束 | 片尾文案和品牌落版 | [story-outro.mp4](../public/effects/story-outro.mp4) |
 
-三个片段拼成的 17 秒展示片：[showcase.mp4](../public/effects/showcase.mp4)。它由 HTML 渲染后的片段交叉淡入拼接而成。
+三个片段拼成的 17 秒展示片：[showcase.mp4](../public/effects/showcase.mp4)。它由 HTML 渲染后的片段交叉淡入拼接，并叠加轻剪原创的内置配乐。
 
 演示文件可由 `pnpm tsx scripts/render-effect-demos.ts` 重建。照片演示采用仓库已有的海岸素材，素材来自产品 Landing。默认模板无照片时显示渐变底色；正式使用前检查所选 HTTPS 图片是否能被渲染进视频。
 
@@ -26,4 +26,4 @@
 
 ## 运行环境
 
-服务端需 Node、HyperFrames、GSAP、FFmpeg、FFprobe 和 Chrome/Chromium。Node 依赖由 `pnpm install --frozen-lockfile` 安装；渲染浏览器在部署主机上运行 `pnpm hyperframes browser ensure` 准备，`pnpm hyperframes doctor` 检查。生产机器已有 FFmpeg/FFprobe 时直接使用。浏览器缓存不应放在 Git 仓库，也不应在带密钥的构建环境里执行第三方安装脚本。
+服务端需 Node、HyperFrames、GSAP、FFmpeg、FFprobe 和 Chrome/Chromium。Node 依赖由 `pnpm install --frozen-lockfile` 安装；线上渲染浏览器应按 [部署说明](DEPLOYMENT.md) 以 `qingjian` 服务帐号安装到持久缓存，`pnpm hyperframes doctor` 可辅助检查。生产机器已有 FFmpeg/FFprobe 时直接使用。浏览器缓存不应放在 Git 仓库，也不应在带密钥的构建环境里执行第三方安装脚本。

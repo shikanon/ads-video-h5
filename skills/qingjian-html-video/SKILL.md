@@ -24,7 +24,7 @@ node skills/qingjian-html-video/scripts/render.mjs --list
 node skills/qingjian-html-video/scripts/render.mjs --effect sunny-opening --title "去看更大的世界" --subtitle "沿着海风走" --output ./data/my-opening.mp4
 ```
 
-默认连接本机 `http://127.0.0.1:8787`。使用远程服务时传 `--server https://video.shikanon.com`；远程地址必须是 HTTPS。照片模板可传 `--image-url`，地址需为公开可读取的 HTTPS 图片。普通用户也可在 H5 对话里直接说「生成照片推镜特效视频」并附加已上传图片。
+默认连接本机 `http://127.0.0.1:8787`。使用远程服务时传 `--server https://video.shikanon.com/qingjian`；远程地址必须是 HTTPS。照片模板可传 `--image-url`，地址需为公开可读取的 HTTPS 图片。普通用户也可在 H5 对话里直接说「生成照片推镜特效视频」并附加已上传图片。
 
 ## 边界
 

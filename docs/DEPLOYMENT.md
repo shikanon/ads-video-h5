@@ -20,6 +20,8 @@
 
 在服务器上确认 Git SHA 后，执行 `git fetch`、切换到目标 SHA、`pnpm install --frozen-lockfile`、`VITE_BASE_PATH=/qingjian/ pnpm build`，再 `systemctl restart qingjian`。更新后检查 `systemctl status qingjian`、`curl http://127.0.0.1:8787/api/health`，并确认未登录的 `/qingjian/api/state` 返回 401。不要把 `/data/qingjian` 放进 Git，也不要在日志里打印 API Key 或临时密码。
 
+HTML 视频特效渲染还需要 Chrome Headless Shell。首次部署或 HyperFrames 升级后，以服务帐号在 `/opt/ads-video-h5` 执行 `runuser -u qingjian -- env HOME=/data/qingjian HYPERFRAMES_SKIP_SKILLS=1 ./node_modules/.bin/hyperframes browser ensure`。浏览器缓存在 `/data/qingjian/.cache/hyperframes`，与持久数据同盘，不随代码部署删除；系统需能找到 `ffmpeg` 和 `ffprobe`。用线上后台渲染一个模板并检查 MP4 画幅、时长、下载，才算该功能可用。
+
 ### 自动部署（CD）
 
 服务器使用 `qingjian-cd.timer` 每分钟检查公开仓库的 `origin/main`，由 root 拥有的 `/usr/local/sbin/qingjian-cd` 执行部署。脚本只接受当前部署提交的快进更新，先把目标提交解包到临时目录，再用无权读取 `/data/qingjian` 的 `qingjian-build` 用户安装依赖并构建。构建成功后切换源码、`dist/` 和 `node_modules/`，重启服务并检查本机 API 与 H5；失败时一并恢复先前提交、静态产物和依赖。模型密钥、素材和成片始终留在 `/data/qingjian`。这条链路不需要把服务器密码或 SSH 私钥放进 GitHub Secrets。

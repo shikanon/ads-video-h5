@@ -2,6 +2,7 @@ import { copyFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createEffectStore } from '../server/htmlEffects';
+import { writePresetBgm } from '../server/bgm';
 
 const root = process.cwd();
 const store = createEffectStore(path.join(root, 'data'));
@@ -18,12 +19,14 @@ for (const effect of store.list().filter((item) => (selected.length ? selected :
   await copyFile(render.file, destination);
   console.log(destination);
 }
-if (!selected.length) {
+if (!selected.length || selected.includes('--showcase-only')) {
   const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
   const inputs = ['sunny-opening', 'photo-drift', 'story-outro'].flatMap((id) => ['-i', path.join(outputDir, `${id}.mp4`)]);
+  const bgm = path.join(root, 'data', 'effects-showcase-bgm.wav');
+  await writePresetBgm(bgm);
   const destination = path.join(outputDir, 'showcase.mp4');
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', ...inputs, '-filter_complex', '[0:v][1:v]xfade=transition=fade:duration=0.5:offset=5.5[v1];[v1][2:v]xfade=transition=fade:duration=0.5:offset=11[v2]', '-map', '[v2]', '-r', '24', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', destination], { stdio: 'inherit' });
+    const child = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', ...inputs, '-stream_loop', '-1', '-i', bgm, '-filter_complex', '[0:v][1:v]xfade=transition=fade:duration=0.5:offset=5.5[v1];[v1][2:v]xfade=transition=fade:duration=0.5:offset=11[v2];[3:a]atrim=duration=17,afade=t=out:st=16.2:d=0.8,volume=0.45[a]', '-map', '[v2]', '-map', '[a]', '-r', '24', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', destination], { stdio: 'inherit' });
     child.on('error', reject); child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`FFmpeg exited ${code}`)));
   });
   console.log(destination);
