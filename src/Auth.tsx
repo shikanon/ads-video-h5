@@ -98,7 +98,7 @@ export default function Auth() {
             <button className="auth-primary" type="submit" disabled={pending}>{pending ? '请稍候…' : screen === 'login' ? '登录' : '注册并开始'} <ArrowRight size={19} /></button>
           </form>
           <p className="auth-switch">{screen === 'login' ? '还没有帐号？' : '已有帐号？'} <button type="button" onClick={() => go(screen === 'login' ? 'register' : 'login')}>{screen === 'login' ? '注册帐号' : '登录'}</button></p>
-          {screen === 'register' ? <p className="auth-form-note">注册即表示你了解：素材与对话保存在轻剪服务端，生成请求会发送至所配置的模型服务。</p> : null}
+          {screen === 'register' ? <p className="auth-form-note">素材与对话保存在轻剪服务端；生成请求会发送至所配置的模型服务。</p> : null}
         </section>
       </main>}
       <footer className="auth-footer"><span>轻剪 · 让创作更简单</span><span>© 2026 轻剪</span></footer>
