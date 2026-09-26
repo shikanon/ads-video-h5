@@ -21,6 +21,8 @@ finish() {
   if (( status != 0 && switched == 1 )); then
     echo "Deploy failed; restoring ${previous_sha:0:12}" >&2
     git -C "$repo" checkout --detach --quiet "$previous_sha" || true
+    if [[ -d "$repo/node_modules" ]]; then mv "$repo/node_modules" "$build_dir/failed-node-modules"; fi
+    if [[ -d "$backup_dir/node_modules" ]]; then mv "$backup_dir/node_modules" "$repo/node_modules"; fi
     if [[ -n "$backup_dir" && -d "$backup_dir/dist" ]]; then
       if [[ -d "$repo/dist" ]]; then mv "$repo/dist" "$build_dir/failed-dist"; fi
       mv "$backup_dir/dist" "$repo/dist"
@@ -61,6 +63,8 @@ backup_dir=$(mktemp -d "$cache/backup.XXXXXXXX")
 if [[ -d "$repo/dist" ]]; then cp -a "$repo/dist" "$backup_dir/dist"; fi
 switched=1
 git -C "$repo" checkout --detach --quiet "$target_sha"
+if [[ -d "$repo/node_modules" ]]; then mv "$repo/node_modules" "$backup_dir/node_modules"; fi
+mv "$build_dir/node_modules" "$repo/node_modules"
 if [[ -d "$repo/dist" ]]; then mv "$repo/dist" "$build_dir/old-dist"; fi
 mv "$build_dir/dist" "$repo/dist"
 chown -R root:root "$repo/dist"
