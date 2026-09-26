@@ -404,6 +404,41 @@ a {
 .job-card.succeeded .job-status {
   color: #288761;
 }
+.job-complete {
+  padding: 8px 10px;
+  box-shadow: none;
+  background: #fffaf7;
+}
+.job-complete summary,
+.plan-card summary {
+  list-style: none;
+  cursor: pointer;
+}
+.job-complete summary::-webkit-details-marker,
+.plan-card summary::-webkit-details-marker {
+  display: none;
+}
+.job-complete .job-head {
+  min-height: 26px;
+}
+.job-complete .job-icon {
+  width: 24px;
+  height: 24px;
+}
+.disclosure-chevron {
+  flex: none;
+  color: #a48477;
+  transition: transform .2s ease;
+}
+details[open] > summary .disclosure-chevron {
+  transform: rotate(180deg);
+}
+.job-complete-detail {
+  margin: 8px 3px 2px 32px;
+  color: #77717a;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .progress-track {
   height: 5px;
   overflow: hidden;
@@ -522,6 +557,23 @@ a {
   aspect-ratio: 16/10;
   object-fit: cover;
 }
+.video-card .artifact-visual video {
+  object-fit: contain;
+  background: #1f1b19;
+}
+.video-card[data-format="9:16"] {
+  width: min(100%, 252px);
+}
+.video-card[data-format="9:16"] .artifact-visual video {
+  max-height: none;
+  aspect-ratio: 9/16;
+}
+.video-card[data-format="16:9"] .artifact-visual video {
+  aspect-ratio: 16/9;
+}
+.video-card[data-format="1:1"] .artifact-visual video {
+  aspect-ratio: 1;
+}
 .play-mark {
   position: absolute;
   inset: 50% auto auto 50%;
@@ -555,14 +607,64 @@ a {
 .artifact-caption a {
   color: #ef7457;
   flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  background: #fff3ed;
 }
 .plan-card {
   background: #fff;
   border: 1px solid #ebe9ec;
   border-radius: 20px;
-  padding: 14px;
+  padding: 11px 13px;
   margin: 10px 0 12px;
   box-shadow: 0 7px 24px #2d241c09;
+}
+.plan-summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 43px;
+}
+.plan-summary-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: #ef7457;
+  background: #fff0e9;
+}
+.plan-summary-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+.plan-summary-copy strong {
+  font-size: 13px;
+  color: #39333a;
+}
+.plan-summary-copy small {
+  font-size: 11px;
+  color: #77717a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-summary .format-chip {
+  align-self: center;
+}
+.plan-content {
+  padding-top: 14px;
+  margin-top: 10px;
+  border-top: 1px solid #f0ebe8;
+}
+.plan-content .plan-open {
+  margin-top: 8px;
 }
 .section-head {
   display: flex;
@@ -870,6 +972,7 @@ a {
 .media-list,
 .film-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 9px;
 }
 .history-intro {
@@ -891,6 +994,7 @@ a {
   gap: 10px;
   padding: 12px;
   width: 100%;
+  min-width: 0;
   border: 1px solid #ede9e7;
   border-radius: 13px;
   background: #fff;
@@ -932,8 +1036,8 @@ a {
   font-size: 12px;
 }
 .history-row small {
-  font-size: 11px;
-  color: #a0a0a7;
+  font-size: 12px;
+  color: #77717a;
   margin-top: 4px;
 }
 .history-row > svg {
@@ -1023,16 +1127,16 @@ a {
   font-size: 12px;
 }
 .library-item small {
-  color: #a0a0a6;
-  font-size: 10px;
+  color: #77717a;
+  font-size: 12px;
   margin-top: 5px;
 }
 .library-item button {
   display: grid;
   place-items: center;
   flex: none;
-  width: 29px;
-  height: 29px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 8px;
   background: #fff0e9;
@@ -1045,39 +1149,80 @@ a {
 }
 .film-list {
   margin-top: 12px;
+  grid-template-columns: minmax(0, 1fr);
 }
 .film-library-card {
+  display: grid;
+  grid-template-columns: minmax(104px, 38%) minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  column-gap: 10px;
   border: 1px solid #ece8e8;
   border-radius: 17px;
   background: #fff;
   padding: 7px;
 }
 .film-library-card .artifact-card {
+  grid-row: 1 / 4;
   width: 100%;
   border: 0;
   box-shadow: none;
   padding: 0;
 }
+.film-library-card .artifact-caption {
+  padding-top: 4px;
+  font-size: 11px;
+}
+.film-library-card .artifact-caption > span {
+  display: none;
+}
 .film-library-card .artifact-visual img,
 .film-library-card .artifact-visual video {
   height: 180px;
+  object-fit: contain;
+}
+.film-library-card .video-card[data-format="9:16"] .artifact-visual {
+  width: 100%;
+  aspect-ratio: auto;
+  margin-inline: auto;
+}
+.film-library-card .video-card[data-format="9:16"] .artifact-visual video {
+  height: 180px;
 }
 .film-meta {
+  display: grid;
+  gap: 4px;
+  padding: 3px 4px 0;
+  color: #6c6871;
+  font-size: 12px;
+}
+.film-title {
+  color: #2f2c32;
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.film-session {
+  margin: 4px 4px 6px;
+  color: #77717a;
+  font-size: 11px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.film-back {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 5px 3px;
-  color: #9a9ba3;
-  font-size: 11px;
-}
-.film-meta button {
-  display: flex;
-  align-items: center;
   gap: 3px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 9px;
   border: 0;
-  background: none;
+  border-radius: 10px;
+  background: #fff3ed;
   color: #ee7355;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 .settings-page {
@@ -1238,8 +1383,29 @@ a {
 .timeline-page {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: 16px 15px calc(20px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.timeline-scroll-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 15px 20px;
+}
+.timeline-primary-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  padding: 9px 15px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid #eee9e7;
+  background: #fffdfa;
+  box-shadow: 0 -8px 20px #2d241c08;
+}
+.timeline-primary-actions > * {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
 }
 .timeline-snapshot-note {
   margin: 14px 0;
@@ -1259,6 +1425,16 @@ a {
   background: #222;
   display: grid;
   place-items: center;
+}
+.timeline-preview[data-format="9:16"] {
+  width: min(100%, 240px, 30.375dvh);
+  aspect-ratio: 9/16;
+  margin-inline: auto;
+}
+.timeline-preview[data-format="1:1"] {
+  width: min(100%, 330px);
+  aspect-ratio: 1;
+  margin-inline: auto;
 }
 .timeline-preview video {
   width: 100%;
@@ -1607,6 +1783,9 @@ a {
   font-weight: 700;
 }
 @media (max-width: 359px) {
+  .video-card[data-format="9:16"] {
+    width: min(100%, 190px);
+  }
   .topbar {
     padding: 0 13px;
   }

@@ -13,6 +13,7 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.87.1",
     "@earendil-works/pi-ai": "^0.87.1",
+    "ali-oss": "^6.23.0",
     "express": "^5.1.0",
     "ffmpeg-static": "^5.2.0",
     "lucide-react": "^0.468.0",
@@ -22,6 +23,7 @@
     "typebox": "^1.0.50"
   },
   "devDependencies": {
+    "@types/ali-oss": "^6.23.3",
     "@types/express": "^5.0.0",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.0.0",

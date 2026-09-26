@@ -46,7 +46,7 @@ pnpm dev
 - 对话中的生成任务按消息意图执行。复合请求如同时生成口播和图片，建议分两条消息发送。
 - 封面作为 H5 预览海报保存；当前 MP4 文件本身不嵌入封面图作为首帧。
 - 文本模型可在后台添加不同厂商的兼容模型；图片和音频生成目前使用内置的火山服务协议，后台可调整模型 ID 与官方服务地址。
-- 本地素材和产物保存在 `data/`；删除素材可能使引用它的方案无法再次导出，已生成的成片版本仍可下载。
+- 配置 OSS 后，素材、生成图片、口播音频、成片、封面和分镜缩略图持久保存在私有 Bucket；`data/` 保留 FFmpeg 处理缓存与帐号/任务状态。旧数据可用 `pnpm tsx scripts/sync-oss.ts` 迁移。未配置 OSS 时使用本地存储。删除素材可能使引用它的方案无法再次导出，已生成的成片版本仍可下载。
 
 参见 [PRD](docs/PRD.md)、[开发任务清单](docs/DEVELOPMENT_TASKS.md)、[接口契约](docs/API_CONTRACT.md)、[体验验收记录](docs/ACCEPTANCE.md)、[部署说明](docs/DEPLOYMENT.md)、[功能展示视觉稿](docs/UI_STATES.md) 和 [登录视觉稿](docs/auth-concept.png)。
 

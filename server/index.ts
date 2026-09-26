@@ -2,6 +2,7 @@ import express, { type ErrorRequestHandler, type Response } from 'express';
 import multer from 'multer';
 import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AppSettings, AppState, Artifact, ChatMessage, Job, JobKind, MediaItem, Session } from '../src/types';
@@ -12,9 +13,13 @@ import { getDefaultTextModelId, getModelConfig, listPublicModels } from './model
 import { generateAudio, generateImage, ProviderError } from './providers';
 import { mountAdminRoutes } from './adminRoutes';
 import { createAuth, userOf, type PublicUser } from './auth';
+import { createOssStorage } from './ossStorage';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
+const ossEnvFile = path.join(dataDir, 'oss.env');
+if (existsSync(ossEnvFile)) process.loadEnvFile(ossEnvFile);
+const oss = createOssStorage();
 const mediaDir = path.join(dataDir, 'media');
 const artifactDir = path.join(dataDir, 'artifacts');
 const exportDir = path.join(dataDir, 'exports');
@@ -137,8 +142,11 @@ async function addArtifact(session: Session, job: Job, kind: Artifact['kind'], n
   try {
     await writeFile(artifactPath, bytes, { mode: 0o600 });
     await copyFile(artifactPath, mediaPath);
+    await oss?.put(session.ownerId!, 'artifacts', id, artifactPath, mimeType);
+    await oss?.put(session.ownerId!, 'media', mediaId, mediaPath, mimeType);
   } catch (error) {
     await Promise.all([rm(artifactPath, { force: true }), rm(mediaPath, { force: true })]);
+    if (oss) await Promise.allSettled([oss.remove(session.ownerId!, 'artifacts', id), oss.remove(session.ownerId!, 'media', mediaId)]);
     throw error;
   }
   const version = state.artifacts.filter((item) => item.sessionId === session.id && item.kind === kind).length + 1;
@@ -167,6 +175,7 @@ async function performJob(job: Job): Promise<void> {
       try {
         await writeFile(file, downloaded.bytes, { mode: 0o600 });
         const duration = await probeAudio(file);
+        await oss?.put(job.ownerId!, 'media', id, file, 'audio/mpeg');
         state.media.push({ id, ownerId: job.ownerId, name: downloaded.name, mimeType: 'audio/mpeg', kind: 'audio', duration, url: `/api/media/${id}`, createdAt: now(), origin: 'imported', sourceUrl: url.toString() });
         state.bgmBySession[session.id] = id;
       } catch (error) { await rm(file, { force: true }); throw error; }
@@ -243,11 +252,22 @@ async function performJob(job: Job): Promise<void> {
     if (bgmId && !bgmFile) throw new Error('背景音乐素材已被移除，请重新选择。');
     if (bgmId === 'preset') await writePresetBgm(bgmFile!);
     const plan = session.plan;
+    for (const clip of plan.clips) await oss?.ensure(job.ownerId!, 'media', clip.sourceId, path.join(mediaDir, clip.sourceId));
+    if (narrationId && narrationFile) await oss?.ensure(job.ownerId!, 'artifacts', narrationId, narrationFile);
+    if (bgmId && bgmId !== 'preset' && bgmFile) await oss?.ensure(job.ownerId!, 'media', bgmId, bgmFile);
+    if (plan.coverMediaId) await oss?.ensure(job.ownerId!, 'media', plan.coverMediaId, path.join(mediaDir, plan.coverMediaId));
     const result = await renderPlan(plan, media, mediaDir, exportDir, narrationFile, bgmFile);
     const id = result.id;
     const cover = plan.coverMediaId ? media.find((item) => item.id === plan.coverMediaId && item.kind === 'image') : undefined;
     if (plan.coverMediaId && !cover) throw new Error('封面图片素材已被移除，请重新指定。');
     if (cover) await copyFile(path.join(mediaDir, cover.id), path.join(exportDir, `${id}-cover.${extFor(cover.mimeType)}`));
+    try {
+      await oss?.put(job.ownerId!, 'exports', id, result.file, 'video/mp4');
+      if (cover) await oss?.put(job.ownerId!, 'covers', id, path.join(exportDir, `${id}-cover.${extFor(cover.mimeType)}`), cover.mimeType);
+    } catch (error) {
+      if (oss) await Promise.allSettled([oss.remove(job.ownerId!, 'exports', id), oss.remove(job.ownerId!, 'covers', id)]);
+      throw error;
+    }
     const version = state.artifacts.filter((item) => item.sessionId === session.id && item.kind === 'video').length + 1;
     const artifact: Artifact = { id, ownerId: job.ownerId, sessionId: session.id, messageId: message.id, kind: 'video', name: `轻剪成片-v${version}.mp4`, url: `/api/artifacts/${id}`, downloadUrl: `/api/download/${id}`, createdAt: now(), version, duration: plan.targetSeconds, format: plan.format, plan: structuredClone(plan), hasNarration: Boolean(narrationFile), hasBgm: Boolean(bgmFile), ...(cover ? { coverUrl: `/api/artifacts/${id}/cover`, coverMimeType: cover.mimeType } : {}) };
     state.artifacts.push(artifact); job.artifactId = id;
@@ -262,6 +282,7 @@ async function performJob(job: Job): Promise<void> {
     const imagePrompt = await createImagePromptWithPi(prompt, textConfig, history);
     job.progress = 35; await saveState();
     const referenceItem = attached.find((item) => item.kind === 'image');
+    if (referenceItem) await oss?.ensure(job.ownerId!, 'media', referenceItem.id, path.join(mediaDir, referenceItem.id));
     const reference = referenceItem ? { bytes: await readFile(path.join(mediaDir, referenceItem.id)), mimeType: referenceItem.mimeType } : undefined;
     const result = await generateImage(imagePrompt, imageConfig, reference);
     const artifact = await addArtifact(session, job, 'image', `轻剪图片-${new Date().toISOString().slice(0, 10)}.${extFor(result.mimeType)}`, result.bytes, result.mimeType);
@@ -387,6 +408,7 @@ app.post('/api/media', upload.array('files', 6), async (request, response) => {
   const files = (request.files || []) as Express.Multer.File[];
   if (!files.length) return response.status(400).json({ error: '请选择视频、图片或音频文件。' });
   const moved: string[] = [];
+  const stored: string[] = [];
   try {
     const items: MediaItem[] = [];
     for (const file of files) {
@@ -398,10 +420,16 @@ app.post('/api/media', upload.array('files', 6), async (request, response) => {
       kind = file.mimetype.startsWith('video/') ? 'video' : file.mimetype.startsWith('audio/') ? 'audio' : 'image';
       const shots = kind === 'video' ? await detectShots(file.path, duration!, file.filename) : undefined;
       const target = path.join(mediaDir, file.filename); await rename(file.path, target); moved.push(target);
+      await oss?.put(user.id, 'media', file.filename, target, mimeType);
+      if (oss) stored.push(file.filename);
       items.push({ id: file.filename, ownerId: user.id, name: shortName(file.originalname), mimeType, kind, ...(duration ? { duration } : {}), ...(shots ? { shots } : {}), url: `/api/media/${file.filename}`, createdAt: now(), origin: 'upload' });
     }
     state.media.push(...items); await saveState(); response.json(await publicState(user));
-  } catch (error) { await Promise.all([...files.map((file) => file.path), ...moved].map((file) => rm(file, { force: true }))); response.status(400).json({ error: error instanceof Error ? error.message : '素材解析失败。' }); }
+  } catch (error) {
+    await Promise.all([...files.map((file) => file.path), ...moved].map((file) => rm(file, { force: true })));
+    if (oss) await Promise.allSettled(stored.map((id) => oss.remove(user.id, 'media', id)));
+    response.status(400).json({ error: error instanceof Error ? error.message : '素材解析或存储失败。' });
+  }
 });
 app.delete('/api/media/:id', async (request, response) => {
   const user = userOf(request);
@@ -410,9 +438,17 @@ app.delete('/api/media/:id', async (request, response) => {
   state.media = state.media.filter((media) => media.id !== item.id);
   for (const session of state.sessions) if (owned(session, user.id) && (session.plan?.clips.some((clip) => clip.sourceId === item.id) || session.plan?.coverMediaId === item.id)) session.plan = null;
   for (const artifact of state.artifacts) if (owned(artifact, user.id) && artifact.mediaId === item.id) artifact.mediaId = undefined;
-  await saveState(); await rm(path.join(mediaDir, item.id), { force: true }); response.json(await publicState(user));
+  await saveState(); await rm(path.join(mediaDir, item.id), { force: true });
+  try { await oss?.remove(user.id, 'media', item.id); } catch { console.error('OSS media cleanup failed for', item.id); }
+  response.json(await publicState(user));
 });
-app.get('/api/media/:id', (request, response) => { const item = state.media.find((media) => media.id === request.params.id && owned(media, userOf(request).id)); if (!item) return response.status(404).json({ error: '素材不存在。' }); response.type(item.mimeType).sendFile(path.join(mediaDir, item.id)); });
+app.get('/api/media/:id', async (request, response) => {
+  const item = state.media.find((media) => media.id === request.params.id && owned(media, userOf(request).id));
+  if (!item) return response.status(404).json({ error: '素材不存在。' });
+  const file = path.join(mediaDir, item.id);
+  try { await oss?.ensure(userOf(request).id, 'media', item.id, file); response.type(item.mimeType).sendFile(file); }
+  catch { response.status(502).json({ error: '素材暂时无法从对象存储读取。' }); }
+});
 app.get('/api/media/:id/shots/:index', async (request, response) => {
   const item = state.media.find((media) => media.id === request.params.id && media.kind === 'video' && owned(media, userOf(request).id));
   const index = Number(request.params.index);
@@ -420,7 +456,12 @@ app.get('/api/media/:id/shots/:index', async (request, response) => {
   const shot = item.shots[index];
   const thumbnail = path.join(mediaDir, `${item.id}-shot-${index}.jpg`);
   try {
-    await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-ss', String((shot.start + shot.end) / 2), '-i', path.join(mediaDir, item.id), '-frames:v', '1', '-vf', 'scale=320:-2', thumbnail], 30_000);
+    if (oss && await oss.exists(userOf(request).id, 'shots', `${item.id}-${index}`)) await oss.ensure(userOf(request).id, 'shots', `${item.id}-${index}`, thumbnail);
+    else {
+      await oss?.ensure(userOf(request).id, 'media', item.id, path.join(mediaDir, item.id));
+      await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-ss', String((shot.start + shot.end) / 2), '-i', path.join(mediaDir, item.id), '-frames:v', '1', '-vf', 'scale=320:-2', thumbnail], 30_000);
+      await oss?.put(userOf(request).id, 'shots', `${item.id}-${index}`, thumbnail, 'image/jpeg');
+    }
     response.type('image/jpeg').sendFile(thumbnail);
   } catch { response.status(500).json({ error: '缩略图生成失败。' }); }
 });
@@ -443,13 +484,15 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   await saveState(); response.json(await publicState(user)); void processQueue();
 });
 function artifactFile(artifact: Artifact) { if (artifact.kind === 'video') return path.join(exportDir, `${artifact.id}.mp4`); const filename = state.artifactFiles[artifact.id]; return filename ? path.join(artifactDir, path.basename(filename)) : null; }
-app.get('/api/artifacts/:id/cover', (request, response) => {
+app.get('/api/artifacts/:id/cover', async (request, response) => {
   const artifact = state.artifacts.find((item) => item.id === request.params.id && item.kind === 'video' && owned(item, userOf(request).id));
   if (!artifact?.coverMimeType) return response.status(404).json({ error: '封面不存在。' });
-  response.type(artifact.coverMimeType).sendFile(path.join(exportDir, `${artifact.id}-cover.${extFor(artifact.coverMimeType)}`));
+  const file = path.join(exportDir, `${artifact.id}-cover.${extFor(artifact.coverMimeType)}`);
+  try { await oss?.ensure(userOf(request).id, 'covers', artifact.id, file); response.type(artifact.coverMimeType).sendFile(file); }
+  catch { response.status(502).json({ error: '封面暂时无法读取。' }); }
 });
-app.get('/api/artifacts/:id', (request, response) => { const artifact = state.artifacts.find((item) => item.id === request.params.id && owned(item, userOf(request).id)); const file = artifact && artifactFile(artifact); if (!artifact || !file) return response.status(404).json({ error: '产物不存在。' }); response.sendFile(file); });
-app.get('/api/download/:id', (request, response) => { const artifact = state.artifacts.find((item) => item.id === request.params.id && owned(item, userOf(request).id)); const file = artifact && artifactFile(artifact); if (!artifact || !file) return response.status(404).json({ error: '产物不存在。' }); response.download(file, artifact.name); });
+app.get('/api/artifacts/:id', async (request, response) => { const artifact = state.artifacts.find((item) => item.id === request.params.id && owned(item, userOf(request).id)); const file = artifact && artifactFile(artifact); if (!artifact || !file) return response.status(404).json({ error: '产物不存在。' }); try { await oss?.ensure(userOf(request).id, artifact.kind === 'video' ? 'exports' : 'artifacts', artifact.id, file); response.sendFile(file); } catch { response.status(502).json({ error: '产物暂时无法读取。' }); } });
+app.get('/api/download/:id', async (request, response) => { const artifact = state.artifacts.find((item) => item.id === request.params.id && owned(item, userOf(request).id)); const file = artifact && artifactFile(artifact); if (!artifact || !file) return response.status(404).json({ error: '产物不存在。' }); try { await oss?.ensure(userOf(request).id, artifact.kind === 'video' ? 'exports' : 'artifacts', artifact.id, file); response.download(file, artifact.name); } catch { response.status(502).json({ error: '产物暂时无法下载。' }); } });
 app.patch('/api/settings', async (request, response) => {
   const user = userOf(request);
   const profile = await profileOf(user);

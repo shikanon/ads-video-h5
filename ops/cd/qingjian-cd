@@ -53,7 +53,7 @@ fi
 build_dir=$(mktemp -d "$cache/build.XXXXXXXX")
 git -C "$repo" archive "$target_sha" | tar -x -C "$build_dir"
 chown -R "$build_user:$build_user" "$build_dir"
-runuser -u "$build_user" -- env HOME="$cache/home" XDG_CACHE_HOME="$cache/home/.cache" \
+runuser -u "$build_user" -- env -i PATH="$PATH" HOME="$cache/home" XDG_CACHE_HOME="$cache/home/.cache" \
   bash -c 'cd "$1" && pnpm install --frozen-lockfile && VITE_BASE_PATH=/qingjian/ pnpm build' _ "$build_dir"
 test -f "$build_dir/dist/index.html"
 

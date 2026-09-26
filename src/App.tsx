@@ -3,6 +3,7 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
   ChevronRight,
   Clock3,
   Film,
@@ -13,6 +14,7 @@ import {
   Mic2,
   Music2,
   Plus,
+  Play,
   RotateCcw,
   Send,
   Settings2,
@@ -166,6 +168,10 @@ function date(value: string, locale: Locale) {
     ? ""
     : d.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
+function mediaKindLabel(kind: MediaItem["kind"], locale: Locale) {
+  if (locale === "en-US") return kind === "video" ? "Video" : kind === "image" ? "Image" : "Audio";
+  return kind === "video" ? "视频" : kind === "image" ? "图片" : "音频";
+}
 async function getState(response: Response): Promise<AppState> {
   let json: (AppState & { error?: string }) | undefined;
   try {
@@ -248,6 +254,21 @@ function JobCard({
           : locale === "zh-CN"
             ? "已完成"
             : "Done";
+  if (job.status === "succeeded") {
+    return (
+      <details className="job-card succeeded job-complete">
+        <summary className="job-head">
+          <span className="job-icon"><Sparkles size={15} /></span>
+          <strong>{name}</strong>
+          <span className="job-status">{status}</span>
+          <ChevronDown size={15} className="disclosure-chevron" aria-hidden="true" />
+        </summary>
+        <p className="job-complete-detail">
+          {locale === "zh-CN" ? "任务记录已收起，生成结果见对话中的回复与作品。" : "The task record is collapsed. See the reply and output in this chat."}
+        </p>
+      </details>
+    );
+  }
   return (
     <div className={`job-card ${job.status}`} aria-live="polite">
       <div className="job-head">
@@ -367,11 +388,12 @@ function ArtifactCard({
       </div>
     );
   return (
-    <div className="artifact-card video-card">
+    <div className="artifact-card video-card" data-format={artifact.format}>
       <button
         type="button"
         className="artifact-visual"
         onClick={() => open(artifact)}
+        aria-label={`${locale === "zh-CN" ? "预览并编辑" : "Preview and edit"} ${artifact.name}`}
       >
         <video
           src={artifact.url}
@@ -382,7 +404,7 @@ function ArtifactCard({
           aria-label={artifact.name}
         />
         <span className="play-mark">
-          <Film size={22} />
+          <Play size={23} fill="currentColor" />
         </span>
       </button>
       <div className="artifact-caption">
@@ -940,14 +962,17 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                 </section>
               ) : null}
               {plan ? (
-                <section className="plan-card">
-                  <div className="section-head">
-                    <div>
-                      <h2>{t.plan}</h2>
-                      <p>{plan.summary}</p>
-                    </div>
+                <details className="plan-card" key={`${session?.id}:${plan.version ?? plan.summary}`}>
+                  <summary className="plan-summary">
+                    <span className="plan-summary-icon"><Film size={18} /></span>
+                    <span className="plan-summary-copy">
+                      <strong>{t.plan} · {plan.clips.length} {locale === "zh-CN" ? "个片段" : "clips"}</strong>
+                      <small>{plan.summary}</small>
+                    </span>
                     <span className="format-chip">{plan.format}</span>
-                  </div>
+                    <ChevronDown size={16} className="disclosure-chevron" aria-hidden="true" />
+                  </summary>
+                  <div className="plan-content">
                   {plan.coverMediaId ? (
                     <div className="plan-cover">
                       <img src={state?.media.find((item) => item.id === plan.coverMediaId)?.url} alt="成片封面" />
@@ -997,7 +1022,8 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                     {t.viewTimeline}
                     <ChevronRight size={17} />
                   </button>
-                </section>
+                  </div>
+                </details>
               ) : null}
               <div ref={chatEnd} />
             </div>
@@ -1210,7 +1236,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                       <div>
                         <strong>{item.name}</strong>
                         <small>
-                          {item.kind} · {date(item.createdAt, locale)}
+                          {mediaKindLabel(item.kind, locale)} · {date(item.createdAt, locale)}
                         </small>
                       </div>
                       <button
@@ -1272,17 +1298,19 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                         open={open}
                       />
                       <div className="film-meta">
+                        <strong className="film-title">{item.name}</strong>
                         <span>
-                          V{item.version} · {date(item.createdAt, locale)}
+                          V{item.version} · {duration(item.duration)} · {item.format || "—"}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => void activate(item.sessionId)}
-                        >
-                          {t.back}
-                          <ArrowRight size={15} />
-                        </button>
                       </div>
+                      <p className="film-session" title={state.sessions.find((session) => session.id === item.sessionId)?.title || ""}>
+                        {state.sessions.find((session) => session.id === item.sessionId)?.title || t.chat}
+                        {item.hasNarration ? (locale === "zh-CN" ? " · 口播" : " · Voice") : ""}
+                        {item.hasBgm ? " · BGM" : ""}
+                      </p>
+                      <button type="button" className="film-back" onClick={() => void activate(item.sessionId)}>
+                        {t.back}<ArrowRight size={15} />
+                      </button>
                     </div>
                   ))}
               </div>
@@ -1470,7 +1498,8 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
         ) : null}
         {page === "timeline" ? (
           <section className="timeline-page">
-            <div className="timeline-preview">
+            <div className="timeline-scroll-content">
+            <div className="timeline-preview" data-format={timelineArtifact?.format}>
               {timelineUrl ? (
                 <video
                   key={timelineUrl}
@@ -1590,6 +1619,8 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                 </button>
               ))}
             </div>
+            </div>
+            <div className="timeline-primary-actions">
             <button
               type="button"
               className="timeline-chat-button"
@@ -1614,6 +1645,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                 {t.download}
               </a>
             ) : null}
+            </div>
           </section>
         ) : null}
         <input
