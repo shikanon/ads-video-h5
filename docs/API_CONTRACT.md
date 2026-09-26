@@ -6,7 +6,8 @@
 | --- | --- | --- |
 | `GET /api/health` | 无 | 无敏感信息的服务健康状态 |
 | `GET /api/auth/me` | Cookie | 当前帐号资料；未登录返回 401 |
-| `POST /api/auth/register` | `{displayName,email,password}` | 创建帐号并设置登录 Cookie |
+| `POST /api/auth/send-code` | `{email}` | 通过 Resend 发送 6 位注册验证码；有效期 10 分钟，至少间隔 60 秒重发 |
+| `POST /api/auth/register` | `{displayName,email,password,verificationCode}` | 校验邮箱验证码后创建帐号并设置登录 Cookie |
 | `POST /api/auth/login` | `{email,password}` | 验证密码并设置登录 Cookie |
 | `POST /api/auth/logout` | Cookie | 撤销当前登录会话并清除 Cookie |
 | `PATCH /api/auth/password` | `{currentPassword,newPassword}` | 更新密码并撤销该帐号的其他会话 |

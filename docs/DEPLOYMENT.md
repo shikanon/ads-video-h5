@@ -32,6 +32,12 @@
 
 CD 脚本的运行副本由 root 拥有，仓库推送不会自动更改脚本或 systemd 单元；更新部署机制时需单独重新安装这些文件。线上代码或定时器应由服务器管理员维护，不要让 Web 服务进程写入 `/opt/ads-video-h5`。
 
+### Resend 注册邮件
+
+在 Resend 中验证发信域名后，将 `RESEND_API_KEY` 和 `RESEND_FROM=轻剪 <noreply@已验证域名>` 写入本机 Git 忽略的 `data/resend.env`（`0600`）和服务器 `/etc/qingjian/resend.env`（`root:root 0600`）。把 [`ops/cd/qingjian-resend.conf`](../ops/cd/qingjian-resend.conf) 安装为 `/etc/systemd/system/qingjian.service.d/resend.conf`，执行 `systemctl daemon-reload` 和 `systemctl restart qingjian`。Resend 密钥不传入前端构建，也不放入仓库或 GitHub Secrets。未配置发信邮箱时，发送验证码接口返回 503，注册不会绕过邮箱验证；已有帐号可以继续登录。
+
+注册邮箱验证码为 6 位，仅保存加盐哈希，有效期 10 分钟，每个验证码最多尝试 5 次；同一邮箱重发至少间隔 60 秒。服务端还限制每小时每邮箱和每 IP 的发送次数。需要从经 Resend 验证的域名发信，`onboarding@resend.dev` 仅适用于受限测试。
+
 ### OSS 公开读配置与迁移
 
 本机将 `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_REGION=oss-ap-southeast-1`、`OSS_BUCKET=qingjian-shikanon-media-sg-2026`、`OSS_PREFIX=qingjian`、`OSS_PUBLIC_READ=true` 放入被 Git 忽略的 `data/oss.env`（权限 `0600`）。服务器使用 `/etc/qingjian/oss.env`（`root:root 0600`），内容同名；通过 [`ops/cd/qingjian-oss.conf`](../ops/cd/qingjian-oss.conf) 为 `qingjian.service` 配置 systemd drop-in，同时安装新版 [`qingjian-cd.service`](../ops/cd/qingjian-cd.service) 让 CD 读取同一环境文件。CD 构建子进程使用清空后的环境，仅传入 PATH/HOME/缓存路径，不向依赖安装和前端构建传递 OSS 密钥。不要把密钥写入仓库、GitHub Actions 或 Vite 的 `VITE_` 变量。

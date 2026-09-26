@@ -19,6 +19,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
 const ossEnvFile = path.join(dataDir, 'oss.env');
 if (existsSync(ossEnvFile)) process.loadEnvFile(ossEnvFile);
+const resendEnvFile = path.join(dataDir, 'resend.env');
+if (existsSync(resendEnvFile)) process.loadEnvFile(resendEnvFile);
 const oss = createOssStorage();
 const mediaDir = path.join(dataDir, 'media');
 const artifactDir = path.join(dataDir, 'artifacts');

@@ -19,6 +19,11 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [codePending, setCodePending] = useState(false);
+  const [codeStatus, setCodeStatus] = useState('');
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(Date.now());
   const [showPassword, setShowPassword] = useState(false);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [pending, setPending] = useState(false);
@@ -31,12 +36,38 @@ export default function Auth() {
     }).catch(() => setUser(null));
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  useEffect(() => {
+    if (resendAt <= Date.now()) return;
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+      if (Date.now() >= resendAt) window.clearInterval(timer);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendAt]);
+  const resendSeconds = Math.max(0, Math.ceil((resendAt - now) / 1000));
   function go(next: Screen) {
     setError('');
+    setCodeStatus('');
     setScreen(next);
     const hash = next === 'landing' ? '' : `#/${next}`;
     window.history.pushState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
     window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+  async function sendCode() {
+    if (codePending || resendSeconds > 0) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('请先填写有效的邮箱地址。'); return; }
+    setCodePending(true); setError(''); setCodeStatus('');
+    try {
+      const response = await fetch(apiPath('/api/auth/send-code'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+      });
+      const result = await response.json() as { ok?: boolean; error?: string; resendAfterSeconds?: number };
+      if (!response.ok || !result.ok) throw new Error(result.error || '验证码发送失败，请稍后重试。');
+      setCodeStatus('验证码已发送，请查看邮箱；10 分钟内有效。');
+      setNow(Date.now());
+      setResendAt(Date.now() + (result.resendAfterSeconds || 60) * 1000);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '网络中断，请重试。'); }
+    finally { setCodePending(false); }
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,12 +78,12 @@ export default function Auth() {
     try {
       const response = await fetch(apiPath(`/api/auth/${screen === 'register' ? 'register' : 'login'}`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName, email, password }),
+        body: JSON.stringify({ displayName, email, password, ...(screen === 'register' ? { verificationCode } : {}) }),
       });
       const result = await response.json() as { user?: PublicUser; error?: string };
       if (!response.ok || !result.user) throw new Error(result.error || '操作失败，请重试。');
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-      setPassword(''); setConfirmPassword('');
+      setPassword(''); setConfirmPassword(''); setVerificationCode('');
       setUser(result.user);
     } catch (cause) { setError(cause instanceof Error ? cause.message : '网络中断，请重试。'); }
     finally { setPending(false); }
@@ -98,9 +129,11 @@ export default function Auth() {
           <div className="auth-form-intro"><h1>{screen === 'login' ? '欢迎回来' : '创建轻剪帐号'}</h1><p>{screen === 'login' ? '继续用对话，剪出好视频。' : '加入轻剪，开启你的创作之旅。'}</p></div>
           <form onSubmit={submit} className="auth-form">
             {screen === 'register' ? <label><span>显示名称</span><div className="auth-input"><UserRound size={19} /><input autoComplete="name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="怎么称呼你" required maxLength={40} /></div></label> : null}
-            <label><span>邮箱地址</span><div className="auth-input"><Mail size={19} /><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" required maxLength={254} /></div></label>
+            <label><span>邮箱地址</span><div className="auth-input"><Mail size={19} /><input type="email" autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setVerificationCode(''); setCodeStatus(''); setResendAt(0); }} placeholder="name@example.com" required maxLength={254} /></div></label>
+            {screen === 'register' ? <label><span>邮箱验证码</span><div className="auth-code-row"><div className="auth-input"><Mail size={19} /><input value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" placeholder="输入 6 位验证码" required maxLength={6} /></div><button type="button" onClick={() => void sendCode()} disabled={codePending || resendSeconds > 0}>{codePending ? '发送中…' : resendSeconds > 0 ? `${resendSeconds}s 后重发` : '发送验证码'}</button></div></label> : null}
             <label><span>密码</span><div className="auth-input"><LockKeyhole size={19} /><input type={showPassword ? 'text' : 'password'} autoComplete={screen === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={screen === 'register' ? '至少 10 位密码' : '输入密码'} required minLength={screen === 'register' ? 10 : undefined} /><button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? '隐藏密码' : '显示密码'}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
             {screen === 'register' ? <label><span>确认密码</span><div className="auth-input"><LockKeyhole size={19} /><input type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再次输入密码" required minLength={10} /></div></label> : null}
+            {codeStatus && screen === 'register' ? <p className="auth-code-status" role="status">{codeStatus}</p> : null}
             {error ? <p className="auth-error" role="alert">{error}</p> : null}
             <button className="auth-primary" type="submit" disabled={pending}>{pending ? '请稍候…' : screen === 'login' ? '登录' : '注册并开始'} <ArrowRight size={19} /></button>
           </form>
