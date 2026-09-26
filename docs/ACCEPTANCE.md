@@ -105,3 +105,10 @@ pnpm dev
 - 线上 CD 实际部署时发现新增依赖只存在于临时构建目录，随后又发现 systemd 的 `UMask=0077` 让运行用户无法读取迁移后的 pnpm 虚拟目录；CD 已修复为连同 `node_modules/` 原子切换、失败回滚，并对运行用户开放只读权限。修复后部署 SHA `dc3208a`、`6d23949` 均通过健康检查，服务与定时器为 active，未登录状态接口仍返回 401。
 - 线上较大视频用 5 MB 分片时因服务器到 OSS 的单片传输超时，改为 512 KB 分片后，约 15 MB 视频完整上传成功；首次超时留下的未完成分片已清理。线上旧数据迁移输出 `uploaded:13, present:0, missing:0`，包括视频、音频、3 份成片和 8 张分镜缩略图。后续 1 MB 及以上的文件统一用小分片上传。
 - 公网 `https://video.shikanon.com/` 测试帐号在新版本下完成 PNG/MP4 上传、读取和删除，结果为 `uploaded:2, fetched:2, deleted:2`。将已有 MP4 从服务器缓存移出后，已登录的公网产物接口返回 200 `video/mp4`、1,241,752 字节；恢复文件与原文件的 SHA-256 相同。
+
+## 2026-09-26 新加坡 OSS 公开读与直链验收
+
+- 新加坡服务器实测北京 OSS 地域端点连接约 219–244 ms、完整请求约 877–2226 ms；新加坡 OSS 地域端点连接约 3–6 ms、完整请求约 27–32 ms。原北京私有 Bucket 保留作回退，新建 `qingjian-shikanon-media-sg-2026`，关闭该 Bucket 的阻止公共访问并设置 `public-read`。
+- 本地旧数据迁入新 Bucket：`uploaded:15, present:0, missing:0`；线上旧数据：`uploaded:13, present:0, missing:0`。迁移对象按类型设为公开读，匿名请求本地已有 13 个素材及产物、线上已有 13 个素材、产物及缩略图均返回 200；视频 Range 请求返回 206、1024 字节。Bucket 内的其他 2 张本地封面也已上传。
+- H5 状态接口的预览 URL 指向新加坡 OSS，下载 URL 仍指向登录保护的应用接口。线上已有 13 个直链逐个验证 200；测试帐号上传 PNG 和 MP4 后，两个对象及视频分镜图匿名读取成功，视频 Range 206，最后删除测试素材。结果为 `existingDirectUrls:13, uploaded:2, anonymousVerified:3, deleted:2`。
+- 本地与线上环境文件均切换到新加坡 Bucket 和 `OSS_PUBLIC_READ=true`，仍为 `0600` 且不进 Git；线上服务健康 200、未登录状态接口 401、公网 Landing 200。公开读意味着任何拿到对象 URL 的人都能读到对应素材和成片，因此此 Bucket 不存帐号资料或密钥。
