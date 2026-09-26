@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Qingjian main for deployable commits
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+AccuracySec=10s
+Unit=qingjian-cd.service
+
+[Install]
+WantedBy=timers.target

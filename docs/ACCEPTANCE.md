@@ -74,7 +74,14 @@ pnpm dev
 
 ## 2026-09-26 音乐来源接入验收
 
-- 本地浏览器抓包：Pixabay 中文搜索使用 `/zh/music/search/<关键词>/` 页面并提供单曲 CDN MP3 下载；24bit 搜索触发两个 `POST /api/player/searchOnlineMusicOne|Two`，该次浏览器请求返回 522。24bit 曲目试听加载带时效签名的外部 FLAC，返回 206 范围内容。无浏览器凭据的本地和服务器探测均为 Pixabay 搜索 403、24bit 两个搜索接口 403，Pixabay 单曲下载 200、`audio/mpeg`、1,712,796 字节。详见[BGM 来源调查](BGM_SOURCE_RESEARCH.md)。因此两站曲目列表尚未实现自动检索，不能称为已跑通音乐搜索 API。
+- 首轮本地浏览器抓包：Pixabay 中文搜索使用 `/zh/music/search/<关键词>/` 页面；24bit 搜索触发两个 `POST /api/player/searchOnlineMusicOne|Two`，首轮返回 522，随后另一轮返回 403。无浏览器会话的 Node 搜索探测也被拦；Pixabay 单曲 CDN MP3 可直接下载。后续在原站 Chrome 会话内以 `credentials: include` 执行代码请求后，24bit 搜索、详情、授权和完整音频流读取均成功；服务端 Node 路径仍被挑战。详见 [BGM 来源调查](BGM_SOURCE_RESEARCH.md)。
 - 本地对话“搜索轻快的 BGM”创建 `music` 任务，Pi Agent 返回关键词和两个原站入口；粘贴 Pixabay 官方 CDN MP3 地址后，服务端下载、识别为 53.52 秒音频并加入素材库。生成的 3.02 秒、9:16 MP4 包含 H.264 与 AAC 音轨，下载返回 200。恶意非 Pixabay 主机地址被拒绝。
 - 功能代码 SHA `f264b479def6c34521757b714ba624eab1b4b21e`。真实对话按 `docs/test.mp4` 前四个分镜拼接 16:9 视频，已导入的 Pixabay MP3 保持为当前 BGM；导出的 MP4 为 13.638672 秒、1,241,500 字节，包含 H.264 视频轨与 AAC 音轨。服务本机与公网 `/qingjian/api/download/<id>` 均返回 200、`video/mp4`。公网 H5 返回 200。
 - 390×844 视口检查 BGM 结果卡片，两个来源入口、搜索词和导入说明均可见；点击 Pixabay 入口后打开对应搜索页。开发服务器的 Vite HMR WebSocket 在应用内浏览器中出现连接错误，页面和功能可用；生产构建成功，远端静态页可访问。24bit 曲目授权和站点接口可用性仍是未完成项。
+
+## 2026-09-26 网页音乐请求封装
+
+- 按真实浏览器抓包增加 `/api/music/search`、`/api/music/pixabay/detail`、`/api/music/pixabay/download`、`/api/music/24bit/download`。24bit 请求保留两路搜索 POST、关键词 POST 和下载授权 POST 的实际字段；音频代理限制域名和文件大小。Pixabay 搜索解析服务端渲染的曲目卡片，详情页解析官方 CDN MP3 地址。
+- `pnpm build` 通过。启动本地服务后请求两站搜索，均返回 HTTP 502、`UPSTREAM_CHALLENGE`，上游状态 403；无效站外详情 URL 返回 HTTP 400、`INVALID_TRACK_URL`。这确认封装和错误呈现工作，不代表两站自动搜索已跑通。浏览器抓包细节及请求示例见 [BGM 来源调查](BGM_SOURCE_RESEARCH.md)。
+- 服务端以普通 Node HTTPS 重放抓到的路由与浏览器常见请求头；Node TLS 客户端并非 Chrome。当前网络下需要站点测试环境或测试出口放行后，才能完成服务端自动搜索和 24bit 下载代理的端到端验收。
+- 新增 `scripts/test-music-api-flow.mjs` 并实际执行调用链：Pixabay 搜索与详情返回挑战；用抓包得到的曲目 CDN 地址单独调用下载，返回 200、`audio/mpeg`、1,712,796 字节；24bit 搜索返回挑战，未猜测字段继续下载。脚本最终结果为两站 `FULL_FLOW_INCOMPLETE`，并且不把音频写入磁盘。

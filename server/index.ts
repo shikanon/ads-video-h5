@@ -1,4 +1,4 @@
-import express, { type ErrorRequestHandler } from 'express';
+import express, { type ErrorRequestHandler, type Response } from 'express';
 import multer from 'multer';
 import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { AppSettings, AppState, Artifact, ChatMessage, Job, JobKind, MediaItem, Session } from '../src/types';
 import { answerWithPi, createImagePromptWithPi, createMusicQueryWithPi, createNarrationWithPi, createPlanWithPi, detectImage, detectShots, probeAudio, probeVideo, renderPlan, runFFmpeg } from './core';
 import { writePresetBgm } from './bgm';
-import { downloadPixabayAudio, musicSearchLinks, pixabayAudioUrl } from './music';
+import { download24bitAudio, downloadPixabayAudio, getPixabayTrackDetail, MusicSourceError, musicSearchLinks, pixabayAudioUrl, search24bitMusic, searchPixabayMusic } from './music';
 import { getDefaultTextModelId, getModelConfig, listPublicModels, setDefaultTextModelId } from './modelRegistry';
 import { generateAudio, generateImage, ProviderError } from './providers';
 import { mountAdminRoutes } from './adminRoutes';
@@ -302,6 +302,43 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 mountAdminRoutes(app);
 const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: 300 * 1024 * 1024, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
+function musicErrorResponse(response: Response, error: unknown) {
+  if (error instanceof MusicSourceError) {
+    const clientError = error.code.startsWith('INVALID_');
+    response.status(clientError ? 400 : 502).json({ error: error.message, code: error.code, source: error.source, ...(error.upstreamStatus ? { upstreamStatus: error.upstreamStatus } : {}) });
+    return;
+  }
+  response.status(502).json({ error: error instanceof Error ? error.message : '音乐站点请求失败。', code: 'UPSTREAM_REQUEST_FAILED' });
+}
+app.post('/api/music/search', async (request, response) => {
+  const source = request.body?.source;
+  try {
+    if (source === 'pixabay') {
+      if (request.body?.page !== undefined && Number(request.body.page) !== 1) return response.status(400).json({ error: 'Pixabay 当前搜索页只支持第 1 页。', code: 'INVALID_PAGE' });
+      return response.json(await searchPixabayMusic(request.body?.query));
+    }
+    if (source === '24bit') return response.json(await search24bitMusic(request.body?.query, request.body?.page));
+    return response.status(400).json({ error: 'source 仅支持 pixabay 或 24bit。', code: 'INVALID_SOURCE' });
+  } catch (error) { musicErrorResponse(response, error); }
+});
+app.post('/api/music/pixabay/detail', async (request, response) => {
+  try { response.json(await getPixabayTrackDetail(request.body?.detailUrl)); }
+  catch (error) { musicErrorResponse(response, error); }
+});
+app.post('/api/music/pixabay/download', async (request, response) => {
+  try {
+    const url = typeof request.body?.url === 'string' ? pixabayAudioUrl(request.body.url) : null;
+    if (!url) return response.status(400).json({ error: '只支持 Pixabay 官方 CDN 音乐 MP3 地址。', code: 'INVALID_TRACK_URL' });
+    const file = await downloadPixabayAudio(url);
+    response.type('audio/mpeg').attachment(file.name).send(file.bytes);
+  } catch (error) { musicErrorResponse(response, error); }
+});
+app.post('/api/music/24bit/download', async (request, response) => {
+  try {
+    const file = await download24bitAudio(request.body?.track, request.body?.audioUrl, request.body?.detailUrl);
+    response.type(file.mimeType).attachment(file.name).send(file.bytes);
+  } catch (error) { musicErrorResponse(response, error); }
+});
 app.get('/api/state', async (_request, response) => response.json(await publicState()));
 app.post('/api/sessions', async (_request, response) => { const session = newSession(await getDefaultTextModelId()); state.sessions.unshift(session); state.activeSessionId = session.id; await saveState(); response.json(await publicState()); });
 app.post('/api/sessions/:id/activate', async (request, response) => { if (!getSession(request.params.id)) return response.status(404).json({ error: '对话不存在。' }); state.activeSessionId = request.params.id; await saveState(); response.json(await publicState()); });

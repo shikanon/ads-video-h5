@@ -1,0 +1,11 @@
+[Unit]
+Description=Pull and deploy Qingjian main after a successful build
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/data/qingjian
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/qingjian-cd
+TimeoutStartSec=10min
+UMask=0077

@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repo=/opt/ads-video-h5
+cache=/var/cache/qingjian-cd
+build_user=qingjian-build
+build_dir=
+backup_dir=
+previous_sha=
+switched=0
+
+mkdir -p "$cache"
+exec 9>/run/lock/qingjian-cd.lock
+flock -n 9 || exit 0
+
+finish() {
+  local status=$?
+  trap - EXIT
+  if (( status != 0 && switched == 1 )); then
+    echo "Deploy failed; restoring ${previous_sha:0:12}" >&2
+    git -C "$repo" checkout --detach --quiet "$previous_sha" || true
+    if [[ -n "$backup_dir" && -d "$backup_dir/dist" ]]; then
+      if [[ -d "$repo/dist" ]]; then mv "$repo/dist" "$build_dir/failed-dist"; fi
+      mv "$backup_dir/dist" "$repo/dist"
+    fi
+    systemctl restart qingjian || true
+  fi
+  if [[ "$build_dir" == "$cache"/build.* && -d "$build_dir" ]]; then rm -rf -- "$build_dir"; fi
+  if [[ "$backup_dir" == "$cache"/backup.* && -d "$backup_dir" ]]; then rm -rf -- "$backup_dir"; fi
+  exit "$status"
+}
+trap finish EXIT
+
+if [[ -n "$(git -C "$repo" status --porcelain)" ]]; then
+  echo 'Live checkout has local changes; deployment stopped.' >&2
+  exit 1
+fi
+
+git -C "$repo" fetch --quiet origin main
+target_sha=$(git -C "$repo" rev-parse refs/remotes/origin/main)
+previous_sha=$(git -C "$repo" rev-parse HEAD)
+if [[ "$target_sha" == "$previous_sha" ]]; then
+  echo "Already deployed ${target_sha:0:12}"
+  exit 0
+fi
+if ! git -C "$repo" merge-base --is-ancestor "$previous_sha" "$target_sha"; then
+  echo 'Remote main is not a fast-forward of the deployed commit; deployment stopped.' >&2
+  exit 1
+fi
+
+build_dir=$(mktemp -d "$cache/build.XXXXXXXX")
+git -C "$repo" archive "$target_sha" | tar -x -C "$build_dir"
+chown -R "$build_user:$build_user" "$build_dir"
+runuser -u "$build_user" -- env HOME="$cache/home" XDG_CACHE_HOME="$cache/home/.cache" \
+  bash -c 'cd "$1" && pnpm install --frozen-lockfile && VITE_BASE_PATH=/qingjian/ pnpm build' _ "$build_dir"
+test -f "$build_dir/dist/index.html"
+
+backup_dir=$(mktemp -d "$cache/backup.XXXXXXXX")
+if [[ -d "$repo/dist" ]]; then cp -a "$repo/dist" "$backup_dir/dist"; fi
+switched=1
+git -C "$repo" checkout --detach --quiet "$target_sha"
+if [[ -d "$repo/dist" ]]; then mv "$repo/dist" "$build_dir/old-dist"; fi
+mv "$build_dir/dist" "$repo/dist"
+chown -R root:root "$repo/dist"
+systemctl restart qingjian
+
+healthy=0
+for _ in $(seq 1 30); do
+  if curl --fail --silent --output /dev/null http://127.0.0.1:8787/api/state \
+    && curl --fail --silent --output /dev/null http://127.0.0.1:8787/qingjian/; then
+    healthy=1
+    break
+  fi
+  sleep 1
+done
+if (( healthy != 1 )); then
+  echo 'New release did not pass local API and H5 checks.' >&2
+  exit 1
+fi
+switched=0
+echo "Deployed $target_sha"
