@@ -13,7 +13,7 @@ import { getDefaultTextModelId, getModelConfig, listPublicModels } from './model
 import { generateAudio, generateImage, ProviderError } from './providers';
 import { mountAdminRoutes } from './adminRoutes';
 import { createAuth, userOf, type PublicUser } from './auth';
-import { createOssStorage } from './ossStorage';
+import { createOssStorage, type AssetCategory } from './ossStorage';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -28,6 +28,7 @@ const stateFile = path.join(dataDir, 'app-state.json');
 const port = Number(process.env.PORT || 8787);
 const publicBase = `/${(process.env.PUBLIC_BASE_PATH || '').replace(/^\/+|\/+$/g, '')}`.replace(/^\/$/, '');
 const publicUrl = (url: string) => `${publicBase}${url}`;
+const assetUrl = (ownerId: string, category: AssetCategory, id: string, fallback: string) => oss?.publicUrl(ownerId, category, id) || publicUrl(fallback);
 await Promise.all([mediaDir, artifactDir, exportDir, tmpDir].map((dir) => mkdir(dir, { recursive: true })));
 
 interface StoredState {
@@ -96,7 +97,7 @@ const extFor = (mime: string) => mime === 'image/jpeg' ? 'jpg' : mime === 'image
 
 async function publicState(user: PublicUser): Promise<AppState> {
   const [models, textConfig, profile] = await Promise.all([listPublicModels(), getModelConfig('text'), profileOf(user)]);
-  return { activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: publicUrl(item.url), shots: item.shots?.map((shot) => ({ ...shot, thumbnailUrl: publicUrl(shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: publicUrl(item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.coverUrl ? { coverUrl: publicUrl(item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
+  return { activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.coverUrl ? { coverUrl: assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
 }
 function classify(message: string): JobKind {
   const lower = message.toLowerCase();
@@ -419,15 +420,28 @@ app.post('/api/media', upload.array('files', 6), async (request, response) => {
       else throw new Error('仅支持视频、图片和音频素材。');
       kind = file.mimetype.startsWith('video/') ? 'video' : file.mimetype.startsWith('audio/') ? 'audio' : 'image';
       const shots = kind === 'video' ? await detectShots(file.path, duration!, file.filename) : undefined;
+      if (shots?.length) {
+        for (const [index, shot] of shots.entries()) {
+          const thumbnail = path.join(mediaDir, `${file.filename}-shot-${index}.jpg`);
+          await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-ss', String((shot.start + shot.end) / 2), '-i', file.path, '-frames:v', '1', '-vf', 'scale=320:-2', thumbnail], 30_000);
+          moved.push(thumbnail);
+        }
+      }
       const target = path.join(mediaDir, file.filename); await rename(file.path, target); moved.push(target);
       await oss?.put(user.id, 'media', file.filename, target, mimeType);
       if (oss) stored.push(file.filename);
+      if (shots?.length) {
+        for (const [index] of shots.entries()) {
+          await oss?.put(user.id, 'shots', `${file.filename}-${index}`, path.join(mediaDir, `${file.filename}-shot-${index}.jpg`), 'image/jpeg');
+          if (oss) stored.push(`shots/${file.filename}-${index}`);
+        }
+      }
       items.push({ id: file.filename, ownerId: user.id, name: shortName(file.originalname), mimeType, kind, ...(duration ? { duration } : {}), ...(shots ? { shots } : {}), url: `/api/media/${file.filename}`, createdAt: now(), origin: 'upload' });
     }
     state.media.push(...items); await saveState(); response.json(await publicState(user));
   } catch (error) {
     await Promise.all([...files.map((file) => file.path), ...moved].map((file) => rm(file, { force: true })));
-    if (oss) await Promise.allSettled(stored.map((id) => oss.remove(user.id, 'media', id)));
+    if (oss) await Promise.allSettled(stored.map((id) => id.startsWith('shots/') ? oss.remove(user.id, 'shots', id.slice(6)) : oss.remove(user.id, 'media', id)));
     response.status(400).json({ error: error instanceof Error ? error.message : '素材解析或存储失败。' });
   }
 });
@@ -440,6 +454,10 @@ app.delete('/api/media/:id', async (request, response) => {
   for (const artifact of state.artifacts) if (owned(artifact, user.id) && artifact.mediaId === item.id) artifact.mediaId = undefined;
   await saveState(); await rm(path.join(mediaDir, item.id), { force: true });
   try { await oss?.remove(user.id, 'media', item.id); } catch { console.error('OSS media cleanup failed for', item.id); }
+  for (const [index] of (item.shots || []).entries()) {
+    await rm(path.join(mediaDir, `${item.id}-shot-${index}.jpg`), { force: true });
+    try { await oss?.remove(user.id, 'shots', `${item.id}-${index}`); } catch { console.error('OSS shot cleanup failed for', item.id, index); }
+  }
   response.json(await publicState(user));
 });
 app.get('/api/media/:id', async (request, response) => {

@@ -12,6 +12,7 @@ export function createOssStorage() {
   if (configured.length !== names.length) throw new Error(`OSS 配置不完整：缺少 ${names.filter((name) => !process.env[name]).join(', ')}`);
   const region = process.env.OSS_REGION!;
   const bucket = process.env.OSS_BUCKET!;
+  const publicRead = process.env.OSS_PUBLIC_READ === 'true';
   const prefix = (process.env.OSS_PREFIX || 'qingjian').replace(/^\/+|\/+$/g, '');
   const client = new OSS({
     region, bucket, secure: true, authorizationV4: true, timeout: 180_000,
@@ -22,9 +23,13 @@ export function createOssStorage() {
   return {
     bucket,
     key,
+    publicUrl(ownerId: string, category: AssetCategory, id: string) {
+      if (!publicRead) return null;
+      return `https://${bucket}.${region}.aliyuncs.com/${key(ownerId, category, id).split('/').map(encodeURIComponent).join('/')}`;
+    },
     async put(ownerId: string, category: AssetCategory, id: string, file: string, mimeType: string) {
       const name = key(ownerId, category, id);
-      const headers = { 'Content-Type': mimeType, 'x-oss-object-acl': 'private' };
+      const headers = { 'Content-Type': mimeType, 'x-oss-object-acl': publicRead ? 'public-read' : 'private' };
       if ((await stat(file)).size >= 1024 * 1024) await client.multipartUpload(name, file, { partSize: 512 * 1024, parallel: 2, timeout: 180_000, mime: mimeType, headers });
       else await client.put(name, file, { timeout: 180_000, mime: mimeType, headers });
     },
