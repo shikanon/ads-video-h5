@@ -38,7 +38,7 @@ interface StoredState {
 const now = () => new Date().toISOString();
 function newSession(modelId: string | null): Session {
   const timestamp = now();
-  return { id: randomUUID(), title: '新对话', modelId, createdAt: timestamp, updatedAt: timestamp, messages: [], plan: null };
+  return { id: randomUUID(), title: '新会话', modelId, createdAt: timestamp, updatedAt: timestamp, messages: [], plan: null };
 }
 const firstSession = newSession(await getDefaultTextModelId());
 const emptyState = (): StoredState => ({ activeSessionId: firstSession.id, sessions: [firstSession], media: [], artifacts: [], jobs: [], settings: { language: 'zh-CN', chatBackground: null }, artifactFiles: {}, narrationBySession: {}, bgmBySession: {} });
@@ -316,7 +316,7 @@ app.post('/api/chat', async (request, response) => {
   const message: ChatMessage = { id: randomUUID(), role: 'user', text, createdAt, attachmentIds: attachments };
   const job: Job = { id: randomUUID(), sessionId: session.id, messageId: message.id, kind: classify(text), status: 'queued', createdAt, updatedAt: createdAt, progress: 0 };
   message.jobId = job.id; session.messages.push(message);
-  if (session.title === '新对话') session.title = text.slice(0, 24);
+  if (session.title === '新对话' || session.title === '新会话') session.title = text.slice(0, 24);
   session.updatedAt = createdAt; state.jobs.push(job);
   await saveState(); response.json(await publicState()); void processQueue();
 });

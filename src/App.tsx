@@ -29,6 +29,7 @@ import type {
   ChatMessage,
   Job,
   MediaItem,
+  Session,
 } from "./types";
 
 type Page =
@@ -47,7 +48,7 @@ const landscapeUrl = `${import.meta.env.BASE_URL}travel-cover.png`;
 const labels = {
   "zh-CN": {
     chat: "对话",
-    history: "对话历史",
+    history: "会话历史",
     media: "素材库",
     films: "成片库",
     settings: "设置",
@@ -55,7 +56,7 @@ const labels = {
     terms: "用户协议",
     privacy: "隐私政策",
     timeline: "剪辑拼接",
-    newChat: "新对话",
+    newChat: "新会话",
     hero: "一句话，剪出好视频",
     sub: "添加素材，告诉轻剪你想要的节奏",
     input: "继续说说你想怎么剪…",
@@ -65,7 +66,7 @@ const labels = {
     back: "返回对话",
     emptyMedia: "还没有素材",
     emptyFilms: "还没有生成成片",
-    emptyHistory: "还没有对话记录",
+    emptyHistory: "还没有会话",
     plan: "剪辑方案",
     voice: "口播文案",
     audio: "独立音频",
@@ -91,7 +92,7 @@ const labels = {
   },
   "en-US": {
     chat: "Chat",
-    history: "History",
+    history: "Conversations",
     media: "Media",
     films: "Exports",
     settings: "Settings",
@@ -99,7 +100,7 @@ const labels = {
     terms: "Terms",
     privacy: "Privacy",
     timeline: "Edit preview",
-    newChat: "New chat",
+    newChat: "New conversation",
     hero: "Make a video with one sentence",
     sub: "Add media and tell Qingjian your idea",
     input: "Describe your next edit…",
@@ -502,6 +503,7 @@ export default function App() {
   const [localBackground, setLocalBackground] = useState<string | null>(() =>
     localStorage.getItem("qingjian-local-bg"),
   );
+  const drafts = useRef<Record<string, { prompt: string; attachments: string[] }>>({});
   const stateRef = useRef<AppState | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const bgInput = useRef<HTMLInputElement>(null);
@@ -564,6 +566,12 @@ export default function App() {
   const locale: Locale = state?.settings.language || "zh-CN";
   const t = labels[locale];
   const session = state?.sessions.find((s) => s.id === state.activeSessionId);
+  const sessions = state?.sessions.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) || [];
+  const sessionTitle = (item: Session) =>
+    item.title === "新对话" || item.title === "新会话" ? t.newChat : item.title;
+  const sessionPreview = (item: Session) =>
+    item.messages.at(-1)?.text ||
+    (locale === "zh-CN" ? "开始对话，创建这个主题" : "Start chatting in this topic");
   useLayoutEffect(() => {
     if (page !== "chat" || !chatScroll.current || !state?.activeSessionId) return;
     const view = chatScroll.current;
@@ -674,6 +682,7 @@ export default function App() {
         attachmentIds: attachments,
       })
     ) {
+      delete drafts.current[state.activeSessionId];
       setPrompt("");
       setAttachments([]);
       requestAnimationFrame(() =>
@@ -682,6 +691,8 @@ export default function App() {
     }
   }
   async function newChat() {
+    const previousId = stateRef.current?.activeSessionId;
+    if (previousId) drafts.current[previousId] = { prompt, attachments };
     if (await mutate("/api/sessions", "POST", {})) {
       setPrompt("");
       setAttachments([]);
@@ -689,6 +700,12 @@ export default function App() {
     }
   }
   async function activate(id: string) {
+    const previousId = stateRef.current?.activeSessionId;
+    if (id === previousId) {
+      nav("chat");
+      return;
+    }
+    if (previousId) drafts.current[previousId] = { prompt, attachments };
     if (
       await mutate(
         `/api/sessions/${encodeURIComponent(id)}/activate`,
@@ -696,8 +713,9 @@ export default function App() {
         {},
       )
     ) {
-      setPrompt("");
-      setAttachments([]);
+      const draft = drafts.current[id];
+      setPrompt(draft?.prompt || "");
+      setAttachments(draft?.attachments.filter((mediaId) => stateRef.current?.media.some((item) => item.id === mediaId)) || []);
       nav("chat");
     }
   }
@@ -810,6 +828,13 @@ export default function App() {
             <span className="top-spacer" />
           )}
         </header>
+        {page === "chat" && session ? (
+          <button type="button" className="session-bar" onClick={() => nav("history")}>
+            <span>{locale === "zh-CN" ? "当前会话" : "Current topic"}</span>
+            <strong>{sessionTitle(session)}</strong>
+            <ChevronRight size={15} />
+          </button>
+        ) : null}
         {page !== "chat" && error ? (
           <div className="subpage-error" role="alert">
             <span>{error}</span>
@@ -1078,15 +1103,18 @@ export default function App() {
         ) : null}
         {page === "history" ? (
           <section className="subpage-content">
-            {state?.sessions.length ? (
+            <div className="history-intro">
+              <strong>{locale === "zh-CN" ? "一个会话，一个创作主题" : "One conversation, one creative topic"}</strong>
+              <p>{locale === "zh-CN"
+                ? "切换主题后，继续沿用该会话的消息与剪辑方案；新会话从新的对话上下文开始。素材库在所有会话中可用。"
+                : "Continue with this topic's messages and edit plan. A new conversation starts fresh; your media library remains available."}</p>
+            </div>
+            {sessions.length ? (
               <div className="history-list">
-                {state.sessions
-                  .slice()
-                  .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-                  .map((item) => (
+                {sessions.map((item) => (
                     <button
                       type="button"
-                      className={`history-row ${item.id === state.activeSessionId ? "active" : ""}`}
+                      className={`history-row ${item.id === state?.activeSessionId ? "active" : ""}`}
                       key={item.id}
                       onClick={() => void activate(item.id)}
                     >
@@ -1094,14 +1122,17 @@ export default function App() {
                         <Sparkles size={18} />
                       </span>
                       <span>
-                        <strong>{item.title || t.newChat}</strong>
+                        <strong>{sessionTitle(item)}</strong>
+                        <span className="history-preview">{sessionPreview(item)}</span>
                         <small>
                           {date(item.updatedAt, locale)} ·{" "}
                           {item.messages.length}{" "}
                           {locale === "zh-CN" ? "条消息" : "messages"}
                         </small>
                       </span>
-                      <ChevronRight size={17} />
+                      {item.id === state?.activeSessionId
+                        ? <em className="history-current">{locale === "zh-CN" ? "当前" : "Current"}</em>
+                        : <ChevronRight size={17} />}
                     </button>
                   ))}
               </div>
@@ -1604,6 +1635,24 @@ export default function App() {
               <Plus size={19} />
               {t.newChat}
             </button>
+            <section className="drawer-sessions" aria-label={t.history}>
+              <div className="drawer-section-heading">
+                <strong>{locale === "zh-CN" ? "最近会话" : "Recent conversations"}</strong>
+                <button type="button" onClick={() => nav("history")}>{locale === "zh-CN" ? "查看全部" : "View all"}</button>
+              </div>
+              {sessions.slice(0, 5).map((item) => (
+                <button
+                  type="button"
+                  className={`drawer-session ${item.id === state?.activeSessionId ? "active" : ""}`}
+                  key={item.id}
+                  onClick={() => void activate(item.id)}
+                  aria-current={item.id === state?.activeSessionId ? "page" : undefined}
+                >
+                  <span>{sessionTitle(item)}</span>
+                  <small>{sessionPreview(item)}</small>
+                </button>
+              ))}
+            </section>
             <div className="drawer-links">
               {menuPages.map((item, index) => (
                 <button
