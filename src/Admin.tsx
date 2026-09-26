@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, Check, KeyRound, Plus, Save, ShieldCheck, Trash2, X } from 'lucide-react';
 import type { ModelKind } from './types';
+import EffectAdmin from './EffectAdmin';
 
 interface AdminModel {
   id: string;
@@ -48,6 +49,7 @@ export default function Admin() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [tab, setTab] = useState<'models' | 'effects'>('models');
 
   const load = useCallback(async (accessToken: string) => {
     const data = await request<{ models: AdminModel[]; defaultTextModelId: string | null }>('/api/admin/models', accessToken);
@@ -152,7 +154,7 @@ export default function Admin() {
         <main className="admin-login">
           <div className="admin-login-icon"><KeyRound size={28} /></div>
           <h1>管理后台</h1>
-          <p>在这里维护厂商模型与 API Key。配置只保存在服务端，不会显示在轻剪 H5 中。</p>
+          <p>在这里维护厂商模型、API Key 和 HTML 视频特效。密钥只保存在服务端。</p>
           <form onSubmit={(event) => void signIn(event)}>
             <label htmlFor="admin-token">管理员令牌</label>
             <input id="admin-token" type="password" autoComplete="off" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} placeholder="输入本地管理员令牌" required />
@@ -163,6 +165,8 @@ export default function Admin() {
         </main>
       ) : (
         <main className="admin-layout">
+          <nav className="admin-tabs" aria-label="管理功能"><button type="button" className={tab === 'models' ? 'is-active' : ''} onClick={() => setTab('models')}>模型与密钥</button><button type="button" className={tab === 'effects' ? 'is-active' : ''} onClick={() => setTab('effects')}>HTML 视频特效</button></nav>
+          {tab === 'effects' ? <EffectAdmin token={token} /> : <>
           <div className="admin-heading"><div><h1>模型与密钥</h1><p>配置对话、图片和口播模型。新密钥保存后仅显示配置状态。</p></div><ShieldCheck size={28} /></div>
           {error ? <div className="admin-alert" role="alert">{error}<button onClick={() => setError('')} aria-label="关闭错误"><X size={16} /></button></div> : null}
           {notice ? <div className="admin-notice" role="status"><Check size={16} />{notice}</div> : null}
@@ -198,6 +202,7 @@ export default function Admin() {
               )) : <div className="admin-empty"><Plus size={22} /><p>还没有模型配置</p></div>}
             </section>
           </div>
+          </>}
         </main>
       )}
     </div>

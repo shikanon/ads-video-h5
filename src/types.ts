@@ -1,7 +1,7 @@
 export type Format = '9:16' | '16:9' | '1:1';
 export type MediaKind = 'video' | 'image' | 'audio';
 export type ArtifactKind = 'image' | 'audio' | 'video';
-export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music';
+export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music' | 'effect';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ModelKind = 'text' | 'image' | 'audio';
 export interface PublicUser { id: string; email: string; displayName: string; }

@@ -14,6 +14,7 @@ import { generateAudio, generateImage, ProviderError } from './providers';
 import { mountAdminRoutes } from './adminRoutes';
 import { createAuth, userOf, type PublicUser } from './auth';
 import { createOssStorage, type AssetCategory } from './ossStorage';
+import { createEffectStore, type EffectValues } from './htmlEffects';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -32,6 +33,8 @@ const publicBase = `/${(process.env.PUBLIC_BASE_PATH || '').replace(/^\/+|\/+$/g
 const publicUrl = (url: string) => `${publicBase}${url}`;
 const assetUrl = (ownerId: string, category: AssetCategory, id: string, fallback: string) => oss?.publicUrl(ownerId, category, id) || publicUrl(fallback);
 await Promise.all([mediaDir, artifactDir, exportDir, tmpDir].map((dir) => mkdir(dir, { recursive: true })));
+const effects = createEffectStore(dataDir);
+await effects.init();
 
 interface StoredState {
   activeSessionId: string;
@@ -103,6 +106,7 @@ async function publicState(user: PublicUser): Promise<AppState> {
 }
 function classify(message: string): JobKind {
   const lower = message.toLowerCase();
+  if (/(?:特效|动效|HTML\s*视频|effect)/i.test(message) && /(?:生成|制作|渲染|导出|做|render|make|create)/i.test(message)) return 'effect';
   if (/https:\/\/cdn\.pixabay\.com\/download\/audio\//i.test(message) || /(?:搜索|查找|找|搜|推荐).{0,35}(?:bgm|背景音乐|配乐|音乐)|(?:bgm|背景音乐|配乐|音乐).{0,24}(?:搜索|查找|推荐)/i.test(message)) return 'music';
   if (/(?:bgm|背景音乐|配乐)/i.test(message) && !/(?:成片|导出|生成视频|制作视频|export|render)/i.test(message)) return 'plan';
   if (/\b(?:generate|create|write|make|record|synthesize)\s+(?:a |an |the )?(?:(?:short|warm|chinese|new)\s+)*(?:narration|voiceover|voice-over|speech|audio)\b/.test(lower)) return 'audio';
@@ -167,6 +171,40 @@ async function performJob(job: Job): Promise<void> {
   const prompt = message.text;
   const history = session.messages.filter((item) => item.createdAt <= message.createdAt);
   const attached = (message.attachmentIds || []).map((id) => media.find((item) => item.id === id)).filter((item): item is MediaItem => Boolean(item));
+  if (job.kind === 'effect') {
+    const available = effects.list().filter((item) => item.enabled);
+    const effect = available.find((item) => prompt.includes(item.name)) || available.find((item) => /照片|图片|推镜/.test(prompt) && item.id === 'photo-drift') || available.find((item) => /结尾|收束|字幕/.test(prompt) && item.id === 'story-outro') || available[0];
+    if (!effect) throw new Error('特效库暂无可用模板，请联系管理员启用。');
+    const title = /(?:标题|文案)[：:]?\s*[“「\"]([^”」\"]{1,60})[”」\"]/.exec(prompt)?.[1] || /[“「\"]([^”」\"]{1,60})[”」\"]/.exec(prompt)?.[1];
+    const subtitle = /(?:副标题|说明)[：:]?\s*[“「\"]([^”」\"]{1,120})[”」\"]/.exec(prompt)?.[1];
+    const image = attached.find((item) => item.kind === 'image');
+    const values: Partial<EffectValues> = { ...(title ? { title } : {}), ...(subtitle ? { subtitle } : {}), ...(image && oss ? { imageUrl: assetUrl(job.ownerId!, 'media', image.id, image.url) } : {}) };
+    const render = await effects.render(effect, values);
+    job.progress = 15; await saveState();
+    while (render.status === 'queued' || render.status === 'running') {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      job.progress = Math.min(90, (job.progress || 15) + 1);
+    }
+    if (render.status !== 'succeeded' || !render.file) throw new Error(render.error || '特效渲染失败。');
+    const id = randomUUID(); const mediaId = randomUUID();
+    const destination = path.join(exportDir, `${id}.mp4`);
+    const mediaFile = path.join(mediaDir, mediaId);
+    try {
+      await copyFile(render.file, destination); await copyFile(render.file, mediaFile);
+      await oss?.put(job.ownerId!, 'exports', id, destination, 'video/mp4');
+      await oss?.put(job.ownerId!, 'media', mediaId, mediaFile, 'video/mp4');
+    } catch (error) {
+      await Promise.all([rm(destination, { force: true }), rm(mediaFile, { force: true })]);
+      if (oss) await Promise.allSettled([oss.remove(job.ownerId!, 'exports', id), oss.remove(job.ownerId!, 'media', mediaId)]);
+      throw error;
+    }
+    const version = state.artifacts.filter((item) => item.sessionId === session.id && item.kind === 'video').length + 1;
+    state.artifacts.push({ id, ownerId: job.ownerId, sessionId: session.id, messageId: message.id, kind: 'video', name: `${effect.name}-v${version}.mp4`, url: `/api/artifacts/${id}`, downloadUrl: `/api/download/${id}`, createdAt: now(), version, duration: effect.duration, format: effect.width === effect.height ? '1:1' : effect.width > effect.height ? '16:9' : '9:16', mediaId });
+    state.media.push({ id: mediaId, ownerId: job.ownerId, name: `${effect.name}-v${version}.mp4`, mimeType: 'video/mp4', kind: 'video', duration: effect.duration, url: `/api/media/${mediaId}`, createdAt: now(), origin: 'generated' });
+    job.artifactId = id;
+    addReply(session, job, `已用「${effect.name}」生成 ${effect.duration} 秒 HTML 动效视频，可预览、下载，也已加入素材库用于后续剪辑。`, id);
+    return;
+  }
   if (job.kind === 'music') {
     if (/https:\/\/cdn\.pixabay\.com\//i.test(prompt)) {
       const url = pixabayAudioUrl(prompt);
@@ -327,7 +365,7 @@ async function processQueue() {
         const message = error instanceof Error ? error.message : '处理失败';
         job.error = error instanceof ProviderError
           ? `${error.message}（${error.code}${error.status ? ` / HTTP ${error.status}` : ''}）`
-          : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件/.test(message)
+          : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件|特效/.test(message)
             ? message : '生成失败，请检查模型配置、素材格式或网络后重试。';
         const session = getSession(job.sessionId);
         if (session) {
@@ -345,10 +383,11 @@ async function processQueue() {
 const app = express();
 app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
-mountAdminRoutes(app);
+mountAdminRoutes(app, effects);
 const auth = createAuth(dataDir, publicBase);
 await auth.load();
 auth.mount(app);
+app.get('/api/effects', (_request, response) => response.json({ effects: effects.list().filter((item) => item.enabled).map(({ id, name, description, duration, width, height }) => ({ id, name, description, duration, width, height })) }));
 const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: 300 * 1024 * 1024, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
 function musicErrorResponse(response: Response, error: unknown) {
   if (error instanceof MusicSourceError) {

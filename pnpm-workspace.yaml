@@ -3,3 +3,5 @@ allowBuilds:
   esbuild: true
   ffmpeg-static: true
   protobufjs: false
+minimumReleaseAgeExclude:
+  - hyperframes@0.8.78

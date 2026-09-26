@@ -147,12 +147,14 @@ const menuPages: Page[] = [
 const hints = {
   "zh-CN": [
     "把素材剪成 15 秒竖屏短片，节奏轻快",
+    "生成阳光开场特效视频，标题「去看更大的世界」",
     "写一段温柔的口播，并生成独立音频",
     "生成一张暖色调的封面图",
     "搜索轻快的 BGM",
   ],
   "en-US": [
     "Make a lively 15-second vertical video",
+    "Create an HTML effect video with the Sunny Opening template",
     "Write warm narration and generate audio",
     "Create a warm-toned cover image",
     "Search for upbeat background music",
@@ -925,9 +927,13 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                         {index === 0 ? (
                           <Film size={18} />
                         ) : index === 1 ? (
+                          <WandSparkles size={18} />
+                        ) : index === 2 ? (
                           <Mic2 size={18} />
-                        ) : (
+                        ) : index === 3 ? (
                           <ImageIcon size={18} />
+                        ) : (
+                          <Music2 size={18} />
                         )}
                         <span>{hint}</span>
                         <ArrowRight size={16} />

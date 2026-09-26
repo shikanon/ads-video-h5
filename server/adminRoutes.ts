@@ -8,6 +8,7 @@ import {
   upsertModel,
   type ModelConfig,
 } from './modelRegistry';
+import type { createEffectStore, EffectValues, HtmlEffect } from './htmlEffects';
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : '操作失败，请重试。';
@@ -34,7 +35,7 @@ function parseModel(body: unknown, id?: string): Partial<ModelConfig> & Pick<Mod
   };
 }
 
-export function mountAdminRoutes(app: Express): void {
+export function mountAdminRoutes(app: Express, effects: ReturnType<typeof createEffectStore>): void {
   const router = Router();
   router.use(async (request: Request, response: Response, next) => {
     try {
@@ -97,6 +98,49 @@ export function mountAdminRoutes(app: Express): void {
     } catch (error) {
       response.status(400).json({ error: message(error) });
     }
+  });
+
+  router.get('/effects', (_request, response) => response.json({ effects: effects.list() }));
+  router.get('/effects/renders', (_request, response) => response.json({ renders: effects.listRenders().map((render) => ({ id: render.id, effectId: render.effectId, status: render.status, createdAt: render.createdAt, error: render.error, downloadUrl: render.status === 'succeeded' ? `/api/admin/effects/renders/${render.id}/download` : undefined })) }));
+  router.post('/effects/preview-draft', async (request, response) => {
+    try { response.json({ html: await effects.compile(request.body?.effect as HtmlEffect, request.body?.values as Partial<EffectValues>, true) }); }
+    catch (error) { response.status(400).json({ error: message(error) }); }
+  });
+  router.post('/effects', async (request, response) => {
+    try { response.status(201).json({ effect: await effects.upsert(request.body as Partial<HtmlEffect>) }); }
+    catch (error) { response.status(400).json({ error: message(error) }); }
+  });
+  router.put('/effects/:id', async (request, response) => {
+    try { response.json({ effect: await effects.upsert(request.body as Partial<HtmlEffect>, request.params.id) }); }
+    catch (error) { response.status(400).json({ error: message(error) }); }
+  });
+  router.delete('/effects/:id', async (request, response) => {
+    try { await effects.remove(request.params.id); response.json({ ok: true }); }
+    catch (error) { response.status(400).json({ error: message(error) }); }
+  });
+  router.post('/effects/:id/preview', async (request, response) => {
+    try {
+      const effect = effects.get(request.params.id);
+      if (!effect) return response.status(404).json({ error: '特效不存在。' });
+      response.json({ html: await effects.compile(effect, request.body?.values as Partial<EffectValues>, true) });
+    } catch (error) { response.status(400).json({ error: message(error) }); }
+  });
+  router.post('/effects/:id/render', async (request, response) => {
+    try {
+      const effect = effects.get(request.params.id);
+      if (!effect) return response.status(404).json({ error: '特效不存在。' });
+      response.status(202).json({ render: await effects.render(effect, request.body?.values as Partial<EffectValues>) });
+    } catch (error) { response.status(400).json({ error: message(error) }); }
+  });
+  router.get('/effects/renders/:id', (request, response) => {
+    const render = effects.getRender(request.params.id);
+    if (!render) return response.status(404).json({ error: '渲染任务不存在。' });
+    response.json({ render: { id: render.id, effectId: render.effectId, status: render.status, createdAt: render.createdAt, error: render.error, downloadUrl: render.status === 'succeeded' ? `/api/admin/effects/renders/${render.id}/download` : undefined } });
+  });
+  router.get('/effects/renders/:id/download', (request, response) => {
+    const render = effects.getRender(request.params.id);
+    if (!render || render.status !== 'succeeded' || !render.file) return response.status(404).json({ error: '视频尚未生成。' });
+    response.download(render.file, `qingjian-effect-${render.id}.mp4`);
   });
 
   app.use('/api/admin', router);
