@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+# The runtime service is a separate user and must be able to read checked-out files.
+umask 022
 
 repo=/opt/ads-video-h5
 cache=/var/cache/qingjian-cd
