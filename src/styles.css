@@ -96,33 +96,6 @@ a {
 .top-history:hover {
   color: #f36c4d;
 }
-.session-bar {
-  width: 100%;
-  min-height: 39px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 18px;
-  border: 0;
-  border-bottom: 1px solid #f4f0ed;
-  background: #fffbf7;
-  color: #8d8a88;
-  text-align: left;
-  font-size: 11px;
-}
-.session-bar strong {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #36333a;
-  font-size: 12px;
-}
-.session-bar svg {
-  flex: 0 0 auto;
-  color: #e7795b;
-}
 .top-back,
 .top-plus {
   display: grid;

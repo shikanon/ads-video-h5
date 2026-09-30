@@ -867,13 +867,6 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
             <span className="top-spacer" />
           )}
         </header>
-        {page === "chat" && session ? (
-          <button type="button" className="session-bar" onClick={() => nav("history")}>
-            <span>{locale === "zh-CN" ? "当前会话" : "Current topic"}</span>
-            <strong>{sessionTitle(session)}</strong>
-            <ChevronRight size={15} />
-          </button>
-        ) : null}
         {page !== "chat" && error ? (
           <div className="subpage-error" role="alert">
             <span>{error}</span>
