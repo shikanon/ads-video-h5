@@ -385,9 +385,6 @@ const app = express();
 app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
 mountAdminRoutes(app, effects, publicBase);
-const auth = createAuth(dataDir, publicBase);
-await auth.load();
-auth.mount(app);
 app.get('/api/effects', (_request, response) => response.json({ effects: effects.list().filter((item) => item.enabled).map(({ id, name, description, duration, width, height }) => ({ id, name, description, duration, width, height })) }));
 app.get('/api/effects/assets/:id', async (request, response) => {
   const asset = effects.getAsset(request.params.id);
@@ -395,6 +392,9 @@ app.get('/api/effects/assets/:id', async (request, response) => {
   try { response.type(asset.mimeType).sendFile(await effects.ensureAsset(asset)); }
   catch { response.status(404).json({ error: '素材文件不存在。' }); }
 });
+const auth = createAuth(dataDir, publicBase);
+await auth.load();
+auth.mount(app);
 const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: 300 * 1024 * 1024, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
 function musicErrorResponse(response: Response, error: unknown) {
   if (error instanceof MusicSourceError) {
