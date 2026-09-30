@@ -33,7 +33,7 @@ const publicBase = `/${(process.env.PUBLIC_BASE_PATH || '').replace(/^\/+|\/+$/g
 const publicUrl = (url: string) => `${publicBase}${url}`;
 const assetUrl = (ownerId: string, category: AssetCategory, id: string, fallback: string) => oss?.publicUrl(ownerId, category, id) || publicUrl(fallback);
 await Promise.all([mediaDir, artifactDir, exportDir, tmpDir].map((dir) => mkdir(dir, { recursive: true })));
-const effects = createEffectStore(dataDir);
+const effects = createEffectStore(dataDir, oss);
 await effects.init();
 
 interface StoredState {
@@ -177,9 +177,10 @@ async function performJob(job: Job): Promise<void> {
     if (!effect) throw new Error('特效库暂无可用模板，请联系管理员启用。');
     const title = /(?:标题|文案)[：:]?\s*[“「\"]([^”」\"]{1,60})[”」\"]/.exec(prompt)?.[1] || /[“「\"]([^”」\"]{1,60})[”」\"]/.exec(prompt)?.[1];
     const subtitle = /(?:副标题|说明)[：:]?\s*[“「\"]([^”」\"]{1,120})[”」\"]/.exec(prompt)?.[1];
-    const image = attached.find((item) => item.kind === 'image');
-    const values: Partial<EffectValues> = { ...(title ? { title } : {}), ...(subtitle ? { subtitle } : {}), ...(image && oss ? { imageUrl: assetUrl(job.ownerId!, 'media', image.id, image.url) } : {}) };
-    const render = await effects.render(effect, values);
+    const visual = attached.find((item) => item.kind === 'image' || item.kind === 'video');
+    const values: Partial<EffectValues> = { ...(title ? { title } : {}), ...(subtitle ? { subtitle } : {}) };
+    if (visual) await oss?.ensure(job.ownerId!, 'media', visual.id, path.join(mediaDir, visual.id));
+    const render = await effects.render(effect, values, visual ? { file: path.join(mediaDir, visual.id), kind: visual.kind as 'image' | 'video', mimeType: visual.mimeType } : undefined);
     job.progress = 15; await saveState();
     while (render.status === 'queued' || render.status === 'running') {
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -383,11 +384,17 @@ async function processQueue() {
 const app = express();
 app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
-mountAdminRoutes(app, effects);
+mountAdminRoutes(app, effects, publicBase);
 const auth = createAuth(dataDir, publicBase);
 await auth.load();
 auth.mount(app);
 app.get('/api/effects', (_request, response) => response.json({ effects: effects.list().filter((item) => item.enabled).map(({ id, name, description, duration, width, height }) => ({ id, name, description, duration, width, height })) }));
+app.get('/api/effects/assets/:id', async (request, response) => {
+  const asset = effects.getAsset(request.params.id);
+  if (!asset) return response.status(404).json({ error: '素材不存在。' });
+  try { response.type(asset.mimeType).sendFile(await effects.ensureAsset(asset)); }
+  catch { response.status(404).json({ error: '素材文件不存在。' }); }
+});
 const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: 300 * 1024 * 1024, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
 function musicErrorResponse(response: Response, error: unknown) {
   if (error instanceof MusicSourceError) {

@@ -22,13 +22,14 @@ description: Create, preview, edit, and render short branded HTML motion videos 
 ```bash
 node skills/qingjian-html-video/scripts/render.mjs --list
 node skills/qingjian-html-video/scripts/render.mjs --effect sunny-opening --title "去看更大的世界" --subtitle "沿着海风走" --output ./data/my-opening.mp4
+node skills/qingjian-html-video/scripts/render.mjs --effect photo-drift --image-file ./data/coast.jpg --output ./data/my-photo.mp4
 ```
 
-默认连接本机 `http://127.0.0.1:8787`。使用远程服务时传 `--server https://video.shikanon.com/qingjian`；远程地址必须是 HTTPS。照片模板可传 `--image-url`，地址需为公开可读取的 HTTPS 图片。普通用户也可在 H5 对话里直接说「生成照片推镜特效视频」并附加已上传图片。
+默认连接本机 `http://127.0.0.1:8787`。使用远程服务时传 `--server https://video.shikanon.com/qingjian`；远程地址必须是 HTTPS。用 `--image-file` 或 `--video-file` 选择本地素材，脚本先上传，再渲染视频。普通用户也可在 H5 对话里直接说「生成照片推镜特效视频」并附加已上传图片或视频。
 
 ## 边界
 
-- 不把用户输入拼成可执行 HTML。标题、副标题、图片 URL 作为数据注入，文本只写入 `textContent`。
+- 不把用户输入拼成可执行 HTML。标题、副标题和已上传素材标识作为数据注入，文本只写入 `textContent`。
 - 后台 HTML 可运行脚本，只授权可信管理员编辑；预览在沙盒 iframe 中打开。
 - 不在源码、模板、示例或日志中写入 API Key、管理员令牌、会话 Cookie。
-- 图片无法读取时会显示模板底色；交付前确认图片确实进入 MP4。
+- 素材无法读取时渲染会失败；交付前确认图片或视频确实进入 MP4。

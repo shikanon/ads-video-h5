@@ -1,4 +1,8 @@
 import { Router, type Express, type Request, type Response } from 'express';
+import multer from 'multer';
+import { randomUUID } from 'node:crypto';
+import path from 'node:path';
+import { rm } from 'node:fs/promises';
 import {
   deleteModel,
   getDefaultTextModelId,
@@ -35,8 +39,16 @@ function parseModel(body: unknown, id?: string): Partial<ModelConfig> & Pick<Mod
   };
 }
 
-export function mountAdminRoutes(app: Express, effects: ReturnType<typeof createEffectStore>): void {
+export function mountAdminRoutes(app: Express, effects: ReturnType<typeof createEffectStore>, publicBase = ''): void {
   const router = Router();
+  const assetUpload = multer({ storage: multer.diskStorage({ destination: effects.uploadsDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: 150 * 1024 * 1024, files: 1 } });
+  const previewAssetUrl = (request: Request, values?: Partial<EffectValues>) => {
+    if (!values?.assetId) return undefined;
+    const asset = effects.getAsset(values.assetId);
+    if (!asset) throw new Error('所选素材不存在，请重新上传。');
+    const fallback = `${request.protocol}://${request.get('host')}${publicBase}/api/effects/assets/${asset.id}`;
+    return effects.publicAssetUrl(asset, fallback);
+  };
   router.use(async (request: Request, response: Response, next) => {
     try {
       const token = /^Bearer (.+)$/i.exec(request.header('authorization') || '')?.[1] || '';
@@ -101,9 +113,19 @@ export function mountAdminRoutes(app: Express, effects: ReturnType<typeof create
   });
 
   router.get('/effects', (_request, response) => response.json({ effects: effects.list() }));
+  router.get('/effects/assets', (_request, response) => response.json({ assets: effects.listAssets() }));
+  router.post('/effects/assets', (request, response) => {
+    assetUpload.single('file')(request, response, async (uploadError) => {
+      if (uploadError) return response.status(400).json({ error: uploadError instanceof multer.MulterError && uploadError.code === 'LIMIT_FILE_SIZE' ? '文件不能超过 150 MB。' : message(uploadError) });
+      if (!request.file) return response.status(400).json({ error: '请选择本地图片或视频文件。' });
+      try { response.status(201).json({ asset: await effects.saveAsset(request.file.path, path.basename(request.file.originalname), request.file.mimetype) }); }
+      catch (error) { response.status(400).json({ error: message(error) }); }
+      finally { await rm(request.file.path, { force: true }).catch(() => undefined); }
+    });
+  });
   router.get('/effects/renders', (_request, response) => response.json({ renders: effects.listRenders().map((render) => ({ id: render.id, effectId: render.effectId, status: render.status, createdAt: render.createdAt, error: render.error, downloadUrl: render.status === 'succeeded' ? `/api/admin/effects/renders/${render.id}/download` : undefined })) }));
   router.post('/effects/preview-draft', async (request, response) => {
-    try { response.json({ html: await effects.compile(request.body?.effect as HtmlEffect, request.body?.values as Partial<EffectValues>, true) }); }
+    try { response.json({ html: await effects.compile(request.body?.effect as HtmlEffect, request.body?.values as Partial<EffectValues>, true, previewAssetUrl(request, request.body?.values)) }); }
     catch (error) { response.status(400).json({ error: message(error) }); }
   });
   router.post('/effects', async (request, response) => {
@@ -122,7 +144,7 @@ export function mountAdminRoutes(app: Express, effects: ReturnType<typeof create
     try {
       const effect = effects.get(request.params.id);
       if (!effect) return response.status(404).json({ error: '特效不存在。' });
-      response.json({ html: await effects.compile(effect, request.body?.values as Partial<EffectValues>, true) });
+      response.json({ html: await effects.compile(effect, request.body?.values as Partial<EffectValues>, true, previewAssetUrl(request, request.body?.values)) });
     } catch (error) { response.status(400).json({ error: message(error) }); }
   });
   router.post('/effects/:id/render', async (request, response) => {

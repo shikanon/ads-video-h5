@@ -25,6 +25,6 @@
 </script>
 ```
 
-可用数据字段：`eyebrow`、`title`、`subtitle`、`imageUrl`、`accent`。文字用 `data-qj-field`，图片容器用 `data-qj-image`；服务端会把用户内容编码为安全 JSON 后注入。视频根节点的时长、宽高由后台表单覆盖，支持 9:16、16:9、1:1，时长 1–15 秒。
+可用文案字段：`eyebrow`、`title`、`subtitle`、`accent`。文字用 `data-qj-field`，图片或视频容器用 `data-qj-image`；素材通过后台本地文件选择上传，渲染请求传 `assetId`，服务端将对应媒体注入画面。视频根节点的时长、宽高由后台表单覆盖，支持 9:16、16:9、1:1，时长 1–15 秒。
 
 模板文件存在服务端持久目录 `html-effects/catalog.json`；由后台保存，不随代码部署覆盖。仓库内种子模板由 `server/htmlEffects.ts` 提供，新实例首次启动时创建。渲染使用 HyperFrames 的时间轴与 MP4 编码；设计原则参考 [motion-skills](https://github.com/iart-ai/motion-skills) 的节奏、安全区和逐帧检查思路，代码和组件为轻剪独立实现。

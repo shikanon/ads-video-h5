@@ -12,7 +12,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const token = process.env.QINGJIAN_ADMIN_TOKEN || (await readFile(path.join(repo, 'data', 'admin-token'), 'utf8').catch(() => '')).trim();
 if (!token) throw new Error('缺少管理员令牌。请设置 QINGJIAN_ADMIN_TOKEN 或本地 data/admin-token。');
 async function api(endpoint, init = {}) {
-  const response = await fetch(`${server}${endpoint}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.body ? { 'Content-Type': 'application/json' } : {}) } });
+  const response = await fetch(`${server}${endpoint}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}) } });
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `HTTP ${response.status}`); }
   return response;
 }
@@ -24,7 +24,21 @@ if (!effect) throw new Error('请用 --effect 指定有效模板；运行 --list
 const output = option('--output');
 if (!output) throw new Error('请用 --output 指定 MP4 输出文件。');
 const values = {};
-for (const [flag, key] of [['--title','title'],['--subtitle','subtitle'],['--eyebrow','eyebrow'],['--image-url','imageUrl']]) { const value = option(flag); if (value) values[key] = value; }
+for (const [flag, key] of [['--title','title'],['--subtitle','subtitle'],['--eyebrow','eyebrow']]) { const value = option(flag); if (value) values[key] = value; }
+const imageFile = option('--image-file');
+const videoFile = option('--video-file');
+if (imageFile && videoFile) throw new Error('一次只能选择一张图片或一个视频。');
+if (imageFile || videoFile) {
+  const filename = path.resolve(imageFile || videoFile);
+  const extension = path.extname(filename).toLowerCase();
+  const types = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
+  const mimeType = types[extension];
+  if (!mimeType || (imageFile && !mimeType.startsWith('image/')) || (videoFile && !mimeType.startsWith('video/'))) throw new Error('请选择 JPG、PNG、WebP、MP4、WebM 或 MOV 文件。');
+  const body = new FormData();
+  body.append('file', new File([await readFile(filename)], path.basename(filename), { type: mimeType }));
+  const uploaded = await (await api('/api/admin/effects/assets', { method: 'POST', body })).json();
+  values.assetId = uploaded.asset.id;
+}
 const result = await (await api(`/api/admin/effects/${encodeURIComponent(effect.id)}/render`, { method: 'POST', body: JSON.stringify({ values }) })).json();
 const id = result.render.id;
 const start = Date.now();

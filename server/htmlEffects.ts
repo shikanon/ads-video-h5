@@ -1,22 +1,26 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { detectImage, probeVideo } from './core';
+import type { createOssStorage } from './ossStorage';
 
-export interface EffectValues { eyebrow: string; title: string; subtitle: string; imageUrl: string; accent: string }
+export interface EffectValues { eyebrow: string; title: string; subtitle: string; imageUrl: string; videoUrl: string; assetId: string; accent: string }
+export interface EffectAsset { id: string; name: string; kind: 'image' | 'video'; mimeType: string; size: number; createdAt: string }
 export interface HtmlEffect {
   id: string; name: string; description: string; html: string; duration: number;
   width: number; height: number; enabled: boolean; defaults: EffectValues;
   createdAt: string; updatedAt: string;
 }
 export interface EffectRender { id: string; effectId: string; status: 'queued' | 'running' | 'succeeded' | 'failed'; createdAt: string; file?: string; error?: string }
+export interface EffectSourceMedia { file: string; kind: 'image' | 'video'; mimeType: string }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const gsapPath = path.join(root, 'node_modules', 'gsap', 'dist', 'gsap.min.js');
 const cliPath = path.join(root, 'node_modules', '.bin', 'hyperframes');
 const allowedAccent = /^#[0-9a-fA-F]{6}$/;
-const blankValues: EffectValues = { eyebrow: '轻剪 · YOUR STORY', title: '去看更大的世界', subtitle: '把今天，剪成值得收藏的片段。', imageUrl: '', accent: '#fb7353' };
+const blankValues: EffectValues = { eyebrow: '轻剪 · YOUR STORY', title: '去看更大的世界', subtitle: '把今天，剪成值得收藏的片段。', imageUrl: '', videoUrl: '', assetId: '', accent: '#fb7353' };
 
 // This is the product motion library. Each primitive adds frame-addressable GSAP tweens.
 export const motionLibrary = `window.QJMotion = Object.freeze({
@@ -56,19 +60,26 @@ function normalizeValues(input: Partial<EffectValues> = {}, fallback: EffectValu
   const values = { ...fallback };
   for (const key of ['eyebrow','title','subtitle'] as const) if (typeof input[key] === 'string') values[key] = input[key]!.slice(0, key === 'title' ? 60 : 120);
   if (typeof input.imageUrl === 'string') values.imageUrl = /^https:\/\//.test(input.imageUrl) ? input.imageUrl.slice(0, 2000) : '';
+  if (typeof input.videoUrl === 'string') values.videoUrl = /^https:\/\//.test(input.videoUrl) ? input.videoUrl.slice(0, 2000) : '';
+  if (typeof input.assetId === 'string') values.assetId = /^[0-9a-f-]{36}$/i.test(input.assetId) ? input.assetId : '';
   if (typeof input.accent === 'string' && allowedAccent.test(input.accent)) values.accent = input.accent;
   return values;
 }
 const safeJson = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 
-export function createEffectStore(dataDir: string) {
+export function createEffectStore(dataDir: string, oss?: ReturnType<typeof createOssStorage>) {
   const dir = path.join(dataDir, 'html-effects');
   const catalogFile = path.join(dir, 'catalog.json');
   const rendersFile = path.join(dir, 'renders.json');
+  const assetsFile = path.join(dir, 'assets.json');
+  const assetsDir = path.join(dir, 'assets');
+  const uploadsDir = path.join(dir, 'uploads');
   const rendersDir = path.join(dir, 'renders');
   let catalog: HtmlEffect[] = [];
+  let assets: EffectAsset[] = [];
   const renders = new Map<string, EffectRender>();
   let saving = Promise.resolve();
+  let savingAssets = Promise.resolve();
   let savingRenders = Promise.resolve();
   let rendering = false;
   const save = () => {
@@ -81,10 +92,17 @@ export function createEffectStore(dataDir: string) {
     savingRenders = savingRenders.catch(() => undefined).then(async () => { const temp = `${rendersFile}.${randomUUID()}.tmp`; await writeFile(temp, data, { mode: 0o600 }); await rename(temp, rendersFile); });
     return savingRenders;
   };
+  const saveAssets = () => {
+    const data = JSON.stringify(assets, null, 2);
+    savingAssets = savingAssets.catch(() => undefined).then(async () => { const temp = `${assetsFile}.${randomUUID()}.tmp`; await writeFile(temp, data, { mode: 0o600 }); await rename(temp, assetsFile); });
+    return savingAssets;
+  };
   async function init() {
-    await mkdir(rendersDir, { recursive: true });
+    await Promise.all([rendersDir, assetsDir, uploadsDir].map((item) => mkdir(item, { recursive: true })));
     try { catalog = JSON.parse(await readFile(catalogFile, 'utf8')) as HtmlEffect[]; if (!Array.isArray(catalog)) throw new Error('invalid'); }
     catch { catalog = seed(); await save(); }
+    assets = await readFile(assetsFile, 'utf8').then((value) => JSON.parse(value) as EffectAsset[]).catch(() => []);
+    if (!Array.isArray(assets)) assets = [];
     const previous = await readFile(rendersFile, 'utf8').then((value) => JSON.parse(value) as EffectRender[]).catch(() => []);
     if (Array.isArray(previous)) for (const item of previous) {
       if (item.status === 'queued' || item.status === 'running') { item.status = 'failed'; item.error = '服务重启导致渲染中断，请重新生成。'; }
@@ -94,6 +112,33 @@ export function createEffectStore(dataDir: string) {
   }
   const list = () => catalog.map((item) => ({ ...item }));
   const get = (id: string) => catalog.find((item) => item.id === id);
+  const getAsset = (id: string) => assets.find((item) => item.id === id);
+  const assetFile = (asset: EffectAsset) => path.join(assetsDir, `${asset.id}.${asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType === 'image/png' ? 'png' : asset.mimeType === 'image/webp' ? 'webp' : asset.mimeType === 'video/webm' ? 'webm' : asset.mimeType === 'video/quicktime' ? 'mov' : 'mp4'}`);
+  async function saveAsset(file: string, name: string, mimeType: string): Promise<EffectAsset> {
+    const kind = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video' : null;
+    if (!kind || !['image/jpeg','image/png','image/webp','video/mp4','video/webm','video/quicktime'].includes(mimeType)) throw new Error('仅支持 JPG、PNG、WebP、MP4、WebM 或 MOV 文件。');
+    const size = (await stat(file)).size;
+    if (!size || size > (kind === 'image' ? 20 : 150) * 1024 * 1024) throw new Error(kind === 'image' ? '图片不能超过 20 MB。' : '视频不能超过 150 MB。');
+    if (kind === 'image' && detectImage(await readFile(file)) !== mimeType) throw new Error('图片文件内容与格式不匹配。');
+    if (kind === 'video') await probeVideo(file);
+    const asset: EffectAsset = { id: randomUUID(), name: path.basename(name).slice(0, 120), kind, mimeType, size, createdAt: new Date().toISOString() };
+    const destination = assetFile(asset);
+    try {
+      await rename(file, destination);
+      await oss?.put('admin-effects', 'media', asset.id, destination, mimeType);
+      assets.push(asset); await saveAssets();
+      return asset;
+    } catch (error) {
+      await rm(destination, { force: true });
+      await oss?.remove('admin-effects', 'media', asset.id).catch(() => undefined);
+      throw error;
+    }
+  }
+  async function ensureAsset(asset: EffectAsset): Promise<string> {
+    const file = assetFile(asset);
+    await oss?.ensure('admin-effects', 'media', asset.id, file);
+    return file;
+  }
   async function upsert(input: Partial<HtmlEffect>, id?: string) {
     checkEffect(input);
     const existing = id ? get(id) : undefined;
@@ -104,13 +149,24 @@ export function createEffectStore(dataDir: string) {
     await save(); return item;
   }
   async function remove(id: string) { if (!get(id)) throw new Error('特效不存在。'); catalog = catalog.filter((item) => item.id !== id); await save(); }
-  async function compile(effect: HtmlEffect, input?: Partial<EffectValues>, preview = false): Promise<string> {
+  const listAssets = () => [...assets].reverse();
+  const publicAssetUrl = (asset: EffectAsset, fallback: string) => oss?.publicUrl('admin-effects', 'media', asset.id) || fallback;
+  async function compile(effect: HtmlEffect, input?: Partial<EffectValues>, preview = false, assetUrl?: string, sourceKind?: 'image' | 'video'): Promise<string> {
     const gsap = await readFile(gsapPath, 'utf8');
     const values = normalizeValues(input, effect.defaults);
-    const dataScript = `window.__QJ_DATA__=${safeJson(values)};window.__QJ_PREVIEW__=${preview};window.__timelines=window.__timelines||{};document.querySelectorAll('[data-qj-field]').forEach(el=>{el.textContent=window.__QJ_DATA__[el.dataset.qjField]||''});document.querySelectorAll('[data-qj-image]').forEach(el=>{const url=window.__QJ_DATA__[el.dataset.qjImage];if(url)el.style.backgroundImage='url('+JSON.stringify(url)+')'});document.documentElement.style.setProperty('--qj-accent',window.__QJ_DATA__.accent);document.documentElement.style.setProperty('--qj-width','${effect.width}px');document.documentElement.style.setProperty('--qj-height','${effect.height}px');`;
+    if (values.assetId) {
+      const asset = getAsset(values.assetId);
+      if (!asset || !assetUrl) throw new Error('所选素材不存在，请重新上传。');
+      values.imageUrl = asset.kind === 'image' ? assetUrl : '';
+      values.videoUrl = asset.kind === 'video' ? assetUrl : '';
+    } else if (assetUrl && sourceKind) {
+      values.imageUrl = sourceKind === 'image' ? assetUrl : '';
+      values.videoUrl = sourceKind === 'video' ? assetUrl : '';
+    }
+    const dataScript = `window.__QJ_DATA__=${safeJson(values)};window.__QJ_PREVIEW__=${preview};window.__timelines=window.__timelines||{};document.querySelectorAll('[data-qj-field]').forEach(el=>{el.textContent=window.__QJ_DATA__[el.dataset.qjField]||''});document.querySelectorAll('[data-qj-image]').forEach(el=>{const image=window.__QJ_DATA__[el.dataset.qjImage];const video=window.__QJ_DATA__.videoUrl;if(video){el.style.backgroundImage='none';if(getComputedStyle(el).position==='static')el.style.position='relative';const media=document.createElement('video');media.src=video;media.muted=true;media.autoplay=true;media.playsInline=true;media.loop=true;media.setAttribute('data-start','0');media.setAttribute('data-duration','${effect.duration}');media.setAttribute('data-track-index','0');media.setAttribute('data-volume','0');Object.assign(media.style,{position:'absolute',inset:'0',width:'100%',height:'100%',objectFit:'cover'});el.appendChild(media)}else if(image)el.style.backgroundImage='url('+JSON.stringify(image)+')'});document.documentElement.style.setProperty('--qj-accent',window.__QJ_DATA__.accent);document.documentElement.style.setProperty('--qj-width','${effect.width}px');document.documentElement.style.setProperty('--qj-height','${effect.height}px');`;
     return effect.html.replace('<!--QJ_RUNTIME-->', `<script>${gsap.replace(/<\/script/gi, '<\\/script')}</script><script>${motionLibrary}</script>`).replace('<!--QJ_DATA-->', `<script>${dataScript}</script>`).replace(/data-duration="[^"]*"(?=[^>]*data-width)/, `data-duration="${effect.duration}"`).replace(/data-width="[^"]*"/, `data-width="${effect.width}"`).replace(/data-height="[^"]*"/, `data-height="${effect.height}"`);
   }
-  async function render(effect: HtmlEffect, values?: Partial<EffectValues>): Promise<EffectRender> {
+  async function render(effect: HtmlEffect, values?: Partial<EffectValues>, sourceMedia?: EffectSourceMedia): Promise<EffectRender> {
     if (rendering) throw new Error('已有特效正在渲染，请稍后再试。');
     rendering = true;
     const id = randomUUID(); const createdAt = new Date().toISOString();
@@ -119,7 +175,21 @@ export function createEffectStore(dataDir: string) {
     void (async () => {
       try {
         job.status = 'running'; await saveRenders(); await mkdir(workDir, { recursive: true });
-        await writeFile(path.join(workDir, 'index.html'), await compile(effect, values), 'utf8');
+        let localAssetUrl: string | undefined;
+        if (values?.assetId) {
+          const asset = getAsset(values.assetId);
+          if (!asset) throw new Error('所选素材不存在，请重新上传。');
+          const source = await ensureAsset(asset);
+          await mkdir(path.join(workDir, 'assets'), { recursive: true });
+          localAssetUrl = `./assets/${path.basename(source)}`;
+          await copyFile(source, path.join(workDir, localAssetUrl));
+        } else if (sourceMedia) {
+          const extension = sourceMedia.mimeType === 'image/png' ? 'png' : sourceMedia.mimeType === 'image/webp' ? 'webp' : sourceMedia.mimeType === 'image/jpeg' ? 'jpg' : sourceMedia.mimeType === 'video/webm' ? 'webm' : sourceMedia.mimeType === 'video/quicktime' ? 'mov' : 'mp4';
+          await mkdir(path.join(workDir, 'assets'), { recursive: true });
+          localAssetUrl = `./assets/source.${extension}`;
+          await copyFile(sourceMedia.file, path.join(workDir, localAssetUrl));
+        }
+        await writeFile(path.join(workDir, 'index.html'), await compile(effect, values, false, localAssetUrl, sourceMedia?.kind), 'utf8');
         await new Promise<void>((resolve, reject) => {
           const child = spawn(cliPath, ['render', workDir, '-o', output, '--fps', '24', '--quality', 'draft', '--workers', '1'], { cwd: root, env: { ...process.env, PATH: `${path.join(root,'node_modules','.bin')}:${process.env.PATH || ''}` }, stdio: ['ignore','pipe','pipe'] });
           let log = ''; const append = (chunk: Buffer) => { log = (log + chunk.toString()).slice(-6000); };
@@ -134,5 +204,5 @@ export function createEffectStore(dataDir: string) {
     })();
     return job;
   }
-  return { init, list, get, upsert, remove, compile, render, getRender: (id: string) => renders.get(id), listRenders: () => [...renders.values()].reverse(), rendersDir };
+  return { init, list, get, upsert, remove, compile, render, listAssets, getAsset, saveAsset, ensureAsset, publicAssetUrl, uploadsDir, getRender: (id: string) => renders.get(id), listRenders: () => [...renders.values()].reverse(), rendersDir };
 }

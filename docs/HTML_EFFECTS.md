@@ -16,13 +16,13 @@
 
 三个片段拼成的 17 秒展示片：[showcase.mp4](../public/effects/showcase.mp4)。它由 HTML 渲染后的片段交叉淡入拼接，并叠加轻剪原创的内置配乐。
 
-演示文件可由 `pnpm tsx scripts/render-effect-demos.ts` 重建。照片演示采用仓库已有的海岸素材，素材来自产品 Landing。默认模板无照片时显示渐变底色；正式使用前检查所选 HTTPS 图片是否能被渲染进视频。
+演示文件可由 `pnpm tsx scripts/render-effect-demos.ts` 重建。照片演示采用仓库已有的海岸素材，素材来自产品 Landing。后台可直接从本地选择图片或视频上传，并再次选用已上传素材。默认模板无素材时显示渐变底色；正式使用前检查所选素材是否进入视频。
 
 ## 后台 API
 
-所有接口要求管理员 Bearer 令牌。读取模板：`GET /api/admin/effects`；增加、修改、删除：`POST /api/admin/effects`、`PUT/DELETE /api/admin/effects/:id`。草稿预览：`POST /api/admin/effects/preview-draft`，请求体 `{effect,values}`，响应 `{html}`。渲染：`POST /api/admin/effects/:id/render`，请求体 `{values}`，返回任务 ID；`GET /api/admin/effects/renders/:id` 查询状态，`GET /api/admin/effects/renders/:id/download` 下载 MP4。`GET /api/admin/effects/renders` 返回最近渲染记录。普通用户可通过 `GET /api/effects` 查看已启用模板摘要，但不能读取 HTML 源码。
+所有后台接口要求管理员 Bearer 令牌。读取模板：`GET /api/admin/effects`；增加、修改、删除：`POST /api/admin/effects`、`PUT/DELETE /api/admin/effects/:id`。上传素材：`POST /api/admin/effects/assets`，以 multipart `file` 传本地图片或视频；`GET /api/admin/effects/assets` 列出可复用素材。草稿预览：`POST /api/admin/effects/preview-draft`，请求体 `{effect,values}`，其中 `values.assetId` 引用上传素材，响应 `{html}`。渲染：`POST /api/admin/effects/:id/render`，请求体 `{values}`，返回任务 ID；`GET /api/admin/effects/renders/:id` 查询状态，`GET /api/admin/effects/renders/:id/download` 下载 MP4。`GET /api/admin/effects/renders` 返回最近渲染记录。普通用户可通过 `GET /api/effects` 查看已启用模板摘要，但不能读取 HTML 源码。
 
-画幅支持 9:16、16:9、1:1；时长 1–15 秒。用户文案通过 `textContent` 写入，图片只接受 HTTPS URL。后台 HTML 只允许可信管理员编辑，预览 iframe 设置 `sandbox="allow-scripts"`。渲染进程单任务运行，设有 180 秒超时；失败记录错误，后续任务可重试。轻剪技能在 [skills/qingjian-html-video](../skills/qingjian-html-video/SKILL.md)，可通过后台 API 列出模板、渲染并下载到本地。
+画幅支持 9:16、16:9、1:1；时长 1–15 秒。用户文案通过 `textContent` 写入，图片支持 JPG、PNG、WebP（20 MB 内），视频支持 MP4、WebM、MOV（150 MB 内）；文件先在服务端校验，再保存到持久目录并同步至已配置的 OSS。后台 HTML 只允许可信管理员编辑，预览 iframe 设置 `sandbox="allow-scripts"`。渲染进程单任务运行，设有 180 秒超时；失败记录错误，后续任务可重试。轻剪技能在 [skills/qingjian-html-video](../skills/qingjian-html-video/SKILL.md)，可通过后台 API 列出模板、渲染并下载到本地。
 
 ## 运行环境
 
