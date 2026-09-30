@@ -31,6 +31,7 @@ import type {
   ChatMessage,
   Job,
   MediaItem,
+  MediaKind,
   PublicUser,
   Session,
 } from "./types";
@@ -46,6 +47,13 @@ type Page =
   | "privacy"
   | "timeline";
 type Locale = "zh-CN" | "en-US";
+type MediaFilter = "all" | MediaKind;
+const mediaAccept: Record<MediaFilter, string> = {
+  all: "video/*,image/jpeg,image/png,image/webp,audio/mpeg,audio/wav,audio/x-wav,audio/ogg",
+  video: "video/*",
+  image: "image/jpeg,image/png,image/webp",
+  audio: "audio/mpeg,audio/wav,audio/x-wav,audio/ogg",
+};
 const apiPath = (url: string) => `${import.meta.env.BASE_URL.replace(/\/$/, "")}${url}`;
 const landscapeUrl = `${import.meta.env.BASE_URL}travel-cover.png`;
 const labels = {
@@ -518,7 +526,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   const [newPassword, setNewPassword] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
   const [passwordPending, setPasswordPending] = useState(false);
-  const [filter, setFilter] = useState<"all" | "video" | "image" | "audio">(
+  const [filter, setFilter] = useState<MediaFilter>(
     "all",
   );
   const [imagePreview, setImagePreview] = useState<Artifact | null>(null);
@@ -532,6 +540,8 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   const drafts = useRef<Record<string, { prompt: string; attachments: string[] }>>({});
   const stateRef = useRef<AppState | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const pickerKind = useRef<MediaFilter>("all");
+  const pickerSource = useRef<"chat" | "library">("chat");
   const bgInput = useRef<HTMLInputElement>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
   const chatScroll = useRef<HTMLDivElement>(null);
@@ -637,9 +647,18 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
       setPending(false);
     }
   }
+  function openFilePicker(kind: MediaFilter = "all", source: "chat" | "library" = "chat") {
+    pickerKind.current = kind;
+    pickerSource.current = source;
+    if (!fileInput.current) return;
+    fileInput.current.accept = mediaAccept[kind];
+    fileInput.current.click();
+  }
   function upload(files: FileList | null) {
     if (!files?.length) return;
     const selected = Array.from(files);
+    const expectedKind = pickerKind.current;
+    const source = pickerSource.current;
     if (
       selected.some(
         (f) => !f.type.startsWith("video/") && !f.type.startsWith("image/") && !f.type.startsWith("audio/"),
@@ -650,6 +669,12 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
           ? "只支持视频、图片和音频。"
           : "Only videos, images and audio are supported.",
       );
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
+    if (expectedKind !== "all" && selected.some((file) => !file.type.startsWith(`${expectedKind}/`))) {
+      setError(locale === "zh-CN" ? `当前分类只允许添加${mediaKindLabel(expectedKind, locale)}文件。` : `Only ${mediaKindLabel(expectedKind, locale).toLowerCase()} files can be added here.`);
+      if (fileInput.current) fileInput.current.value = "";
       return;
     }
     const oldIds = new Set(stateRef.current?.media.map((m) => m.id) || []);
@@ -672,15 +697,12 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
         if (xhr.status < 200 || xhr.status >= 300)
           throw new Error(result.error || "上传失败。");
         apply(result);
-        setAttachments((ids) => [
-          ...new Set([
-            ...ids,
-            ...result.media
-              .filter((m) => !oldIds.has(m.id) && (m.kind === "image" || m.kind === "audio"))
-              .map((m) => m.id),
-          ]),
-        ]);
-        nav("chat");
+        if (source === "chat") {
+          setAttachments((ids) => [
+            ...new Set([...ids, ...result.media.filter((m) => !oldIds.has(m.id)).map((m) => m.id)]),
+          ]);
+          nav("chat");
+        }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "上传失败。");
       }
@@ -936,7 +958,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                   <button
                     type="button"
                     className="add-media-inline"
-                    onClick={() => fileInput.current?.click()}
+                    onClick={() => openFilePicker()}
                   >
                     <Plus size={18} />
                     {t.add}
@@ -1111,8 +1133,8 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                   <button
                     type="button"
                     className="attach-button"
-                    onClick={() => fileInput.current?.click()}
-                    aria-label={t.add}
+                    onClick={() => openFilePicker("image")}
+                    aria-label={locale === "zh-CN" ? "添加图片" : "Add image"}
                   >
                     <ImagePlus size={21} />
                   </button>
@@ -1189,6 +1211,18 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
         ) : null}
         {page === "media" ? (
           <section className="subpage-content">
+            {uploadProgress !== null ? (
+              <div className="upload-progress" role="status">
+                {locale === "zh-CN" ? "上传素材" : "Uploading"} · {uploadProgress}%
+                <span style={{ width: `${uploadProgress}%` }} />
+              </div>
+            ) : null}
+            {error ? (
+              <div className="error-banner" role="alert">
+                <span>{error}</span>
+                <button type="button" onClick={() => setError("")} aria-label="关闭"><X size={16} /></button>
+              </div>
+            ) : null}
             <div className="filter-tabs" role="tablist">
               {(["all", "video", "image", "audio"] as const).map((value) => (
                 <button
@@ -1212,10 +1246,10 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
             <button
               type="button"
               className="add-row"
-              onClick={() => fileInput.current?.click()}
+              onClick={() => openFilePicker(filter, "library")}
             >
               <Plus size={19} />
-              {t.add}
+              {filter === "all" ? t.add : locale === "zh-CN" ? `添加${mediaKindLabel(filter, locale)}` : `Add ${mediaKindLabel(filter, locale).toLowerCase()}`}
             </button>
             {state?.media.filter((m) => filter === "all" || m.kind === filter)
               .length ? (
@@ -1650,7 +1684,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
         <input
           ref={fileInput}
           type="file"
-          accept="video/*,image/*,audio/mpeg,audio/wav,audio/x-wav,audio/ogg"
+          accept={mediaAccept.all}
           multiple
           hidden
           onChange={(e) => upload(e.target.files)}
