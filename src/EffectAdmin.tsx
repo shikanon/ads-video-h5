@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Clapperboard, Copy, Download, Eye, Film, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { MAX_EFFECT_IMAGE_UPLOAD_BYTES, MAX_MEDIA_UPLOAD_BYTES } from './uploadLimits';
 
 type Values = { eyebrow: string; title: string; subtitle: string; imageUrl?: string; videoUrl?: string; assetId?: string; accent: string };
 type Effect = { id: string; name: string; description: string; html: string; duration: number; width: number; height: number; enabled: boolean; defaults: Values; createdAt: string; updatedAt: string };
@@ -49,6 +50,8 @@ export default function EffectAdmin({ token }: { token: string }) {
   async function uploadAsset(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; event.target.value = '';
     if (!file) return;
+    const maxBytes = file.type.startsWith('image/') ? MAX_EFFECT_IMAGE_UPLOAD_BYTES : MAX_MEDIA_UPLOAD_BYTES;
+    if (file.size > maxBytes) { setError(file.type.startsWith('image/') ? '图片不能超过 20 MB。' : '视频不能超过 100 MB，请先压缩。'); return; }
     setUploading(true); setError(''); setNotice('');
     try {
       const body = new FormData(); body.append('file', file);
@@ -120,7 +123,7 @@ export default function EffectAdmin({ token }: { token: string }) {
           <div className="admin-form-grid"><label>预览标题<input value={values.title} onChange={(event) => setValues({ ...values, title: event.target.value })} /></label><label>预览副标题<input value={values.subtitle} onChange={(event) => setValues({ ...values, subtitle: event.target.value })} /></label></div>
           <div className="effects-asset-picker">
             <label className="effects-upload"><Upload size={18} /><span>{uploading ? '正在上传…' : '从本地选择图片或视频'}</span><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" disabled={uploading || busy} onChange={(event) => void uploadAsset(event)} /></label>
-            <p>支持 JPG、PNG、WebP（20 MB 内）和 MP4、WebM、MOV（150 MB 内）。素材上传后可重复选用；需选择含 data-qj-image 画面容器的模板。</p>
+            <p>支持 JPG、PNG、WebP（20 MB 内）和 MP4、WebM、MOV（100 MB 内）。素材上传后可重复选用；需选择含 data-qj-image 画面容器的模板。</p>
             {selectedAssetId ? <div className="effects-selected-asset"><span>已选：{assets.find((asset) => asset.id === selectedAssetId)?.name || '素材'}</span><button type="button" aria-label="移除已选素材" onClick={() => { setSelectedAssetId(''); setPreview(''); }}><X size={15} /></button></div> : null}
             {assets.length ? <div className="effects-asset-list" aria-label="已上传素材">{assets.slice(0, 12).map((asset) => <button type="button" key={asset.id} className={selectedAssetId === asset.id ? 'is-selected' : ''} onClick={() => { setSelectedAssetId(asset.id); setPreview(''); }}><span>{asset.kind === 'video' ? '视频' : '图片'}</span><strong title={asset.name}>{asset.name}</strong></button>)}</div> : null}
           </div>

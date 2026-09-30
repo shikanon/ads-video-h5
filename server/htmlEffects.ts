@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { detectImage, probeVideo } from './core';
 import type { createOssStorage } from './ossStorage';
+import { MAX_EFFECT_IMAGE_UPLOAD_BYTES, MAX_MEDIA_UPLOAD_BYTES } from '../src/uploadLimits';
 
 export interface EffectValues { eyebrow: string; title: string; subtitle: string; imageUrl: string; videoUrl: string; assetId: string; accent: string }
 export interface EffectAsset { id: string; name: string; kind: 'image' | 'video'; mimeType: string; size: number; createdAt: string }
@@ -118,7 +119,7 @@ export function createEffectStore(dataDir: string, oss?: ReturnType<typeof creat
     const kind = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video' : null;
     if (!kind || !['image/jpeg','image/png','image/webp','video/mp4','video/webm','video/quicktime'].includes(mimeType)) throw new Error('仅支持 JPG、PNG、WebP、MP4、WebM 或 MOV 文件。');
     const size = (await stat(file)).size;
-    if (!size || size > (kind === 'image' ? 20 : 150) * 1024 * 1024) throw new Error(kind === 'image' ? '图片不能超过 20 MB。' : '视频不能超过 150 MB。');
+    if (!size || size > (kind === 'image' ? MAX_EFFECT_IMAGE_UPLOAD_BYTES : MAX_MEDIA_UPLOAD_BYTES)) throw new Error(kind === 'image' ? '图片不能超过 20 MB。' : '视频不能超过 100 MB，请先压缩。');
     if (kind === 'image' && detectImage(await readFile(file)) !== mimeType) throw new Error('图片文件内容与格式不匹配。');
     if (kind === 'video') await probeVideo(file);
     const asset: EffectAsset = { id: randomUUID(), name: path.basename(name).slice(0, 120), kind, mimeType, size, createdAt: new Date().toISOString() };

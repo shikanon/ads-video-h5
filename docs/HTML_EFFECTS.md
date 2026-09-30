@@ -22,7 +22,7 @@
 
 所有后台接口要求管理员 Bearer 令牌。读取模板：`GET /api/admin/effects`；增加、修改、删除：`POST /api/admin/effects`、`PUT/DELETE /api/admin/effects/:id`。上传素材：`POST /api/admin/effects/assets`，以 multipart `file` 传本地图片或视频；`GET /api/admin/effects/assets` 列出可复用素材。草稿预览：`POST /api/admin/effects/preview-draft`，请求体 `{effect,values}`，其中 `values.assetId` 引用上传素材，响应 `{html}`。渲染：`POST /api/admin/effects/:id/render`，请求体 `{values}`，返回任务 ID；`GET /api/admin/effects/renders/:id` 查询状态，`GET /api/admin/effects/renders/:id/download` 下载 MP4。`GET /api/admin/effects/renders` 返回最近渲染记录。普通用户可通过 `GET /api/effects` 查看已启用模板摘要，但不能读取 HTML 源码。
 
-画幅支持 9:16、16:9、1:1；时长 1–15 秒。用户文案通过 `textContent` 写入，图片支持 JPG、PNG、WebP（20 MB 内），视频支持 MP4、WebM、MOV（150 MB 内）；文件先在服务端校验，再保存到持久目录并同步至已配置的 OSS。后台 HTML 只允许可信管理员编辑，预览 iframe 设置 `sandbox="allow-scripts"`。渲染进程单任务运行，设有 180 秒超时；失败记录错误，后续任务可重试。轻剪技能在 [skills/qingjian-html-video](../skills/qingjian-html-video/SKILL.md)，可通过后台 API 列出模板、渲染并下载到本地。
+画幅支持 9:16、16:9、1:1；时长 1–15 秒。用户文案通过 `textContent` 写入，图片支持 JPG、PNG、WebP（20 MB 内），视频支持 MP4、WebM、MOV（100 MB 内）；文件先在浏览器检查大小、服务端再校验，然后保存到持久目录并同步至已配置的 OSS。后台 HTML 只允许可信管理员编辑，预览 iframe 设置 `sandbox="allow-scripts"`。渲染进程单任务运行，设有 180 秒超时；失败记录错误，后续任务可重试。轻剪技能在 [skills/qingjian-html-video](../skills/qingjian-html-video/SKILL.md)，可通过后台 API 列出模板、渲染并下载到本地。
 
 ## 运行环境
 

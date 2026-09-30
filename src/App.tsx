@@ -35,6 +35,7 @@ import type {
   PublicUser,
   Session,
 } from "./types";
+import { MAX_MEDIA_UPLOAD_BYTES } from "./uploadLimits";
 
 type Page =
   | "chat"
@@ -674,6 +675,12 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
     }
     if (expectedKind !== "all" && selected.some((file) => !file.type.startsWith(`${expectedKind}/`))) {
       setError(locale === "zh-CN" ? `当前分类只允许添加${mediaKindLabel(expectedKind, locale)}文件。` : `Only ${mediaKindLabel(expectedKind, locale).toLowerCase()} files can be added here.`);
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
+    const oversized = selected.find((file) => file.size > MAX_MEDIA_UPLOAD_BYTES);
+    if (oversized) {
+      setError(locale === "zh-CN" ? `「${oversized.name}」超过 100 MB，请先压缩再上传。` : `"${oversized.name}" exceeds 100 MB. Compress it before uploading.`);
       if (fileInput.current) fileInput.current.value = "";
       return;
     }

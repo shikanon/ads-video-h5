@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,6 +34,7 @@ if (imageFile || videoFile) {
   const types = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
   const mimeType = types[extension];
   if (!mimeType || (imageFile && !mimeType.startsWith('image/')) || (videoFile && !mimeType.startsWith('video/'))) throw new Error('请选择 JPG、PNG、WebP、MP4、WebM 或 MOV 文件。');
+  if ((await stat(filename)).size > (imageFile ? 20 : 100) * 1024 * 1024) throw new Error(imageFile ? '图片不能超过 20 MB。' : '视频不能超过 100 MB，请先压缩。');
   const body = new FormData();
   body.append('file', new File([await readFile(filename)], path.basename(filename), { type: mimeType }));
   const uploaded = await (await api('/api/admin/effects/assets', { method: 'POST', body })).json();

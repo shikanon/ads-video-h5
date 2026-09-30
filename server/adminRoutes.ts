@@ -13,6 +13,7 @@ import {
   type ModelConfig,
 } from './modelRegistry';
 import type { createEffectStore, EffectValues, HtmlEffect } from './htmlEffects';
+import { MAX_MEDIA_UPLOAD_BYTES } from '../src/uploadLimits';
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : '操作失败，请重试。';
@@ -41,7 +42,7 @@ function parseModel(body: unknown, id?: string): Partial<ModelConfig> & Pick<Mod
 
 export function mountAdminRoutes(app: Express, effects: ReturnType<typeof createEffectStore>, publicBase = ''): void {
   const router = Router();
-  const assetUpload = multer({ storage: multer.diskStorage({ destination: effects.uploadsDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: 150 * 1024 * 1024, files: 1 } });
+  const assetUpload = multer({ storage: multer.diskStorage({ destination: effects.uploadsDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: MAX_MEDIA_UPLOAD_BYTES, files: 1 } });
   const previewAssetUrl = (request: Request, values?: Partial<EffectValues>) => {
     if (!values?.assetId) return undefined;
     const asset = effects.getAsset(values.assetId);
@@ -116,7 +117,7 @@ export function mountAdminRoutes(app: Express, effects: ReturnType<typeof create
   router.get('/effects/assets', (_request, response) => response.json({ assets: effects.listAssets() }));
   router.post('/effects/assets', (request, response) => {
     assetUpload.single('file')(request, response, async (uploadError) => {
-      if (uploadError) return response.status(400).json({ error: uploadError instanceof multer.MulterError && uploadError.code === 'LIMIT_FILE_SIZE' ? '文件不能超过 150 MB。' : message(uploadError) });
+      if (uploadError) return response.status(400).json({ error: uploadError instanceof multer.MulterError && uploadError.code === 'LIMIT_FILE_SIZE' ? '文件不能超过 100 MB，请先压缩。' : message(uploadError) });
       if (!request.file) return response.status(400).json({ error: '请选择本地图片或视频文件。' });
       try { response.status(201).json({ asset: await effects.saveAsset(request.file.path, path.basename(request.file.originalname), request.file.mimetype) }); }
       catch (error) { response.status(400).json({ error: message(error) }); }

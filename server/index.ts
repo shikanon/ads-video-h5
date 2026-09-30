@@ -15,6 +15,7 @@ import { mountAdminRoutes } from './adminRoutes';
 import { createAuth, userOf, type PublicUser } from './auth';
 import { createOssStorage, type AssetCategory } from './ossStorage';
 import { createEffectStore, type EffectValues } from './htmlEffects';
+import { MAX_MEDIA_UPLOAD_BYTES } from '../src/uploadLimits';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -395,7 +396,7 @@ app.get('/api/effects/assets/:id', async (request, response) => {
 const auth = createAuth(dataDir, publicBase);
 await auth.load();
 auth.mount(app);
-const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: 300 * 1024 * 1024, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
+const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: MAX_MEDIA_UPLOAD_BYTES, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
 function musicErrorResponse(response: Response, error: unknown) {
   if (error instanceof MusicSourceError) {
     const clientError = error.code.startsWith('INVALID_');
@@ -571,7 +572,7 @@ app.patch('/api/settings', async (request, response) => {
   if ('chatBackground' in body) profile.settings.chatBackground = body.chatBackground!;
   await saveState(); response.json(await publicState(user));
 });
-app.use(((error, _request, response, _next) => { if (error instanceof multer.MulterError) { response.status(400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? '单个文件不能超过 300 MB。' : '一次最多上传 6 个文件。' }); return; } response.status(500).json({ error: '处理请求时出错，请重试。' }); }) satisfies ErrorRequestHandler);
+app.use(((error, _request, response, _next) => { if (error instanceof multer.MulterError) { response.status(400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? '单个文件不能超过 100 MB，请先压缩。' : '一次最多上传 6 个文件。' }); return; } response.status(500).json({ error: '处理请求时出错，请重试。' }); }) satisfies ErrorRequestHandler);
 app.use(express.static(path.join(root, 'dist')));
 app.get('/{*path}', (_request, response) => response.sendFile(path.join(root, 'dist', 'index.html')));
 app.listen(port, '127.0.0.1', () => console.log(`轻剪 API listening on http://127.0.0.1:${port}`));
