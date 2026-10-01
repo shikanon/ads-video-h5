@@ -8,6 +8,10 @@ import { sendRegistrationCode } from './resend';
 const scrypt = promisify(scryptCallback);
 const sessionLifetime = 30 * 24 * 60 * 60 * 1000;
 const cookieName = 'qingjian_session';
+const releaseRevision = readFile(new URL('../dist/release.json', import.meta.url), 'utf8').then((text) => {
+  const revision: unknown = JSON.parse(text).revision;
+  return typeof revision === 'string' && /^[a-f0-9]{40}$/.test(revision) ? revision : null;
+}).catch(() => null);
 
 export interface PublicUser { id: string; email: string; displayName: string; }
 interface UserRecord extends PublicUser { passwordHash: string; createdAt: string; }
@@ -208,7 +212,7 @@ export function createAuth(dataDir: string, publicBase: string) {
     response.json({ ok: true });
   }
   function mount(app: Express) {
-    app.get('/api/health', (_request, response) => response.json({ ok: true }));
+    app.get('/api/health', async (_request, response) => response.set('Cache-Control', 'no-store').json({ ok: true, revision: await releaseRevision }));
     app.get('/api/auth/me', (request, response) => { const user = currentUser(request); response.status(user ? 200 : 401).json(user ? { user } : { error: '未登录。' }); });
     app.post('/api/auth/send-code', mutationGuard, (request, response, next) => { void sendCode(request, response).catch(next); });
     app.post('/api/auth/register', mutationGuard, (request, response, next) => { void register(request, response).catch(next); });

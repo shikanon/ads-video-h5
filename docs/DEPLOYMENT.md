@@ -34,6 +34,8 @@ HTML 视频特效渲染还需要 Chrome Headless Shell。首次部署或 HyperFr
 
 CD 脚本的运行副本由 root 拥有，仓库推送不会自动更改脚本或 systemd 单元；更新部署机制时需单独重新安装这些文件。线上代码或定时器应由服务器管理员维护，不要让 Web 服务进程写入 `/opt/ads-video-h5`。
 
+构建在 `dist/release.json` 写入实际提交号。CD 的 `git archive` 通过 `.gitattributes` 的 `export-subst` 将提交号注入构建源；普通 Git 工作区构建读取 HEAD。`/qingjian/api/health` 返回 `{ok:true, revision:"40位提交号"}`，启动时缺少有效构建标记则 revision 为 null，不猜测版本。公网验收应比对该 revision、origin/main 与实际静态资源，并确认未登录的状态接口仍为401。
+
 ### Resend 注册邮件
 
 在 Resend 中验证发信域名后，将 `RESEND_API_KEY` 和 `RESEND_FROM=轻剪 <noreply@已验证域名>` 写入本机 Git 忽略的 `data/resend.env`（`0600`）和服务器 `/etc/qingjian/resend.env`（`root:root 0600`）。把 [`ops/cd/qingjian-resend.conf`](../ops/cd/qingjian-resend.conf) 安装为 `/etc/systemd/system/qingjian.service.d/resend.conf`，执行 `systemctl daemon-reload` 和 `systemctl restart qingjian`。Resend 密钥不传入前端构建，也不放入仓库或 GitHub Secrets。未配置发信邮箱时，发送验证码接口返回 503，注册不会绕过邮箱验证；已有帐号可以继续登录。
