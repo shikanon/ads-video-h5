@@ -38,6 +38,7 @@ const initialRegistry = (): RegistryData => ({
   defaultTextModelId: 'ark-text',
   models: [
     { id: 'ark-text', name: '豆包 Seed 2.1 Pro', provider: 'ark', kind: 'text', modelId: 'doubao-seed-2-1-pro-260915', baseUrl: arkBaseUrl, enabled: true },
+    { id: 'ark-understanding', name: 'Seed 2.1 Lite 音频理解', provider: 'ark', kind: 'understanding', modelId: 'doubao-seed-2-1-lite-260915', baseUrl: arkBaseUrl, enabled: true },
     { id: 'ark-image', name: '豆包 Seedream 5.0 Flash', provider: 'ark', kind: 'image', modelId: 'doubao-seedream-5-0-flash-260915', baseUrl: arkBaseUrl, enabled: true },
     { id: 'volc-audio', name: 'Seed Audio 1.0', provider: 'volcengine-voice', kind: 'audio', modelId: 'seed-audio-1.0', baseUrl: 'https://openspeech.bytedance.com/api/v3/tts/create', enabled: true },
   ],
@@ -94,6 +95,11 @@ async function loadRegistry(): Promise<RegistryData> {
     try {
       const loaded = JSON.parse(await readFile(registryFile, 'utf8')) as RegistryData;
       if (loaded.version !== 1 || !Array.isArray(loaded.models)) throw new Error('模型配置文件格式无效。');
+      if (!loaded.models.some((model) => model.kind === 'understanding')) {
+        const credentials = loaded.models.find((model) => model.provider === 'ark' && model.baseUrl.replace(/\/$/, '') === arkBaseUrl && model.enabled && model.apiKeyCiphertext);
+        loaded.models.push({ ...initialRegistry().models.find((model) => model.kind === 'understanding')!, apiKeyCiphertext: credentials?.apiKeyCiphertext });
+        await persist(loaded);
+      }
       return loaded;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -180,7 +186,8 @@ export async function upsertModel(input: Partial<ModelConfig> & Pick<ModelConfig
       enabled: input.enabled,
       apiKeyCiphertext: input.apiKey?.trim() ? encrypt(input.apiKey.trim(), token) : existing?.apiKeyCiphertext,
     };
-    if (!item.name || !item.provider || !item.modelId || !['text', 'image', 'audio'].includes(item.kind)) throw new Error('请填写有效的模型名称、厂商、用途与模型 ID。');
+    if (!item.name || !item.provider || !item.modelId || !['text', 'image', 'audio', 'understanding'].includes(item.kind)) throw new Error('请填写有效的模型名称、厂商、用途与模型 ID。');
+    if (item.kind === 'understanding' && item.modelId !== 'doubao-seed-2-1-lite-260915') throw new Error('音频理解请使用已验证的 doubao-seed-2-1-lite-260915。');
     if (item.baseUrl && !/^https:\/\//.test(item.baseUrl)) throw new Error('服务地址必须使用 HTTPS。');
     if (existing) data.models[data.models.indexOf(existing)] = item;
     else data.models.push(item);

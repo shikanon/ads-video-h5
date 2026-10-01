@@ -1,0 +1,130 @@
+import { readFile, mkdir, rm, writeFile, access } from 'node:fs/promises';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import type { EditPlan, MediaItem, RenderReview } from '../src/types';
+import { probeVideo, runFFmpeg } from './core';
+import { getModelConfig } from './modelRegistry';
+import { dimensions, planHash } from './renderTimeline';
+import { captionsFromTranscript, timelineOffsets } from './timeline';
+import { loadEditingSkill } from './skills';
+import { excludesBgm } from './intents';
+import { inspectAudioLevels, inspectVoice, soundChecks, hasRejectedVoice } from './audioQuality';
+
+export async function reviewRender(file: string, plan: EditPlan, media: MediaItem[], prompt: string): Promise<RenderReview> {
+  const checks: RenderReview['checks'] = [];
+  const add = (name: string, passed: boolean, detail: string) => checks.push({ name, passed, detail });
+  const probe = await probeVideo(file);
+  add('实际时长', Math.abs(probe.duration - plan.targetSeconds) <= 0.25, `文件${probe.duration.toFixed(3)}秒，方案${plan.targetSeconds}秒`);
+  const [width, height] = dimensions(plan);
+  let info = ''; try { info = await runFFmpeg(['-hide_banner', '-i', file]); } catch (e) { info = e instanceof Error ? e.message : ''; }
+  add('画幅与音轨', new RegExp(`\\b${width}x${height}\\b`).test(info) && probe.hasAudio, `预期${width}×${height}，${probe.hasAudio ? '有' : '无'}音轨`);
+  const manifest = JSON.parse(await readFile(file.replace(/\.mp4$/, '.render.json'), 'utf8')) as { planHash: string; captions: number; overlays: number; motions?: EditPlan['motions']; drawingEngine?: string; bgm?:boolean; narration?:boolean; audioNormalization?:{mode:string} };
+  if(excludesBgm(prompt))add('无背景音乐',manifest.bgm===false,'按实际渲染混音输入核对，未启用的音量参数不表示新增音轨');
+  add('方案版本', manifest.planHash === planHash(plan), '渲染清单哈希与当前方案比对');
+  if (plan.editorial) add('分镜证据与叙事', plan.clips.every((c,i) => {
+    const s=plan.editorial!.scenes.find((s)=>s.id===c.sceneId);const source=media.find((m)=>m.id===c.sourceId)?.analysis;
+    return Boolean(s && s.sourceHash===source?.sourceHash && s.reason && s.quote===source?.sentences.filter((v)=>c.sentenceIds?.includes(v.id)).map((v)=>v.text).join('') && plan.editorial!.script.beats[i]?.sceneId===c.sceneId);
+  }), '原话、源时间码、选择理由、脚本顺序与实际方案比对');
+  if (plan.motions?.length) add('绘制动效合成', manifest.drawingEngine==='GSAP/HyperFrames' && JSON.stringify(manifest.motions)===JSON.stringify(plan.motions), `实际合成${manifest.motions?.length||0}段GSAP透明绘制层，关键时刻参与抽帧审查`);
+  const wantsCaptions = /字幕|subtitle|caption/i.test(prompt) && !/不要.{0,8}字幕|去掉字幕|关闭字幕|no captions|without subtitles/i.test(prompt);
+  add('字幕执行', !wantsCaptions || manifest.captions > 0, `实际渲染指令包含${manifest.captions}条字幕，${manifest.overlays}条叠字`);
+  const noEmphasis = /不要.{0,6}(?:叠字|覆盖层|关键词)|去掉.{0,6}(?:叠字|覆盖层|关键词)/.test(prompt);
+  const wantsEmphasis = /叠字|覆盖层|关键词/.test(prompt) && !noEmphasis;
+  const quotedEmphasis = /(?:叠字|关键词|覆盖层)[：:\s]*[“「"]([^”」"]+)[”」"]/.exec(prompt)?.[1];
+  add('覆盖层执行', !wantsEmphasis || Boolean(manifest.overlays > 0 && (!quotedEmphasis || plan.overlays?.some((o) => o.text.includes(quotedEmphasis)))), quotedEmphasis ? `要求叠字「${quotedEmphasis}」，渲染${manifest.overlays}条` : `渲染${manifest.overlays}条叠字`);
+  if (quotedEmphasis && /覆盖.{0,6}(?:对比|比较)(?:段落)?/.test(prompt)) {
+    const offsets = timelineOffsets(plan);
+    const spans = plan.clips.flatMap((c,i) => {
+      if (c.purpose !== 'comparison') return [];
+      const selected = media.find((m) => m.id === c.sourceId)?.analysis?.sentences.filter((s) => c.sentenceIds?.includes(s.id)) || [];
+      return selected.length ? [{start: offsets[i]+selected[0].start-c.start,end: offsets[i]+selected.at(-1)!.end-c.start}] : [];
+    });
+    add('对比关键词覆盖', spans.length > 0 && spans.every((s) => plan.overlays?.some((o) => o.text.includes(quotedEmphasis) && o.start <= s.start + 0.03 && o.end >= s.end - 0.03)), '关键词事件须覆盖所有标为comparison的完整原句');
+  }
+  const wantsZoom = /推镜|缩放|zoom/i.test(prompt) && !/不要.{0,6}(?:推镜|缩放)|no zoom/i.test(prompt);
+  add('推镜执行', !wantsZoom || plan.clips.some((c) => (c.zoom || 1) > 1), '检查渲染方案的逐片段缩放');
+  const wantsFade = /淡入淡出|叠化|crossfade/i.test(prompt) && !/不要.{0,6}(?:淡入淡出|叠化)/.test(prompt);
+  add('转场执行', !wantsFade || plan.clips.length < 2 || plan.clips.some((c) => c.transition?.kind === 'fade'), '检查实际渲染方案的入场叠化');
+  add('响度归一化执行', !(plan.audio?.normalize||/响度|音量均衡|音量统一|normalize/i.test(prompt)) || manifest.audioNormalization?.mode==='segment-two-pass+mix-two-pass', manifest.audioNormalization?.mode==='segment-two-pass+mix-two-pass'?'渲染记录包含逐段和混音两遍测量/处理参数，仍须实测输出一致性':'未取得逐段两遍处理记录，不能只凭normalize配置判定通过');
+  const expected = captionsFromTranscript(plan, media);
+  if(plan.reconstruction){
+    const r=plan.reconstruction;
+    add('用户目标时长',Math.abs(probe.duration-r.requestedSeconds)<=2,`用户${r.requestedSeconds}秒，实际${probe.duration.toFixed(3)}秒；不能通过修改方案目标绕过`);
+    add('原声与新增分镜来源',r.beats.every((b,i)=>b.mediaId===plan.clips[i]?.sourceId&&b.id===plan.clips[i]?.sceneId&&Boolean(b.mode==='original'?b.evidence?.quote===b.line:media.find(m=>m.id===b.mediaId)?.generation?.referenceHash===r.voiceReference?.audioHash)), '原话有真实源时间码，新增台词有用户声音参考与媒体哈希');
+    add('联网补充引用',r.beats.filter(b=>b.mode==='generated').every(b=>b.referenceIds.length>0&&b.referenceIds.every(id=>r.references.some(ref=>ref.id===id&&ref.verification==='search-cited'))), '引用来自实际联网搜索；引用关联不代表全文事实核查');
+    add('HTML分镜执行',r.beats.filter(b=>b.visual==='html').every(b=>Boolean(b.htmlHash&&media.find(m=>m.id===b.mediaId)?.generation?.htmlHash===b.htmlHash)), '逐镜HTML来源哈希与实际生成媒体比对');
+  }
+  const compact = (text: string) => text.replace(/[\s，。！？、；：,.!?;:]/g, '');
+  add('字幕原话', !wantsCaptions || (expected.length > 0 && compact(expected.map((s) => s.text).join('')) === compact((plan.captions || []).map((s) => s.text).join(''))), wantsCaptions ? '字幕与选中原声逐字稿比对' : '本次未要求字幕');
+  add('字幕时间映射', !wantsCaptions || (expected.length === plan.captions?.length && expected.every((s, i) => Math.abs(s.start - plan.captions![i].start) < 0.03 && Math.abs(s.end - plan.captions![i].end) < 0.03)), '字幕时间与源字词到成片的映射比对，源时间仍为模型估计');
+  add('完整句子', !plan.fineCut || plan.clips.every((clip) => {
+    const analysis = media.find((m) => m.id === clip.sourceId)?.analysis;
+    if (!analysis?.sentences.length) return true;
+    return Boolean(clip.sentenceIds?.length && clip.sentenceIds.every((id) => analysis.sentences.some((s) => s.id === id && s.complete && s.start >= clip.start - 0.03 && s.end <= clip.end + 0.03)));
+  }), '精剪片段必须覆盖所选完整原句');
+  const loudnessLog = await runFFmpeg(['-hide_banner', '-nostats', '-i', file, '-vn', '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-']);
+  const loudnessMatch = /\{\s*"input_i"[\s\S]*?\}/.exec(loudnessLog);
+  const loudness = loudnessMatch ? JSON.parse(loudnessMatch[0]) as { input_i: string; input_tp: string } : undefined;
+  const originalSpeech = plan.clips.some((c) => media.find((m) => m.id === c.sourceId)?.analysis?.sentences.length);
+  add('人声响度', !originalSpeech || Boolean(loudness && Number(loudness.input_i) >= -30 && Number(loudness.input_tp) <= 0), loudness ? `综合响度${loudness.input_i} LUFS，峰值${loudness.input_tp} dBTP` : '无法测得响度');
+  const limitations = ['源字词时间码为模型估计，未做独立强制对齐。'];
+  let audio:RenderReview['audio'];
+  if(originalSpeech||plan.reconstruction||/音色|声音|人声|音量|voice/i.test(prompt)){
+    try {audio=await inspectAudioLevels(file,plan);audio.userReportedMismatch=hasRejectedVoice(plan,media,prompt);checks.push(...soundChecks(audio));}
+    catch {add('声音实测完成度',false,'逐段音量实测失败，不能视为声音一致性通过');}
+  }
+  if(plan.reconstruction)limitations.push(...plan.reconstruction.limitations);
+  let semantic: RenderReview['semantic'];
+  const config = await getModelConfig('understanding');
+  if (!config) {limitations.push('未配置音频理解模型，未进行成片音频和抽帧语义审查。');if(audio)add('声音审听完成度',false,'未配置模型，音色一致性未经审听');}
+  else {
+    const temp = path.join(path.dirname(file), `review-${randomUUID()}`); await mkdir(temp);
+    try {
+      if(audio){
+        let referenceFile:string|undefined;const r=plan.reconstruction?.voiceReference;
+        if(r){const source=media.find(m=>m.id===r.sourceId);const candidate=path.join(path.dirname(path.dirname(file)),'media',r.sourceId);
+          if(source?.analysis?.sourceHash===r.sourceHash)try{await access(candidate);if(createHash('sha256').update(await readFile(candidate)).digest('hex')===r.sourceHash)referenceFile=candidate;}catch{}
+        }
+        try {
+          audio.voice=await inspectVoice(file,plan,referenceFile,temp,config);
+          const generatedIds=plan.reconstruction?.beats.filter(b=>b.mode==='generated').map(b=>b.id)||[];
+          const concern=audio.userReportedMismatch?'用户已明确指出音色不似；仍使用被拒绝的合成音频，模型判断不能覆盖该反馈，需重新生成对应声音。':'';
+          if(generatedIds.length)add('参考音色相似度',!audio.userReportedMismatch&&Boolean(referenceFile)&&audio.voice.segments.filter(s=>generatedIds.includes(s.id)).every(s=>s.status==='passed'),`${concern}${referenceFile?'实际原声参考对照':'没有可验证的原声参考'}；模型辅助结果：${audio.voice.segments.filter(s=>generatedIds.includes(s.id)).map(s=>`${s.id}[${s.status}] ${s.detail}`).join('；')}`);
+          add('段落音色一致性',!audio.userReportedMismatch&&audio.voice.consistency.status==='passed',`${concern}${audio.voice.consistency.status}：${audio.voice.consistency.detail}；定性听辨，不是声纹认证`);
+        }catch{add('声音审听完成度',false,'音色对照审听未完成，不能因相同参考哈希或音量统一默认通过');}
+        limitations.push('音色由模型对真实参考音与成片分段做定性听辨，非声纹身份认证；听辨串匹配音量，实际响度以未改动的成片测量为准。');
+      }
+      const wav = path.join(temp, 'audio.wav');
+      await runFFmpeg(['-v', 'error', '-y', '-i', file, '-vn', '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav]);
+      const frames: Array<{ type: string; image_url?: { url: string }; text?: string }> = [];
+      const offsets=timelineOffsets(plan);
+      const candidates=[...new Set([...[0.02,0.2,0.5,0.8,0.98].map((r)=>plan.targetSeconds*r), ...(plan.editorial||plan.reconstruction?plan.clips.map((c,i)=>offsets[i]+(c.end-c.start)/2):[]), ...(plan.motions||[]).flatMap((m)=>[m.start+.22,Math.min(m.end-.1,m.start+1.1)])].map((t)=>+Math.min(plan.targetSeconds-.05,t).toFixed(3)))].sort((a,b)=>a-b);
+      const times=candidates.length<=18?candidates:Array.from({length:18},(_,i)=>candidates[Math.round(i*(candidates.length-1)/17)]);
+      for (const time of times) {
+        const image = path.join(temp, `${time}.jpg`);
+        await runFFmpeg(['-v', 'error', '-y', '-ss', String(time), '-i', file, '-frames:v', '1', '-vf', 'scale=540:-2', image]);
+        frames.push({type:'text',text:`成片时间 ${time} 秒`});
+        frames.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${(await readFile(image)).toString('base64')}` } });
+      }
+      const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(180_000), body: JSON.stringify({ model: config.modelId, thinking: { type: 'enabled' }, response_format: { type: 'json_object' }, max_tokens: 8000, messages: [{ role: 'system', content: await loadEditingSkill('qingjian-render-review') }, { role: 'user', content: [
+        { type: 'input_audio', input_audio: { data: (await readFile(wav)).toString('base64'), format: 'wav' } }, ...frames,
+        { type: 'text', text: `这是成片的完整音频以及${times.length}张标有时间的抽帧，含各分镜和绘制动画早期/稳定阶段。用户要求：${prompt}。实际混音输入：${JSON.stringify({original:true,bgm:manifest.bgm,narration:manifest.narration})}；只有实际输入为true才表示有该音轨，未启用的音量参数不意味着加了音乐或配音。实际方案：${JSON.stringify(plan)}。真实剪切边界(成片秒)：${JSON.stringify(timelineOffsets(plan).slice(1))}。音频剪切只发生在这些边界附近；位于一个连续源片段内部的字幕短语切换不是硬切。原素材的口误或停顿可单独评价，不能捏造成新增剪切。原声与新增分镜已按mode标记；新增台词是获授权的参考声音合成，不是源录音。审查图形能否解释因果、SOP与知识库而非只重复字幕；示意成果标注示意，不能当作实测。注意合成音色与原音差异。所选源原话：${JSON.stringify(expected)}。只据真实音频和这些抽帧评审，无法观察的部分不要编造。评分必须严格：80分表示可发布但有改进空间，90分以上须接近专业成片。不要只罗列优点。保留原声不代表必须保留重录残句，选句中缺少谓语的半句或重复同一观点需要返修。检查标签是否拥挤、孤字换行、仅重复字幕，以及明显的近远景突跳。严审观点、论据、结论，跳句是否导致逻辑断裂，动效标签是否有信息用途、是否遮脸/字幕。输出JSON：{"score":0到100,"findings":["可执行的改进或缺陷"],"needsRepair":true或false}。细微标点、语气词差异不判错；抽帧不能证明完整观看。字幕按短语分行，单帧不显示下一行不等于遗漏或硬切原音。只有听到原话被截断或实际漏字才能报告。抽帧无法验证完整推镜或每处转场，应记为未验证，不能凭此判失败。不要给未经音频核实的精确词时间码。` },
+      ] }] }) });
+      const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = JSON.parse(body.choices?.[0]?.message?.content || '') as { score: number; findings: string[]; needsRepair: boolean };
+      if (!Number.isFinite(result.score) || result.score < 0 || result.score > 100 || !Array.isArray(result.findings) || result.findings.some((f) => typeof f !== 'string') || typeof result.needsRepair !== 'boolean') throw new Error('审查输出格式无效');
+      semantic = { score: result.score, findings: result.findings.slice(0, 10).map((f) => f.slice(0, 500)) };
+      add('成片语义审查', !result.needsRepair, result.findings.join('；').slice(0, 1200) || `完整音频和${times.length}张抽帧未发现需返修的问题`);
+      limitations.push(`语义审查覆盖完整音频和${times.length}张关键抽帧，未逐帧审阅整片。`);
+    } catch (error) {
+      limitations.push(`成片语义审查未完成（${error instanceof Error && /^HTTP \d+$/.test(error.message) ? error.message : '模型或网络错误'}），需要人工复核。`);
+      add('成片语义审查', false, '未完成，不能视为通过');
+    } finally { await rm(temp, { recursive: true, force: true }); }
+  }
+  const score = semantic ? Math.round(Math.min(semantic.score, checks.filter((c)=>c.passed).length/checks.length*100)) : 0;
+  const review: RenderReview = { status: checks.every((c) => c.passed) && Boolean(semantic) ? 'passed' : 'needs-review', score, checks, semantic, audio, limitations, createdAt: new Date().toISOString() };
+  await writeFile(file.replace(/\.mp4$/, '.review.json'), JSON.stringify(review, null, 2), { mode: 0o600 });
+  return review;
+}

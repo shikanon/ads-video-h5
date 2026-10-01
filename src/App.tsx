@@ -240,7 +240,9 @@ function JobCard({
 }) {
   const t = labels[locale];
   const name =
-    job.kind === "music"
+    job.kind === "understanding" ? (locale === "zh-CN" ? "原声音频理解" : "Audio understanding")
+      : job.kind === "review" ? (locale === "zh-CN" ? "成片审查" : "Render review")
+      : job.kind === "music"
       ? locale === "zh-CN" ? "BGM 搜索" : "Music search"
       : job.kind === "plan"
       ? t.plan
@@ -289,6 +291,7 @@ function JobCard({
         <strong>{name}</strong>
         <span className="job-status">{status}</span>
       </div>
+      {job.stage ? <p className="workflow-stage">{job.stage}{job.workflow?.length ? ` · ${job.workflow.filter((e) => e.status === "succeeded").length} 个步骤已完成` : ''}</p> : null}
       {job.status === "queued" || job.status === "running" ? (
         <div
           className="progress-track"
@@ -431,6 +434,46 @@ function ArtifactCard({
           <ArrowDownToLine size={18} />
         </a>
       </div>
+      {artifact.plan?.reconstruction ? <details className="editorial-report">
+        <summary>重构脚本与补充来源 · {artifact.plan.reconstruction.beats.length} 段</summary>
+        <strong>{artifact.plan.reconstruction.premise}</strong>
+        <p>{artifact.plan.reconstruction.arc}</p>
+        <p>风格：{artifact.plan.reconstruction.style}</p>
+        {artifact.plan.reconstruction.beats.map((beat,index)=><article key={beat.id}>
+          <strong>{index+1}. {beat.role} · {beat.mode==='original'?'真人原话':'新增台词 · 参考声音合成'}</strong>
+          <small>{beat.evidence?`${beat.evidence.sourceName} · ${beat.evidence.start.toFixed(2)}–${beat.evidence.end.toFixed(2)} 秒`:`实测配音 ${beat.duration?.toFixed(2)} 秒`} · {beat.visual==='html'?'HTML信息图':'真人画面'}</small>
+          <blockquote>{beat.line}</blockquote><p>选择理由：{beat.reason}</p>
+          {beat.referenceIds.map(id=>{const ref=artifact.plan!.reconstruction!.references.find(r=>r.id===id);return ref?<a key={id} href={ref.url} target="_blank" rel="noreferrer">[{id}] {ref.title}</a>:null;})}
+        </article>)}
+        <a href={artifact.downloadUrl.replace('/api/download/', '/api/artifacts/') + '/edit-report'} download>下载剪辑记录 JSON</a>
+        {artifact.plan.reconstruction.limitations.map((s,i)=><small key={i}>{s}</small>)}
+      </details> : null}
+      {artifact.plan?.editorial ? <details className="editorial-report">
+        <summary>叙事脚本与分镜依据 · {artifact.plan.editorial.scenes.length} 段</summary>
+        <strong>{artifact.plan.editorial.script.premise}</strong>
+        <p>{artifact.plan.editorial.script.arc}</p>
+        <p>风格：{artifact.plan.editorial.script.style}</p>
+        {artifact.plan.editorial.script.beats.map((beat, index) => {
+          const scene = artifact.plan!.editorial!.scenes.find((s) => s.id === beat.sceneId)!;
+          return <article key={beat.sceneId}><strong>{index + 1}. {beat.intent}</strong><small>{scene.sourceName} · {scene.start.toFixed(2)}–{scene.end.toFixed(2)} 秒</small><blockquote>{scene.quote}</blockquote><p>选择理由：{scene.reason}</p><small>{beat.graphic === 'none' ? '保留原画面' : `绘制动效：${beat.label}`} · {scene.visual?.observations}</small></article>;
+        })}
+        <a href={artifact.downloadUrl.replace('/api/download/', '/api/artifacts/') + '/edit-report'} download>下载剪辑记录 JSON</a>
+        <small>源时间码为模型估计；画面分析基于分镜抽帧。</small>
+      </details> : null}
+      {artifact.review ? <details className="render-review">
+        <summary>{locale === "zh-CN" ? "成片审查" : "Review"} · {artifact.review.score}/100 · {artifact.review.status === 'passed' ? (locale === "zh-CN" ? '检查通过' : 'Passed') : (locale === "zh-CN" ? '需要复核' : 'Needs review')}</summary>
+        {artifact.review.audio ? <section className="sound-review" aria-label={locale === 'zh-CN' ? '声音检查' : 'Sound checks'}>
+          <strong>{locale === 'zh-CN' ? '声音检查' : 'Sound checks'}</strong>
+          <p>{locale === 'zh-CN' ? '段间响度极差' : 'Segment loudness spread'}：{artifact.review.audio.segmentSpreadLu ?? '—'} LU</p>
+          {artifact.review.checks.filter(check => /分段人声|段落衔接|段内音量|声音峰值|参考音色|段落音色|声音审听/.test(check.name)).map(check => <details key={check.name} className="sound-check" data-passed={check.passed}>
+            <summary>{check.passed ? '✓' : '△'} {check.name} · {check.passed ? (locale === 'zh-CN' ? '通过' : 'Passed') : (locale === 'zh-CN' ? '未通过' : 'Failed')}</summary>
+            <p>{check.detail}</p>
+          </details>)}
+          {artifact.review.audio.userReportedMismatch ? <p className="sound-feedback">{locale === 'zh-CN' ? '你已反馈音色不似。仍使用被拒绝的合成声音时，音色检查不能通过。' : 'Your voice mismatch feedback applies to this audio. Re-exporting the same synthesis cannot pass the voice checks.'}</p> : null}
+        </section> : null}
+        {artifact.review.checks.filter(check => !artifact.review!.audio || !/分段人声|段落衔接|段内音量|声音峰值|参考音色|段落音色|声音审听/.test(check.name)).map((check) => <p key={check.name}>{check.passed ? '✓' : '△'} {check.name}：{check.detail}</p>)}
+        {artifact.review.limitations.map((detail) => <small key={detail}>{detail}</small>)}
+      </details> : null}
     </div>
   );
 }
@@ -1001,12 +1044,14 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                     <ChevronDown size={16} className="disclosure-chevron" aria-hidden="true" />
                   </summary>
                   <div className="plan-content">
+                  <p className="timeline-track-summary">{locale === "zh-CN" ? `字幕 ${plan.captions?.length || 0} 条 · 覆盖层 ${plan.overlays?.length || 0} 条 · ${plan.fineCut ? '完整句精剪' : '片段剪辑'}` : `${plan.captions?.length || 0} captions · ${plan.overlays?.length || 0} overlays`}</p>
                   {plan.coverMediaId ? (
                     <div className="plan-cover">
                       <img src={state?.media.find((item) => item.id === plan.coverMediaId)?.url} alt="成片封面" />
                       <span>{locale === "zh-CN" ? "当前封面" : "Current cover"}</span>
                     </div>
                   ) : null}
+                  {plan.editorial ? <p className="editorial-premise">叙事：{plan.editorial.script.arc}<br />风格：{plan.editorial.script.style} · 绘制动效 {plan.motions?.length || 0} 段</p> : null}
                   <div className="clip-strip">
                     {plan.clips.map((part, index) => {
                       const source = state?.media.find(
@@ -1278,6 +1323,11 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                         <small>
                           {mediaKindLabel(item.kind, locale)} · {date(item.createdAt, locale)}
                         </small>
+                        {item.kind !== 'image' ? <div className="transcript-actions">
+                          <button type="button" disabled={!session || state.jobs.some((j) => j.kind === 'understanding' && ['queued','running'].includes(j.status) && session?.messages.some((m) => m.jobId === j.id && m.attachmentIds?.includes(item.id)))} onClick={() => void mutate(`/api/media/${item.id}/analyze`, 'POST', { sessionId: session?.id })}>{item.analysis ? (locale === 'zh-CN' ? '重新分析 / 读取缓存' : 'Analyze again') : (locale === 'zh-CN' ? '理解原声' : 'Understand audio')}</button>
+                          {item.analysis ? <a href={apiPath(`/api/media/${item.id}/transcript`)} download>{locale === 'zh-CN' ? '下载逐字稿' : 'Download transcript'}</a> : null}
+                        </div> : null}
+                        {item.analysis ? <details className="transcript-detail"><summary>{item.analysis.status === 'no-audio' ? '无音轨' : `逐字稿 · ${item.analysis.sentences.length} 句`}</summary><p className="transcript-note">时间码为模型估计；停顿来自低音量检测。</p>{item.analysis.sentences.map((s) => <p key={s.id}><time>{duration(s.start)}–{duration(s.end)}</time> {s.text}{!s.complete ? '（未完整）' : ''}</p>)}</details> : null}
                       </div>
                       <button
                         type="button"

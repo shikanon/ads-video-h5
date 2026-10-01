@@ -1,9 +1,9 @@
 export type Format = '9:16' | '16:9' | '1:1';
 export type MediaKind = 'video' | 'image' | 'audio';
 export type ArtifactKind = 'image' | 'audio' | 'video';
-export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music' | 'effect';
+export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music' | 'effect' | 'understanding' | 'review';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
-export type ModelKind = 'text' | 'image' | 'audio';
+export type ModelKind = 'text' | 'image' | 'audio' | 'understanding';
 export interface PublicUser { id: string; email: string; displayName: string; }
 
 export interface Shot {
@@ -24,21 +24,110 @@ export interface MediaItem {
   createdAt: string;
   origin?: 'upload' | 'generated' | 'imported';
   sourceUrl?: string;
+  hasAudio?: boolean;
+  analysis?: AudioAnalysis;
+  generation?: { workflowId: string; beatId: string; mode: 'original' | 'generated'; lineHash: string; sceneSpecHash?: string; audioHash: string; voiceRejectedAudioHash?: string; htmlHash?: string; referenceHash?: string; originalSourceId?: string; originalStart?: number; originalEnd?: number };
+}
+
+export interface TimeRange { start: number; end: number; }
+export interface TranscriptWord extends TimeRange { text: string; }
+export interface TranscriptSentence extends TimeRange {
+  id: string;
+  text: string;
+  words: TranscriptWord[];
+  complete: boolean;
+}
+export interface AudioAnalysis {
+  status: 'ready' | 'no-audio';
+  modelId: string;
+  sourceHash: string;
+  duration: number;
+  transcript: string;
+  sentences: TranscriptSentence[];
+  pauses: TimeRange[];
+  captionBreaks?: number[];
+  timing: 'model-estimated';
+  warnings: string[];
+  createdAt: string;
 }
 
 export interface EditClip {
+  sceneId?: string;
   sourceId: string;
   start: number;
   end: number;
+  zoom?: number;
+  volume?: number;
+  purpose?: 'hook' | 'argument' | 'conclusion' | 'context' | 'comparison';
+  sentenceIds?: string[];
+  transition?: { kind: 'cut' | 'fade'; duration: number };
+}
+
+export interface SelectedScene extends TimeRange {
+  id: string; sourceId: string; sourceName: string; sourceHash: string;
+  sentenceIds: string[]; quote: string; reason: string;
+  purpose: NonNullable<EditClip['purpose']>;
+  visual?: { observations: string; safeZone: 'top' | 'bottom'; frameTimes: number[] };
+}
+export interface NarrativeScript {
+  premise: string; audience: string; arc: string; style: string;
+  beats: Array<{ sceneId: string; intent: string; graphic: 'none' | 'underline' | 'circle' | 'arrow' | 'steps'; label: string }>;
+}
+export interface EditorialReport { scenes: SelectedScene[]; script: NarrativeScript; }
+export interface ResearchReference { id: string; title: string; url: string; excerpt: string; retrievedAt: string; verification: 'search-cited'; }
+export interface ReconstructionBeat {
+  id: string; role: string; line: string; reason: string; mode: 'original' | 'generated';
+  sourceId?: string; sentenceIds?: string[]; evidence?: SelectedScene;
+  referenceIds: string[]; visual: 'person' | 'html'; title: string; visualBrief: string;
+  mediaId?: string; duration?: number; audioHash?: string; htmlHash?: string;
+  voiceRevision?: number;
+}
+export interface ReconstructionReport {
+  workflowId: string; premise: string; audience: string; arc: string; style: string;
+  gaps: string[]; references: ResearchReference[]; beats: ReconstructionBeat[];
+  voiceReference?: { sourceId: string; sourceHash: string; start: number; end: number; audioHash: string };
+  requestedSeconds: number; limitations: string[];
+  sourceIds?: string[];
+}
+export interface DrawingMotion extends TimeRange { sceneId: string; kind: 'underline' | 'circle' | 'arrow' | 'steps'; label: string; zone: 'top' | 'bottom'; }
+export interface WorkflowEvent { tool: string; stage: string; status: 'running' | 'succeeded' | 'failed'; at: string; detail?: string; }
+
+export interface TimelineText extends TimeRange {
+  text: string;
+  style: 'subtitle' | 'keyword' | 'title' | 'lower-third';
+  animation?: 'none' | 'pop' | 'rise' | 'underline';
+}
+export interface RenderReview {
+  status: 'passed' | 'needs-review';
+  score: number;
+  checks: Array<{ name: string; passed: boolean; detail: string }>;
+  semantic?: { score: number; findings: string[]; repaired?: boolean };
+  audio?: {
+    limits: { targetLufs:number;truePeakDb:number;segmentSpreadLu:number;adjacentJumpLu:number;withinSpreadLu:number };
+    segments: Array<{id:string;mode:string;start:number;end:number;integratedLufs:number|null;truePeakDb:number|null;voicedSpreadLu:number|null;headLufs:number|null;tailLufs:number|null}>;
+    segmentSpreadLu:number|null;
+    userReportedMismatch?:boolean;
+    jumps:Array<{from:string;to:string;time:number;integratedDeltaLu:number|null;boundaryDeltaLu:number|null}>;
+    voice?:{method:string;consistency:{status:'passed'|'failed'|'uncertain';detail:string};segments:Array<{id:string;status:'passed'|'failed'|'uncertain';detail:string}>};
+  };
+  limitations: string[];
+  createdAt: string;
 }
 
 export interface EditPlan {
+  reconstruction?: ReconstructionReport;
+  editorial?: EditorialReport;
+  motions?: DrawingMotion[];
   format: Format;
   targetSeconds: number;
   summary: string;
   clips: EditClip[];
   version?: number;
   coverMediaId?: string;
+  captions?: TimelineText[];
+  overlays?: TimelineText[];
+  audio?: { originalVolume: number; bgmVolume: number; narrationVolume: number; normalize: boolean };
+  fineCut?: boolean;
 }
 
 export interface ChatMessage {
@@ -58,6 +147,7 @@ export interface MusicSearch {
 }
 
 export interface Artifact {
+  workflow?: WorkflowEvent[];
   ownerId?: string;
   id: string;
   sessionId: string;
@@ -77,9 +167,13 @@ export interface Artifact {
   hasBgm?: boolean;
   coverUrl?: string;
   coverMimeType?: string;
+  review?: RenderReview;
+  planHash?: string;
 }
 
 export interface Job {
+  workflow?: WorkflowEvent[];
+  stage?: string;
   ownerId?: string;
   id: string;
   sessionId: string;

@@ -1,0 +1,49 @@
+{
+  "environment": "local",
+  "pageReview": {
+    "artifactId": "7ee339bd-4f36-43a4-803c-0c3e76e8f498",
+    "score": 62,
+    "status": "needs-review",
+    "proof": "/Users/bytedance/.codex/visualizations/2026/09/30/01a0f1a4-0dcb-75e2-8ee4-27f448aeb3ef/qingjian-sound-acceptance/page-proof.png"
+  },
+  "renderTest": {
+    "artifactId": "620e6c36-3b73-403e-b28d-9aa273ce3ba6",
+    "file": "/Users/bytedance/.codex/visualizations/2026/09/30/01a0f1a4-0dcb-75e2-8ee4-27f448aeb3ef/qingjian-sound-acceptance/volume-corrected.mp4",
+    "sha256": "ce6ddc4c69495c52f029c3c46c32bfcd62d2e38ae534fee757ece6adedebf711",
+    "durationSeconds": 34.14,
+    "dimensions": [
+      720,
+      1280
+    ],
+    "generatedFromRealMedia": true,
+    "newVoiceSynthesized": false
+  },
+  "loudness": {
+    "segmentSpreadBeforeLu": 2.57,
+    "segmentSpreadAfterLu": 0.52,
+    "maxAdjacentDeltaBeforeLu": 2.57,
+    "maxAdjacentDeltaAfterLu": 0.34,
+    "fourLevelChecksPassed": true,
+    "maxWithinSpreadAfterLu": 6.4
+  },
+  "voice": {
+    "userReportedMismatch": true,
+    "referenceSimilarityPassed": false,
+    "segmentConsistencyPassed": false,
+    "oldSynthesisNotApproved": true
+  },
+  "review": {
+    "score": 78,
+    "status": "needs-review",
+    "file": "/Users/bytedance/.codex/visualizations/2026/09/30/01a0f1a4-0dcb-75e2-8ee4-27f448aeb3ef/qingjian-sound-acceptance/review.json"
+  },
+  "validation": {
+    "testsPassed": 33,
+    "typecheck": true,
+    "viteBuild": true,
+    "skillValidation": true,
+    "diffCheck": true
+  },
+  "report": "/Users/bytedance/.codex/visualizations/2026/09/30/01a0f1a4-0dcb-75e2-8ee4-27f448aeb3ef/qingjian-sound-acceptance/sound-report.md",
+  "published": false
+}

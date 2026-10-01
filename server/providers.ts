@@ -208,14 +208,16 @@ export async function generateImage(prompt: string, config: ModelConfig, referen
   return { bytes, mimeType };
 }
 
-export async function generateAudio(text: string, config: ModelConfig): Promise<GeneratedMedia> {
+export async function generateAudio(text: string, config: ModelConfig, reference?: Buffer): Promise<GeneratedMedia> {
   ensureConfig(config, 'audio');
   const url = endpoint(config, AUDIO_URL);
   const cleanText = text.trim();
   if (!cleanText || cleanText.length > 3000) throw new ProviderError('口播文本应为 1 到 3000 个字符。', 'INVALID_INPUT');
+  if (reference && (!audioMime(reference) || reference.length > 10 * 1024 * 1024)) throw new ProviderError('声音参考须为有效音频且小于10MB。', 'INVALID_INPUT');
   const result = await postJson(url, config.apiKey, {
     model: config.modelId,
     text_prompt: cleanText,
+    ...(reference ? { references: [{ audio_data: reference.toString('base64') }] } : {}),
     audio_config: { format: 'mp3', sample_rate: 48000 },
   }, 'audio');
   const bytes = typeof result.audio === 'string' && result.audio.length

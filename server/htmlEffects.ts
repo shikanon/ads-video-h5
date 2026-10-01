@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process';
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import ffmpegPath from 'ffmpeg-static';
 import { detectImage, probeVideo } from './core';
 import type { createOssStorage } from './ossStorage';
 import { MAX_EFFECT_IMAGE_UPLOAD_BYTES, MAX_MEDIA_UPLOAD_BYTES } from '../src/uploadLimits';
@@ -20,6 +22,7 @@ export interface EffectSourceMedia { file: string; kind: 'image' | 'video'; mime
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const gsapPath = path.join(root, 'node_modules', 'gsap', 'dist', 'gsap.min.js');
 const cliPath = path.join(root, 'node_modules', '.bin', 'hyperframes');
+const ffprobePath: string = createRequire(import.meta.url)('ffprobe-static').path;
 const allowedAccent = /^#[0-9a-fA-F]{6}$/;
 const blankValues: EffectValues = { eyebrow: '轻剪 · YOUR STORY', title: '去看更大的世界', subtitle: '把今天，剪成值得收藏的片段。', imageUrl: '', videoUrl: '', assetId: '', accent: '#fb7353' };
 
@@ -30,10 +33,16 @@ export const motionLibrary = `window.QJMotion = Object.freeze({
   lineDraw(tl, selector, at=0.7) { return tl.fromTo(selector,{scaleX:0,transformOrigin:'left center'},{scaleX:1,duration:0.42,ease:'expo.out'},at); },
   imageDrift(tl, selector, at=0.2, duration=4.8) { return tl.fromTo(selector,{scale:1.08,x:-24},{scale:1.17,x:24,duration,ease:'none'},at); },
   splitWipe(tl, selector, at=0.18) { return tl.fromTo(selector,{clipPath:'inset(0 100% 0 0)'},{clipPath:'inset(0 0% 0 0)',duration:0.76,ease:'power4.out'},at); },
-  fadeOut(tl, selector, at, duration=0.3) { return tl.to(selector,{opacity:0,y:-18,duration,ease:'power2.in'},at); }
+  fadeOut(tl, selector, at, duration=0.3) { return tl.to(selector,{opacity:0,y:-18,duration,ease:'power2.in'},at); },
+  keywordPunch(tl, selector, at=.3) { return tl.fromTo(selector,{scale:.94,opacity:0},{scale:1,opacity:1,duration:.42,ease:'back.out(1.1)'},at); },
+  lowerThird(tl, selector, at=.4) { return tl.fromTo(selector,{x:-32,opacity:0},{x:0,opacity:1,duration:.5,ease:'power3.out'},at); },
+  chapterProgress(tl, selector, at=.4, duration=4.8) { return tl.fromTo(selector,{scaleX:0,transformOrigin:'left center'},{scaleX:1,duration,ease:'none'},at); },
+  compareReveal(tl, selector, at=.6) { return tl.fromTo(selector,{x:36,opacity:0},{x:0,opacity:1,duration:.62,ease:'expo.out',stagger:.18},at); },
+  drawStroke(tl, selector, at=.4, duration=.7) { gsap.utils.toArray(selector).forEach((node,i)=>{const length=node.getTotalLength();tl.set(node,{strokeDasharray:length,strokeDashoffset:length},0);tl.fromTo(node,{strokeDashoffset:length},{strokeDashoffset:0,duration,ease:'power2.out'},at+i*.12);});return tl; },
+  markerSweep(tl, selector, at=.5) { return tl.fromTo(selector,{scaleX:0,transformOrigin:'left center'},{scaleX:1,duration:.55,ease:'expo.out'},at); }
 });`;
 
-const baseCss = `*{box-sizing:border-box}html,body{margin:0;width:var(--qj-width,1080px);height:var(--qj-height,1920px);overflow:hidden;background:#fffdfa;font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;color:#252935}#root{position:relative;width:var(--qj-width,1080px);height:var(--qj-height,1920px);overflow:hidden;background:#fffdfa}.eyebrow{font-size:30px;letter-spacing:.22em;font-weight:700;color:#866d62}.title{font-size:118px;line-height:1.15;font-weight:800;letter-spacing:-.045em}.subtitle{font-size:43px;line-height:1.5;color:#625b59}.brand{font-size:42px;font-weight:800;letter-spacing:-.08em}.brand i{color:var(--qj-accent,#fb7353);font-style:normal}.line{height:7px;width:250px;border-radius:8px;background:var(--qj-accent,#fb7353)}.photo{background:linear-gradient(145deg,#c5e8ed 0%,#7bbbd0 38%,#ecb98f 63%,#e78163 100%);background-position:center;background-size:cover}.safe{position:absolute;left:90px;right:90px}`;
+const baseCss = `@font-face{font-family:"PingFang SC";src:local("PingFang SC"),local("Hiragino Sans GB")}@font-face{font-family:"Microsoft YaHei";src:local("Microsoft YaHei"),local("Noto Sans CJK SC")}*{box-sizing:border-box}html,body{margin:0;width:var(--qj-width,1080px);height:var(--qj-height,1920px);overflow:hidden;background:#fffdfa;font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;color:#252935}#root{position:relative;width:var(--qj-width,1080px);height:var(--qj-height,1920px);overflow:hidden;background:#fffdfa}.eyebrow{font-size:30px;letter-spacing:.22em;font-weight:700;color:#866d62}.title{font-size:118px;line-height:1.15;font-weight:800;letter-spacing:-.045em}.subtitle{font-size:43px;line-height:1.5;color:#625b59}.brand{font-size:42px;font-weight:800;letter-spacing:-.08em}.brand i{color:var(--qj-accent,#fb7353);font-style:normal}.line{height:7px;width:250px;border-radius:8px;background:var(--qj-accent,#fb7353)}.photo{background:linear-gradient(145deg,#c5e8ed 0%,#7bbbd0 38%,#ecb98f 63%,#e78163 100%);background-position:center;background-size:cover}.safe{position:absolute;left:90px;right:90px}`;
 const head = (extra = '') => `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=1080,height=1920"><style>${baseCss}${extra}</style><!--QJ_RUNTIME--></head><body>`;
 const rootOpen = (duration: number) => `<main id="root" data-composition-id="main" data-start="0" data-duration="${duration}" data-width="1080" data-height="1920">`;
 const tail = (script: string) => `</main><!--QJ_DATA--><script>${script}\nwindow.__timelines["main"]=tl;tl.seek(0);if(window.__QJ_PREVIEW__)tl.play(0);</script></body></html>`;
@@ -48,8 +57,17 @@ const seed = (): HtmlEffect[] => {
     { id: 'sunny-opening', name: '阳光开场', description: '拱形海岸与大标题，适合旅行视频开头。', html: openingHtml(), duration: 6, width: 1080, height: 1920, enabled: true, defaults: { ...blankValues }, createdAt: now, updatedAt: now },
     { id: 'photo-drift', name: '照片推镜', description: '照片缓慢推镜，底部卡片承载地点和故事。', html: photoHtml(), duration: 6, width: 1080, height: 1920, enabled: true, defaults: { ...blankValues, eyebrow: 'TRAVEL NOTE · 02', title: '沿着海风走', subtitle: '每一步都有新的风景。' }, createdAt: now, updatedAt: now },
     { id: 'story-outro', name: '故事收束', description: '温暖的引用字幕和品牌落版。', html: captionHtml(), duration: 6, width: 1080, height: 1920, enabled: true, defaults: { ...blankValues, eyebrow: 'THE END · 03', title: '好故事，值得被看见', subtitle: '下一段旅程，从一句话开始。' }, createdAt: now, updatedAt: now },
+    { id: 'argument-card', name: '观点强调', description: '用一句观点和一行原话摘要建立信息重点，适合口播章节提示。', html: argumentHtml(), duration: 6, width: 1080, height: 1920, enabled: true, defaults: { ...blankValues, eyebrow: '核心观点', title: '先理解原声，再做精剪', subtitle: '保留完整原话，让每一次剪切都有依据。' }, createdAt: now, updatedAt: now },
+    { id: 'compare-card', name: '观点对比', description: '标题与解释依次揭示，对比方法、误区和结论。', html: argumentHtml(true), duration: 6, width: 1080, height: 1920, enabled: true, defaults: { ...blankValues, eyebrow: '方法对比', title: '从按时长截取，到按观点组织', subtitle: '看懂上下文，保留论证与结论。' }, createdAt: now, updatedAt: now },
   ];
 };
+
+function argumentHtml(compare = false): string {
+  const css = `.scene-content{width:100%;height:100%;padding:180px 90px 210px;display:flex;flex-direction:column;justify-content:center;gap:55px}.point{font-size:84px;text-wrap:balance;line-height:1.3;font-weight:800;letter-spacing:-.04em;overflow-wrap:anywhere;margin:0}.explain{font-size:43px;line-height:1.65;font-weight:400;margin:0}.point-card{padding:64px 54px;background:#fff0e9;border-radius:36px}.progress{height:8px;background:#fb7353;border-radius:4px}.label{font-size:30px;font-weight:700;color:#866d62}.decoration{position:absolute;width:600px;height:600px;right:-350px;top:90px;border:3px solid #fb7353;border-radius:50%;opacity:.18;pointer-events:none}`;
+  const content = `<div class="decoration clip" id="decoration" data-layout-ignore data-start="0" data-duration="6" data-track-index="0"></div><section class="scene-content"><div class="label clip" id="eyebrow" data-qj-field="eyebrow" data-start="0" data-duration="6" data-track-index="1"></div><div class="point-card" id="point-card"><h1 class="point clip" id="title" data-qj-field="title" data-start="0" data-duration="6" data-track-index="2"></h1></div><p class="explain clip" id="subtitle" data-qj-field="subtitle" data-start="0" data-duration="6" data-track-index="3"></p><div class="progress clip" id="progress" data-start="0" data-duration="6" data-track-index="4"></div></section>`;
+  const script = `const tl=gsap.timeline({paused:true});tl.from('#decoration',{scale:.92,duration:5.6,ease:'sine.out'},.2);QJMotion.lowerThird(tl,'#eyebrow',.22);${compare ? "QJMotion.compareReveal(tl,'#title,#subtitle',.55);tl.from('#point-card',{scale:.97,opacity:0,duration:.55,ease:'sine.out'},.4);" : "QJMotion.keywordPunch(tl,'#point-card',.5);QJMotion.textRise(tl,'#title',.7);QJMotion.lowerThird(tl,'#subtitle',1.05);"}QJMotion.chapterProgress(tl,'#progress',.3,5.2);`;
+  return head(css) + rootOpen(6) + content + tail(script);
+}
 
 function checkEffect(input: Partial<HtmlEffect>): void {
   if (!input.name?.trim() || input.name.length > 80) throw new Error('请填写 80 字以内的特效名称。');
@@ -102,6 +120,12 @@ export function createEffectStore(dataDir: string, oss?: ReturnType<typeof creat
     await Promise.all([rendersDir, assetsDir, uploadsDir].map((item) => mkdir(item, { recursive: true })));
     try { catalog = JSON.parse(await readFile(catalogFile, 'utf8')) as HtmlEffect[]; if (!Array.isArray(catalog)) throw new Error('invalid'); }
     catch { catalog = seed(); await save(); }
+    // Upgrade once; preserve administrator customizations and later deletions.
+    const motionUpgrade = path.join(dir, 'motion-v2');
+    if (!(await stat(motionUpgrade).catch(() => undefined))) {
+      for (const effect of seed().filter((item) => ['argument-card', 'compare-card'].includes(item.id))) if (!get(effect.id)) catalog.push(effect);
+      await save(); await writeFile(motionUpgrade, '2\n', { mode: 0o600 });
+    }
     assets = await readFile(assetsFile, 'utf8').then((value) => JSON.parse(value) as EffectAsset[]).catch(() => []);
     if (!Array.isArray(assets)) assets = [];
     const previous = await readFile(rendersFile, 'utf8').then((value) => JSON.parse(value) as EffectRender[]).catch(() => []);
@@ -152,8 +176,8 @@ export function createEffectStore(dataDir: string, oss?: ReturnType<typeof creat
   async function remove(id: string) { if (!get(id)) throw new Error('特效不存在。'); catalog = catalog.filter((item) => item.id !== id); await save(); }
   const listAssets = () => [...assets].reverse();
   const publicAssetUrl = (asset: EffectAsset, fallback: string) => oss?.publicUrl('admin-effects', 'media', asset.id) || fallback;
-  async function compile(effect: HtmlEffect, input?: Partial<EffectValues>, preview = false, assetUrl?: string, sourceKind?: 'image' | 'video'): Promise<string> {
-    const gsap = await readFile(gsapPath, 'utf8');
+  async function compile(effect: HtmlEffect, input?: Partial<EffectValues>, preview = false, assetUrl?: string, sourceKind?: 'image' | 'video', externalRuntime = false): Promise<string> {
+    const gsap = externalRuntime ? '' : await readFile(gsapPath, 'utf8');
     const values = normalizeValues(input, effect.defaults);
     if (values.assetId) {
       const asset = getAsset(values.assetId);
@@ -165,7 +189,8 @@ export function createEffectStore(dataDir: string, oss?: ReturnType<typeof creat
       values.videoUrl = sourceKind === 'video' ? assetUrl : '';
     }
     const dataScript = `window.__QJ_DATA__=${safeJson(values)};window.__QJ_PREVIEW__=${preview};window.__timelines=window.__timelines||{};document.querySelectorAll('[data-qj-field]').forEach(el=>{el.textContent=window.__QJ_DATA__[el.dataset.qjField]||''});document.querySelectorAll('[data-qj-image]').forEach(el=>{const image=window.__QJ_DATA__[el.dataset.qjImage];const video=window.__QJ_DATA__.videoUrl;if(video){el.style.backgroundImage='none';if(getComputedStyle(el).position==='static')el.style.position='relative';const media=document.createElement('video');media.src=video;media.muted=true;media.autoplay=true;media.playsInline=true;media.loop=true;media.setAttribute('data-start','0');media.setAttribute('data-duration','${effect.duration}');media.setAttribute('data-track-index','0');media.setAttribute('data-volume','0');Object.assign(media.style,{position:'absolute',inset:'0',width:'100%',height:'100%',objectFit:'cover'});el.appendChild(media)}else if(image)el.style.backgroundImage='url('+JSON.stringify(image)+')'});document.documentElement.style.setProperty('--qj-accent',window.__QJ_DATA__.accent);document.documentElement.style.setProperty('--qj-width','${effect.width}px');document.documentElement.style.setProperty('--qj-height','${effect.height}px');`;
-    return effect.html.replace('<!--QJ_RUNTIME-->', `<script>${gsap.replace(/<\/script/gi, '<\\/script')}</script><script>${motionLibrary}</script>`).replace('<!--QJ_DATA-->', `<script>${dataScript}</script>`).replace(/data-duration="[^"]*"(?=[^>]*data-width)/, `data-duration="${effect.duration}"`).replace(/data-width="[^"]*"/, `data-width="${effect.width}"`).replace(/data-height="[^"]*"/, `data-height="${effect.height}"`);
+    const runtime = externalRuntime ? '<script src="./gsap.min.js"></script>' : `<script>${gsap.replace(/<\/script/gi, '<\\/script')}</script>`;
+    return effect.html.replace('<!--QJ_RUNTIME-->', `${runtime}<script>${motionLibrary}</script>`).replace('<!--QJ_DATA-->', `<script>${dataScript}</script>`).replace(/data-duration="[^"]*"(?=[^>]*data-width)/, `data-duration="${effect.duration}"`).replace(/data-width="[^"]*"/, `data-width="${effect.width}"`).replace(/data-height="[^"]*"/, `data-height="${effect.height}"`);
   }
   async function render(effect: HtmlEffect, values?: Partial<EffectValues>, sourceMedia?: EffectSourceMedia): Promise<EffectRender> {
     if (rendering) throw new Error('已有特效正在渲染，请稍后再试。');
@@ -190,9 +215,10 @@ export function createEffectStore(dataDir: string, oss?: ReturnType<typeof creat
           localAssetUrl = `./assets/source.${extension}`;
           await copyFile(sourceMedia.file, path.join(workDir, localAssetUrl));
         }
-        await writeFile(path.join(workDir, 'index.html'), await compile(effect, values, false, localAssetUrl, sourceMedia?.kind), 'utf8');
+        await copyFile(gsapPath, path.join(workDir, 'gsap.min.js'));
+        await writeFile(path.join(workDir, 'index.html'), await compile(effect, values, false, localAssetUrl, sourceMedia?.kind, true), 'utf8');
         await new Promise<void>((resolve, reject) => {
-          const child = spawn(cliPath, ['render', workDir, '-o', output, '--fps', '24', '--quality', 'draft', '--workers', '1'], { cwd: root, env: { ...process.env, PATH: `${path.join(root,'node_modules','.bin')}:${process.env.PATH || ''}` }, stdio: ['ignore','pipe','pipe'] });
+          const child = spawn(cliPath, ['render', workDir, '-o', output, '--fps', '24', '--quality', 'draft', '--workers', '1'], { cwd: root, env: { ...process.env, HYPERFRAMES_FFMPEG_PATH: process.env.HYPERFRAMES_FFMPEG_PATH || ffmpegPath || undefined, HYPERFRAMES_FFPROBE_PATH: process.env.HYPERFRAMES_FFPROBE_PATH || ffprobePath, PATH: `${path.join(root,'node_modules','.bin')}:${process.env.PATH || ''}` }, stdio: ['ignore','pipe','pipe'] });
           let log = ''; const append = (chunk: Buffer) => { log = (log + chunk.toString()).slice(-6000); };
           child.stdout.on('data', append); child.stderr.on('data', append);
           const timer = setTimeout(() => child.kill('SIGTERM'), 180_000);

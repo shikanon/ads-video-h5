@@ -1,0 +1,162 @@
+{
+  "date": "2026-10-01T05:58:31.409782+00:00",
+  "environment": "local-only; localhost:8790; isolated test data",
+  "status": "functional-flow-completed; final-quality-needs-review",
+  "jobId": "9e896f2b-1b05-402a-827d-3e495750d1c5",
+  "workflowId": "4db89535-cd98-4d44-9fde-3799de579fcc",
+  "artifactId": "7ee339bd-4f36-43a4-803c-0c3e76e8f498",
+  "prompt": "把企业AI落地重构成36秒知识短片，联网补充，用我的声音，直接出片。",
+  "userTextInputs": 1,
+  "developmentRetries": "Multiple development retries and server restarts; this was not a successful untouched first attempt.",
+  "sources": {
+    "uploadedCount": 6,
+    "seconds": 2077.38,
+    "transcription": "Reused real source analyses only after source-hash verification; newly synthesized speech was actually re-transcribed."
+  },
+  "output": {
+    "file": "/Users/bytedance/.codex/visualizations/2026/09/30/01a0f1a4-0dcb-75e2-8ee4-27f448aeb3ef/qingjian-reconstruction-acceptance/final.mp4",
+    "sha256": "085da574521d1101a81c9828f43c527770bc0ad7be0052f6f5221f5d6534fbcd",
+    "duration": 34.14,
+    "width": 720,
+    "height": 1280,
+    "freshArtifact": true,
+    "originalBeats": 2,
+    "referenceVoiceBeats": 5,
+    "htmlBeats": 6,
+    "captions": 32,
+    "downloadHashMatchesExport": true
+  },
+  "browserPlayback": {
+    "duration": 34.14,
+    "currentTime": 34.14,
+    "readyState": 4,
+    "ended": true,
+    "width": 720,
+    "height": 1280
+  },
+  "maxTokens": {
+    "planningModel": "doubao-seed-2-1-pro-260915",
+    "wireParameter": "max_tokens",
+    "actualRequestValue": 262144,
+    "contextWindow": 1024000,
+    "note": "Accepted limit and configured metadata; not a 262144-token generation test."
+  },
+  "grades": {
+    "strictVisualAndEvidenceReview": 72,
+    "modelFullAudioAnd14Frames": 76,
+    "firstDraftModelReview": 57,
+    "technicalChecksPassed": 17,
+    "technicalAndSemanticChecksTotal": 18,
+    "verdict": "Needs editorial repair; not professional publish-ready acceptance."
+  },
+  "timeline": [
+    {
+      "id": "b1",
+      "role": "hook",
+      "mode": "generated",
+      "start": 0,
+      "end": 5.39,
+      "line": "AI买了却没人用？先别只怪工具。",
+      "reason": "压缩开场并修正“工工具”错字，给底部字幕预留安全区。",
+      "sourceTime": null
+    },
+    {
+      "id": "b2",
+      "role": "requirements",
+      "mode": "original",
+      "start": 5.39,
+      "end": 11.085,
+      "line": "其实更多的考虑应该是如何先把不确定的需求变成一个确定的需求",
+      "reason": "复用完整原声，承接核心管理判断：落地先处理需求质量。",
+      "sourceTime": {
+        "start": 48.049,
+        "end": 53.744
+      }
+    },
+    {
+      "id": "b3",
+      "role": "scenario",
+      "mode": "generated",
+      "start": 11.085,
+      "end": 15.075,
+      "line": "像保温杯上架，先定平台、主图、详情图。",
+      "reason": "缩短具体电商场景，保留产品和触点。",
+      "sourceTime": null
+    },
+    {
+      "id": "b4",
+      "role": "rework",
+      "mode": "generated",
+      "start": 15.075,
+      "end": 17.195,
+      "line": "需求清楚，设计少返工。",
+      "reason": "明确“需求清楚”与“少返工”的因果关系，并避开此前易误识别的词汇。",
+      "sourceTime": null
+    },
+    {
+      "id": "b5",
+      "role": "sop",
+      "mode": "original",
+      "start": 17.195,
+      "end": 24.385,
+      "line": "那么即便是我们在公司引入了我们的aiagent或是workflow也应该遵从此sop",
+      "reason": "复用完整原声，明确即使引入Agent/Workflow也不能绕过公司SOP。",
+      "sourceTime": {
+        "start": 492.941,
+        "end": 499.851
+      }
+    },
+    {
+      "id": "b6",
+      "role": "prompt-knowledge",
+      "mode": "generated",
+      "start": 24.385,
+      "end": 29.265,
+      "line": "Prompt定格式和限制，知识库供资料。",
+      "reason": "在实测33.59秒基础上仅拉长新增句，补齐约0.6秒；不改动两段完整原声。",
+      "sourceTime": null
+    },
+    {
+      "id": "b7",
+      "role": "result",
+      "mode": "generated",
+      "start": 29.265,
+      "end": 34.145,
+      "line": "主图详情稿过审，AI真正进流程。",
+      "reason": "强化收束并增加约0.7秒，目标接近36秒；保留示意成果和过审信息。",
+      "sourceTime": null
+    }
+  ],
+  "remainingIssues": [
+    "5.39-second hook is too long and begins with an infographic rather than the suggested person close-up.",
+    "Orphan character wrapping on the platform card.",
+    "Duplicate rework title and SVG SOP track fill/labels occlusion.",
+    "One actual caption [听不清] lasts 0.03s at 24.335–24.365s.",
+    "Cup silhouettes do not distinguish main-image versus detail-page outcomes well.",
+    "Prompt/knowledge/human-verification graph connections need semantic verification.",
+    "Reference synthesis is qualitative voice matching, not certified speaker identity; source timing remains model-estimated."
+  ],
+  "priorities": [
+    "P0: dedicated ASR and independent forced alignment; reject speech-placeholder captions.",
+    "P0: persistent beat checkpoints and visible stage progress to reduce retry cost.",
+    "P1: typed causal/SOP/RAG/output components with geometry and meaning checks; do not indiscriminately fill open SVG paths.",
+    "P1: enforce hook duration and shorten added lines without cutting original sentences.",
+    "P1: concrete example outputs or actual source B-roll, visibly labelled 示意 when synthesized."
+  ],
+  "limits": [
+    "源字词时间码为模型估计，未做独立强制对齐。",
+    "联网补充来自带引用的搜索结果，尚未独立逐条核查原网页全文。",
+    "参考声音合成不保证与原音完全一致，须听辨衔接。",
+    "语义审查覆盖完整音频和14张关键抽帧，未逐帧审阅整片。",
+    "Model review estimated 33.5s; actual ffprobe and browser duration is 34.14s. Use measured duration.",
+    "Search annotations link evidence but do not establish that every linked page supports each editorial claim."
+  ],
+  "validation": {
+    "tests": "28 passed",
+    "typescript": "passed",
+    "viteBuild": "passed",
+    "gitDiffCheck": "passed",
+    "skillValidation": "passed"
+  },
+  "deployment": "No production deployment, commit or push performed."
+}

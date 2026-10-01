@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
     "dev": "concurrently -k \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:web": "vite --host 127.0.0.1",
     "dev:server": "tsx watch server/index.ts",

@@ -23,7 +23,7 @@ function parseModel(body: unknown, id?: string): Partial<ModelConfig> & Pick<Mod
   if (!body || typeof body !== 'object') throw new Error('请填写模型配置。');
   const input = body as Record<string, unknown>;
   const kind = input.kind;
-  if (kind !== 'text' && kind !== 'image' && kind !== 'audio') throw new Error('模型用途必须是文本、图片或音频。');
+  if (kind !== 'text' && kind !== 'image' && kind !== 'audio' && kind !== 'understanding') throw new Error('模型用途必须是文本、图片、配音或音频理解。');
   if (typeof input.name !== 'string' || typeof input.provider !== 'string' || typeof input.modelId !== 'string' || typeof input.baseUrl !== 'string' || typeof input.enabled !== 'boolean') {
     throw new Error('模型配置字段格式无效。');
   }

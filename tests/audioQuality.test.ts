@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
+import path from 'node:path';
+import {tmpdir} from 'node:os';
+import {parseLoudness,twoPassLoudnorm,inspectAudioLevels,soundChecks,validateVoiceAssessment,recordVoiceRejection,hasRejectedVoice} from '../server/audioQuality';
+import {runFFmpeg,probeVideo} from '../server/core';
+import {renderTimeline} from '../server/renderTimeline';
+import type {EditPlan,MediaItem,ReconstructionBeat} from '../src/types';
+import {invalidateRepairedBeat} from '../server/narrativeWorkflow';
+
+test('silence and absent measurement cannot be accepted as a measured voice',()=>{
+  assert.throws(()=>parseLoudness('no statistics'),/实际响度/);
+  const m=parseLoudness('{"input_i":"-inf","input_tp":"-inf","input_lra":"0","input_thresh":"-70","target_offset":"inf"}');
+  assert.equal(m.integrated,null);assert.throws(()=>twoPassLoudnorm(m),/有效人声/);
+});
+test('voice auditor must cover every real segment and preserves uncertain and failed decisions',()=>{
+  const result={consistency:{status:'failed',detail:'b2听起来更薄'},segments:[{id:'b1',status:'passed',detail:'接近参考'},{id:'b2',status:'uncertain',detail:'不足以确认'}]};
+  assert.equal(validateVoiceAssessment(result,['b1','b2']).consistency.status,'failed');
+  assert.equal(validateVoiceAssessment(result,['b1','b2']).segments[1].status,'uncertain');
+  assert.throws(()=>validateVoiceAssessment({...result,segments:[result.segments[0]]},['b1','b2']),/遗漏/);
+  assert.throws(()=>validateVoiceAssessment({...result,segments:[result.segments[0],result.segments[0]]},['b1','b2']),/遗漏/);
+});
+test('human voice rejection survives volume-only exports but does not reject a genuinely regenerated audio hash',()=>{
+  const plan={reconstruction:{beats:[{id:'b1',mode:'generated',mediaId:'tts',audioHash:'audio-v1'}]}} as EditPlan;
+  const media=[{id:'tts',generation:{audioHash:'audio-v1'}}] as MediaItem[];
+  assert.equal(hasRejectedVoice(plan,media,'审查音量'),false);
+  recordVoiceRejection(plan,media,'音色不是很像，各段有时大有时小');
+  assert.equal(media[0].generation!.voiceRejectedAudioHash,'audio-v1');
+  assert.equal(hasRejectedVoice(structuredClone(plan),media,'重新渲染，统一音量'),true);
+  const regenerated=structuredClone(plan);regenerated.reconstruction!.beats[0].audioHash='audio-v2';
+  assert.equal(hasRejectedVoice(regenerated,media,'再次审听'),false);
+  assert.equal(hasRejectedVoice(regenerated,media,'音色不一致，重新合成后的再次审听'),false);
+});
+test('voice repair invalidates old rendered media and a visual-only repair preserves the newer voice revision',()=>{
+  const prior={id:'b1',mode:'generated',voiceRevision:1,mediaId:'old-video',audioHash:'old-audio',htmlHash:'old-html',duration:4} as ReconstructionBeat;
+  const retry=invalidateRepairedBeat(prior,{...prior},true);
+  assert.equal(retry.voiceRevision,2);assert.equal(retry.mediaId,undefined);assert.equal(retry.audioHash,undefined);
+  assert.equal(invalidateRepairedBeat(prior,{...prior,voiceRevision:undefined},false).voiceRevision,1);
+});
+test('real output catches loud and quiet segments and two-pass per-segment normalization fixes the difference',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'qingjian-audio-qa-'));const out=path.join(dir,'exports');await mkdir(out);
+  try {
+    const media:MediaItem[]=[];
+    for(const [i,volume] of [0.04,1].entries()){
+      const id=`source${i}`;await runFFmpeg(['-v','error','-y','-f','lavfi','-i','color=c=blue:s=180x320:r=30','-f','lavfi','-i',`sine=frequency=${i?880:440}:sample_rate=44100`,'-t','4','-af',`volume=${volume}`,'-c:v','libx264','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-f','mp4',path.join(dir,id)]);
+      media.push({id,name:id,kind:'video',mimeType:'video/mp4',duration:4,hasAudio:true,url:'',createdAt:'',generation:{workflowId:'test',beatId:id,mode:'generated',lineHash:'test',audioHash:'test'}});
+    }
+    const plan:EditPlan={format:'9:16',summary:'声音一致性回归',targetSeconds:8,clips:media.map(m=>({sourceId:m.id,start:0,end:4})),audio:{originalVolume:1,bgmVolume:0,narrationVolume:1,normalize:false}};
+    const bad=await renderTimeline(plan,media,dir,out);const before=await inspectAudioLevels(bad.file,plan);
+    assert.ok(before.segmentSpreadLu!>20,JSON.stringify(before));assert.equal(soundChecks(before).find(c=>c.name==='分段人声响度一致性')!.passed,false);
+    const normalized={...plan,audio:{...plan.audio!,normalize:true}};const good=await renderTimeline(normalized,media,dir,out);const after=await inspectAudioLevels(good.file,normalized);
+    assert.notEqual(good.id,bad.id);assert.ok(after.segmentSpreadLu!<=2.5,JSON.stringify(after));assert.ok(soundChecks(after).every(c=>c.passed),JSON.stringify(soundChecks(after)));
+    const probe=await probeVideo(good.file);assert.ok(Math.abs(probe.duration-8)<.15);
+    const manifest=JSON.parse(await readFile(good.file.replace('.mp4','.render.json'),'utf8'));assert.equal(manifest.audioNormalization.segments.length,2);assert.equal(manifest.audioNormalization.mode,'segment-two-pass+mix-two-pass');assert.ok(manifest.audioNormalization.segments.every((s:any)=>s.candidateSpreads.length>=1&&s.preparationFilter.includes('acompressor')));
+    // Fractional cuts must not accumulate AAC/container padding: at the
+    // planned seventh beat we must hear the new 880 Hz source, not the old one.
+    const fractional={...plan,targetSeconds:7.105,clips:Array.from({length:7},(_,i)=>({sourceId:media[i===6?1:0].id,start:0,end:1.015}))};
+    const exact=await renderTimeline(fractional,media,dir,out);const pcm=path.join(dir,'boundary.pcm');
+    await runFFmpeg(['-v','error','-y','-ss','6.14','-i',exact.file,'-t','0.04','-vn','-ac','1','-ar','16000','-f','s16le',pcm]);
+    const samples=await readFile(pcm);let crossings=0;for(let offset=2;offset<samples.length;offset+=2)if(samples.readInt16LE(offset-2)<=0&&samples.readInt16LE(offset)>0)crossings++;
+    assert.ok(crossings/0.04>700,`planned beat still contains the preceding voice: ${crossings/0.04} Hz`);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});

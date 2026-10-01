@@ -1,0 +1,202 @@
+{
+  "testedAt": "2026-09-30T11:39:57.692997+00:00",
+  "environment": {
+    "app": "local isolated authenticated account",
+    "url": "http://localhost:8790/",
+    "browser": "Codex in-app browser",
+    "desktop": "1280x720",
+    "mobile": "390x844",
+    "source": "data/test/DJI_20260913191743_0086_D.MP4",
+    "testExcerpt": "first65seconds,270x480proxy,originalaudio",
+    "deployment": "not deployed,not committed"
+  },
+  "implementation": {
+    "model": "doubao-seed-2-1-lite-260915",
+    "skills": [
+      "qingjian-audio-understanding",
+      "qingjian-talking-head-edit",
+      "qingjian-render-review"
+    ],
+    "asr": {
+      "sourceSeconds": 65,
+      "words": 310,
+      "sentences": 13,
+      "pauses": 16,
+      "captionGroups": 47,
+      "timestampQuality": "model-estimated,not independently forced-aligned"
+    },
+    "timeline": [
+      "captions",
+      "zoom",
+      "overlays",
+      "clip volume",
+      "three-track mix",
+      "loudness normalization",
+      "cut/fade",
+      "sentenceIds",
+      "comparison purpose"
+    ],
+    "motionTemplates": [
+      "argument-card",
+      "compare-card"
+    ]
+  },
+  "checks": {
+    "unitAndRenderRegressionTests": 10,
+    "typescript": "passed",
+    "viteBuild": "passed",
+    "skillValidation": "3 passed",
+    "consoleErrors": 0,
+    "mobileHorizontalOverflow": false,
+    "modifiedExportHasNewDurationAndHash": true,
+    "motionTemplates": {
+      "count": 2,
+      "lint": "0 errors,0 warnings",
+      "layoutInspection": "4 sampled times per template,0 errors,0 warnings",
+      "render": "both 6-second MP4 files validated"
+    }
+  },
+  "versions": [
+    {
+      "version": 1,
+      "planDuration": 28.67,
+      "actualDuration": 28.7,
+      "sha256": "def33b7caf76cdc7efc3e747ac837e2c53798b50717cd036602e8dd84cf09ca9",
+      "planHash": "9bf1cdc0ebf843735e5ed93f2cbebdf330d16c1e0a2afa6b1305f5d8f1062269",
+      "reviewScore": 83,
+      "semanticScore": 74,
+      "status": "needs-review"
+    },
+    {
+      "version": 2,
+      "planDuration": 29.015,
+      "actualDuration": 29.034,
+      "sha256": "26e00835ff0679d16d8eecc1484fff2298b0db877affe6d349c070072125958c",
+      "planHash": "9187ef2f5f52811f5654405240affce0c73e9a96672615efe70c8ec79ffb546b",
+      "reviewScore": 88,
+      "semanticScore": 83,
+      "status": "needs-review"
+    },
+    {
+      "version": 3,
+      "planDuration": 16.64,
+      "actualDuration": 16.667,
+      "sha256": "00565610d57361cc85fcb63b173d9bd601fc145ffdba6d7901adfbc858614a2a",
+      "planHash": "0822f39df6f629145ec1b309bb5bde9d412f6d1e3c3ee9ec5e45acb63f93336d",
+      "reviewScore": 87,
+      "semanticScore": 82,
+      "status": "needs-review"
+    },
+    {
+      "version": 4,
+      "planDuration": 16.91,
+      "actualDuration": 16.934,
+      "sha256": "f66f3b87e2c1ad8ccebec8b680ffe7e590d46e5e9dabe489d16d732999250f71",
+      "planHash": "72fed064a77a50c47900c80ab6ccc0a71d261311c5da4824b2519ac28a3e5160",
+      "reviewScore": 94,
+      "semanticScore": 88,
+      "status": "passed"
+    }
+  ],
+  "finalReview": {
+    "status": "passed",
+    "score": 94,
+    "checks": [
+      {
+        "name": "实际时长",
+        "passed": true,
+        "detail": "文件16.930秒，方案16.91秒"
+      },
+      {
+        "name": "画幅与音轨",
+        "passed": true,
+        "detail": "预期540×960，有音轨"
+      },
+      {
+        "name": "方案版本",
+        "passed": true,
+        "detail": "渲染清单哈希与当前方案比对"
+      },
+      {
+        "name": "字幕执行",
+        "passed": true,
+        "detail": "实际渲染指令包含12条字幕，1条叠字"
+      },
+      {
+        "name": "覆盖层执行",
+        "passed": true,
+        "detail": "要求叠字「速度与细节」，渲染1条"
+      },
+      {
+        "name": "对比关键词覆盖",
+        "passed": true,
+        "detail": "关键词事件须覆盖所有标为comparison的完整原句"
+      },
+      {
+        "name": "推镜执行",
+        "passed": true,
+        "detail": "检查渲染方案的逐片段缩放"
+      },
+      {
+        "name": "转场执行",
+        "passed": true,
+        "detail": "检查实际渲染方案的入场叠化"
+      },
+      {
+        "name": "响度归一化执行",
+        "passed": true,
+        "detail": "检查实际渲染方案的响度处理"
+      },
+      {
+        "name": "字幕原话",
+        "passed": true,
+        "detail": "字幕与选中原声逐字稿比对"
+      },
+      {
+        "name": "字幕时间映射",
+        "passed": true,
+        "detail": "字幕时间与源字词到成片的映射比对，源时间仍为模型估计"
+      },
+      {
+        "name": "完整句子",
+        "passed": true,
+        "detail": "精剪片段必须覆盖所选完整原句"
+      },
+      {
+        "name": "人声响度",
+        "passed": true,
+        "detail": "综合响度-16.79 LUFS，峰值-1.41 dBTP"
+      },
+      {
+        "name": "成片语义审查",
+        "passed": true,
+        "detail": "字幕在三帧采样位置与音频转写内容一致：20%位置显示“image是二点五的flair和sunburst”，50%位置显示“它可能生图的速度会很快”，80%位置显示“三十秒到四十五秒”，未发现漏字或硬切半句。；关键词叠字“速度与细节”在50%和80%位置的对比段落帧中正确显示，20%位置（对比开始前）未显示，与overlay起止时间5.205–16.605的方案一致；叠字带下划线样式，符合要求。；画幅确认为9:16竖屏。；音频转写完整覆盖至结尾“但是它对细节的还原度更高”，未发现句尾被剪。；原声保留，未听到配音或背景音乐。；轻微推镜、0.12秒短叠化、响度归一化属于动态与音频处理，仅靠三张静态抽帧无法验证执行，记为未验证项，不判为缺陷。；完整字幕逐行时序与间隙保留情况因仅三帧采样无法全部核验。"
+      }
+    ],
+    "semantic": {
+      "score": 88,
+      "findings": [
+        "字幕在三帧采样位置与音频转写内容一致：20%位置显示“image是二点五的flair和sunburst”，50%位置显示“它可能生图的速度会很快”，80%位置显示“三十秒到四十五秒”，未发现漏字或硬切半句。",
+        "关键词叠字“速度与细节”在50%和80%位置的对比段落帧中正确显示，20%位置（对比开始前）未显示，与overlay起止时间5.205–16.605的方案一致；叠字带下划线样式，符合要求。",
+        "画幅确认为9:16竖屏。",
+        "音频转写完整覆盖至结尾“但是它对细节的还原度更高”，未发现句尾被剪。",
+        "原声保留，未听到配音或背景音乐。",
+        "轻微推镜、0.12秒短叠化、响度归一化属于动态与音频处理，仅靠三张静态抽帧无法验证执行，记为未验证项，不判为缺陷。",
+        "完整字幕逐行时序与间隙保留情况因仅三帧采样无法全部核验。"
+      ]
+    },
+    "limitations": [
+      "源字词时间码为模型估计，未做独立强制对齐。",
+      "语义审查覆盖完整音频和三张抽帧，未逐帧审阅整片。"
+    ],
+    "createdAt": "2026-09-30T11:37:22.057Z"
+  },
+  "evidenceDirectory": "data/acceptance/20260930",
+  "limitations": [
+    "65-second excerpt tested, not every input file",
+    "Source timestamps are model estimates; independent alignment remains future work",
+    "Semantic reviewer hears complete rendered audio but sees only three sampled frames",
+    "Local proxy is lower resolution than original footage",
+    "Semantic grades vary; strict content grade is 88, not a human frame-by-frame certificate"
+  ]
+}

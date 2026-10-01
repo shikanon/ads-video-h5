@@ -26,7 +26,7 @@ interface ModelForm {
 }
 
 const blankForm = (): ModelForm => ({ id: null, name: '', provider: 'ark', kind: 'text', modelId: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', enabled: true, apiKey: '' });
-const kindName: Record<ModelKind, string> = { text: '文本对话', image: '图片生成', audio: '口播音频' };
+const kindName: Record<ModelKind, string> = { text: '文本对话', image: '图片生成', audio: '口播音频', understanding: '音频理解 / ASR' };
 const tokenKey = 'qingjian-admin-token';
 const apiPath = (url: string) => `${import.meta.env.BASE_URL.replace(/\/$/, '')}${url}`;
 
@@ -176,7 +176,7 @@ export default function Admin() {
               <form onSubmit={(event) => void save(event)}>
                 <div className="admin-form-grid">
                   <label>显示名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如 豆包 Seed 2.1 Pro" required maxLength={80} /></label>
-                  <label>用途<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as ModelKind })}><option value="text">文本对话</option><option value="image">图片生成</option><option value="audio">口播音频</option></select></label>
+                  <label>用途<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as ModelKind, ...(event.target.value === 'understanding' ? { modelId: 'doubao-seed-2-1-lite-260915' } : {}) })}><option value="text">文本对话</option><option value="image">图片生成</option><option value="audio">口播音频</option><option value="understanding">音频理解 / ASR</option></select></label>
                   <label>厂商或适配器<input value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value })} placeholder="ark / volcengine-voice" required maxLength={80} /></label>
                   <label>模型 ID<input value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })} placeholder="填写厂商提供的模型 ID" required maxLength={160} /></label>
                   <label className="admin-wide">服务地址<input value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="https://..." type="url" /></label>
