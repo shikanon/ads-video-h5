@@ -16,6 +16,19 @@
 .auth-primary:disabled{opacity:.6;transform:none;cursor:wait}
 .auth-signin-hint{margin-top:24px;font-size:14px;color:#96949a}
 .auth-signin-hint button,.auth-switch button{border:0;background:none;padding:0;color:#f36e50;font-weight:700}
+.auth-watch-link{display:flex;width:fit-content;align-items:center;gap:8px;margin-top:20px;color:#b95038;font-size:14px;font-weight:650;text-decoration:none}
+.auth-watch-link:hover{color:#873d2d}
+.auth-watch-link:focus-visible,.auth-product-caption a:focus-visible{outline:2px solid #dc654a;outline-offset:5px;border-radius:3px}
+.auth-product-introduction{grid-column:1/-1;min-width:0;margin-top:38px;scroll-margin-top:24px}
+.auth-product-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;margin-bottom:26px}
+.auth-product-eyebrow{display:block;color:#b95038;font-size:13px;font-weight:700;letter-spacing:.12em;margin-bottom:12px}
+.auth-product-heading h2{margin:0;font-size:clamp(26px,3.2vw,38px);line-height:1.35;letter-spacing:-.05em}
+.auth-product-heading p{margin:0;color:#777982;font-size:14px;line-height:1.8}
+.auth-product-video{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;background:#fffdfa;border:1px solid #f2ebe6;border-radius:24px;box-shadow:0 18px 50px #543d2b12}
+.auth-product-caption{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;color:#777982;font-size:12px}
+.auth-product-caption a{display:inline-flex;align-items:center;gap:6px;color:#62646c;text-decoration:none}
+.auth-product-caption a:hover{color:#b95038}
+@media(max-width:760px){.auth-watch-link{margin:18px auto 0}.auth-product-introduction{order:4;margin-top:40px}.auth-product-heading{display:block;margin-bottom:20px}.auth-product-heading p{margin-top:12px;font-size:13px}.auth-product-break{display:none}.auth-product-video{border-radius:14px}.auth-product-caption{align-items:flex-start;font-size:11px;gap:8px}.auth-product-caption a{white-space:nowrap}}
 .auth-hero-scene{min-width:0;position:relative;padding:16px 24px 36px 0}
 .auth-video-frame{height:min(570px,52vw);max-height:570px;min-height:440px;overflow:hidden;border-radius:32px;position:relative;box-shadow:0 28px 65px #543d2b24}
 .auth-video-frame img{width:100%;height:100%;object-fit:cover;object-position:80% center}

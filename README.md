@@ -1,5 +1,15 @@
 # 轻剪 · 对话式智能剪辑 H5
 
+## 产品介绍视频
+
+96 秒了解轻剪：添加素材、对话剪辑、字幕与动效，以及知识短片重构。影片采用动态文字、真实产品界面和原创配乐；点击封面观看 1080p MP4。
+
+[![观看轻剪产品介绍视频](https://qingjian-shikanon-media-sg-2026.oss-ap-southeast-1.aliyuncs.com/qingjian/marketing/launch/7770c0e30a914ab4/qingjian-launch-poster.jpg)](https://qingjian-shikanon-media-sg-2026.oss-ap-southeast-1.aliyuncs.com/qingjian/marketing/launch/8666c6cb4d057d20/qingjian-launch-1080p.mp4)
+
+[产品首页](https://video.shikanon.com/#product-introduction) · [观看 / 保存 MP4](https://qingjian-shikanon-media-sg-2026.oss-ap-southeast-1.aliyuncs.com/qingjian/marketing/launch/8666c6cb4d057d20/qingjian-launch-1080p.mp4) · [可编辑 HyperFrames 工程](https://qingjian-shikanon-media-sg-2026.oss-ap-southeast-1.aliyuncs.com/qingjian/marketing/launch/e5083824c36c9697/qingjian-launch-editable.zip)
+
+影片与工程存于 OSS 的独立 `qingjian/marketing/launch/` 路径。版本信息和 SHA-256 见 [`public/product-video.json`](public/product-video.json)，制作与发布说明见[视频发布说明](docs/PRODUCT_VIDEO.md)。
+
 知识短片重构：上传素材后可直接说“把企业AI落地重构成36秒知识短片，联网补充，用我的声音，直接出片”。支持真人原话、联网补充、参考声音配音、HTML分镜与成片审查；详见[重构工作流](docs/NARRATIVE_REBUILD.md)。
 
 添加本地视频、图片或音频，用对话生成剪辑方案、封面、口播和成片。上传视频后，FFmpeg 自动找出切镜点并显示镜头缩略图；可用对话挑选镜头、拼接片段并加入上传的音乐或内置轻快配乐。口播可以单独试听与下载，也可以通过对话加入 MP4。所有生成任务以后台任务执行，刷新页面后仍可查看结果或重试。

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
 import { ArrowRight, Eye, EyeOff, ImagePlus, LockKeyhole, Mail, MessageCircle, Pause, Play, UserRound, Download } from 'lucide-react';
 import type { PublicUser } from './types';
+import { productVideo } from './productVideo';
 import './auth.css';
 
 const Workspace = lazy(() => import('./App'));
@@ -36,6 +37,10 @@ export default function Auth() {
     }).catch(() => setUser(null));
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  useEffect(() => {
+    if (user !== null || screen !== 'landing' || window.location.hash !== '#product-introduction') return;
+    document.getElementById('product-introduction')?.scrollIntoView();
+  }, [user, screen]);
   useEffect(() => {
     if (resendAt <= Date.now()) return;
     const timer = window.setInterval(() => {
@@ -109,6 +114,7 @@ export default function Auth() {
           <h1>一句话，<br /><span>剪出好视频。</span></h1>
           <p>添加你的素材，像聊天一样说出想法。轻剪帮你整理镜头、生成口播与配图，再把成片交到你手里。</p>
           <button className="auth-primary" type="button" onClick={() => go('register')}>开始创作 <ArrowRight size={20} /></button>
+          <a className="auth-watch-link" href="#product-introduction"><Play size={15} fill="currentColor" />96 秒了解轻剪</a>
           <div className="auth-signin-hint">已有帐号？<button type="button" onClick={() => go('login')}>直接登录</button></div>
         </div>
         <div className="auth-hero-scene" aria-label="海岸旅行视频与对话剪辑示意">
@@ -123,6 +129,16 @@ export default function Auth() {
           <div className="auth-timeline" style={{ backgroundImage: `url(${heroImage})` }}><span /><span /><span /><span /></div>
         </div>
         <div className="auth-features"><div><MessageCircle size={22} /><strong>对话剪辑</strong><span>说出想法，持续调整</span></div><div><ImagePlus size={22} /><strong>口播与配图</strong><span>创作所需，一起完成</span></div><div><Download size={22} /><strong>成片下载</strong><span>预览确认，保存本地</span></div></div>
+        <section className="auth-product-introduction" id="product-introduction" aria-labelledby="product-introduction-title">
+          <div className="auth-product-heading">
+            <div><span className="auth-product-eyebrow">认识轻剪</span><h2 id="product-introduction-title">把创作，变成一场对话。</h2></div>
+            <p>从添加素材、对话剪辑到知识短片重构，<br className="auth-product-break" />用 96 秒，看见想法如何成为作品。</p>
+          </div>
+          <video className="auth-product-video" src={productVideo.assets.video.url} poster={productVideo.assets.poster.url} controls playsInline preload="none" width={1920} height={1080} aria-label="轻剪产品介绍视频，96 秒">
+            你的浏览器暂不支持视频播放，请<a href={productVideo.assets.video.url}>打开产品介绍视频</a>观看。
+          </video>
+          <div className="auth-product-caption"><span>产品介绍 · 1 分 36 秒 · 1080p</span><a href={productVideo.assets.video.url} target="_blank" rel="noopener noreferrer">单独打开视频 <ArrowRight size={14} /></a></div>
+        </section>
       </main> : <main className="auth-form-layout">
         <div className="auth-form-visual"><img src={heroImage} alt="阳光下的地中海海岸风景" /><div><span>轻剪.</span><p>好视频，从一句话开始。</p></div></div>
         <section className="auth-form-section">
