@@ -1,3 +1,4 @@
+import { jobFetch, currentJobSignal } from './jobExecution';
 import type { ResearchReference } from '../src/types';
 import type { researchGaps } from './narrativeResearch';
 import { mapLimited } from './taskPool';
@@ -16,19 +17,19 @@ export function paperExcerpt(text:string):string{
 async function readPaper(url:string):Promise<{title:string;excerpt:string}|undefined>{
   let dir:string|undefined;
   try{
-    const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(25000)});
+    const response=await jobFetch(url,{redirect:'error',signal:AbortSignal.timeout(25000)});
     if(!response.ok||!response.headers.get('content-type')?.includes('pdf')){await response.body?.cancel();return;}
     const reader=response.body!.getReader(),chunks:Uint8Array[]=[];let length=0;
     for(;;){const r=await reader.read();if(r.done)break;length+=r.value.byteLength;if(length>5000000){await reader.cancel();return;}chunks.push(r.value);}
     dir=await mkdtemp(path.join(tmpdir(),'qingjian-paper-'));const file=path.join(dir,'paper.pdf');await writeFile(file,Buffer.concat(chunks),{mode:0o600});
-    const {stdout}=await execFileAsync(process.env.QINGJIAN_RESEARCH_PYTHON||'python3',['-c','from pypdf import PdfReader; import sys; r=PdfReader(sys.argv[1]); print("\\n".join((p.extract_text() or "") for p in r.pages[:16]))',file],{timeout:15000,maxBuffer:500000});
+    const {stdout}=await execFileAsync(process.env.QINGJIAN_RESEARCH_PYTHON||'python3',['-c','from pypdf import PdfReader; import sys; r=PdfReader(sys.argv[1]); print("\\n".join((p.extract_text() or "") for p in r.pages[:16]))',file],{timeout:15000,maxBuffer:500000,signal:currentJobSignal()});
     if(stdout.length<500)return;
     return {title:stdout.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,2).join(' ').slice(0,180),excerpt:'实际论文PDF文本摘录（最多前16页，可能有数学排版提取误差）：\n'+paperExcerpt(stdout)};
   }catch{return;}finally{if(dir)await rm(dir,{recursive:true,force:true});}
 }
 async function bibliography(doi:string):Promise<ResearchReference|undefined>{
   try{
-    const response=await fetch('https://api.crossref.org/works/'+encodeURIComponent(doi),{signal:AbortSignal.timeout(18000)});if(!response.ok)return;
+    const response=await jobFetch('https://api.crossref.org/works/'+encodeURIComponent(doi),{signal:AbortSignal.timeout(18000)});if(!response.ok)return;
     const record=(await response.json()).message;if(String(record?.DOI).toLowerCase()!==doi.toLowerCase()||!record.title?.[0])return;
     return {id:'',url:'https://doi.org/'+doi,title:record.title[0],verification:'primary-record',retrievedAt:new Date().toISOString(),excerpt:'实际读取Crossref出版方登记书目，只支持书目信息，不支持论文公式或实验结论：'+JSON.stringify({title:record.title,author:record.author,published:record.published,'container-title':record['container-title'],volume:record.volume,issue:record.issue,page:record.page,DOI:record.DOI})};
   }catch{return;}
@@ -54,7 +55,7 @@ async function readPrimary(url:string):Promise<{title:string;excerpt:string}|und
   try{
     let current=url;
     for(let redirects=0;redirects<3;redirects++){
-      const response=await fetch(current,{redirect:'manual',signal:AbortSignal.timeout(18000),headers:{Accept:'text/html','User-Agent':'Qingjian-Lesson-Research/1.0'}});
+      const response=await jobFetch(current,{redirect:'manual',signal:AbortSignal.timeout(18000),headers:{Accept:'text/html','User-Agent':'Qingjian-Lesson-Research/1.0'}});
       if(response.status>=300&&response.status<400){const next=response.headers.get('location');await response.body?.cancel();const validated=next&&primaryLessonUrl(new URL(next,current).href);if(!validated)return;current=validated;continue;}
       if(!response.ok||!response.headers.get('content-type')?.includes('text/html')){await response.body?.cancel();return;}
       const reader=response.body?.getReader();if(!reader)return;let length=0;const chunks:Uint8Array[]=[];

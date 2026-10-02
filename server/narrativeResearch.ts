@@ -1,3 +1,4 @@
+import { jobFetch } from './jobExecution';
 import type { ModelConfig } from './modelRegistry';
 import type { ResearchReference } from '../src/types';
 import type { ResearchResult } from './researchTypes';
@@ -15,7 +16,7 @@ export async function researchGaps(config: ModelConfig, topic: string, gaps: str
   const now=new Date().toISOString();
   if(base)try{return await searchOpenWeb(`${topic} ${gaps.join(' ')}${purpose==='news'?' 新闻 最新 官方 '+now.slice(0,10):' 官方 原始资料'}`.slice(0,1800),base);}catch(error){fallback=error instanceof Error?error.message:'open-webSearch 不可用';}
   if (new URL(config.baseUrl).hostname !== 'ark.cn-beijing.volces.com') throw new Error('联网补充目前需要官方 Ark Responses 服务。');
-  const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/responses`, {
+  const response = await jobFetch(`${config.baseUrl.replace(/\/$/, '')}/responses`, {
     method: 'POST', headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(180000),
     body: JSON.stringify({ model: config.modelId, store: false, thinking: { type: 'disabled' }, max_output_tokens: 8000,
       tools: [{ type: 'web_search', sources: ['search_engine'], limit: 8 }], tool_choice: { type: 'web_search' },

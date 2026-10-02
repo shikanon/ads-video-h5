@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawnForJob as spawn } from './jobExecution';
 import { createRequire } from 'node:module';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';

@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ModelKind, PublicModel } from '../src/types';
+import { frozenModel } from './modelContext';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -151,6 +152,8 @@ export async function listPublicModels(): Promise<PublicModel[]> {
 }
 
 export async function getModelConfig(kind: ModelKind, preferredId?: string | null): Promise<ModelConfig | null> {
+  const pinned = frozenModel(kind, preferredId);
+  if (pinned !== undefined) return pinned;
   const data = await loadRegistry();
   const id = preferredId || (kind === 'text' ? data.defaultTextModelId : null);
   const model = id ? data.models.find((item) => item.id === id && item.kind === kind) : data.models.find((item) => item.kind === kind && item.enabled && item.apiKeyCiphertext);

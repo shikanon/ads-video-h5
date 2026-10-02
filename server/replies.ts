@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { ChatMessage, Job, ReplyPart, Session, WorkflowEvent } from '../src/types';
+import { throwIfJobCancelled } from './jobExecution';
 
 export function updateReply(session: Session, job: Job, text: string, phase: ReplyPart['phase']='final', partId:string=phase, artifactId?: string): ChatMessage {
+  throwIfJobCancelled();
   let reply=session.messages.find(m=>m.role==='assistant'&&m.jobId===job.id);
   if(!reply){reply={id:randomUUID(),role:'assistant',text:'',createdAt:new Date().toISOString(),jobId:job.id,parts:[]};session.messages.push(reply);}
   reply.parts ||= [];

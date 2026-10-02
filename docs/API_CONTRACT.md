@@ -73,3 +73,27 @@ HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说�
 ### 热点研究
 
 热点选题仍通过现有消息接口提交，`plan` 任务在无视频生产请求时只执行研究。`ChatMessage.research` 保存选题钩子、角度、视觉建议、原文摘录、来源、发布日期、榜单观察时间与失败记录。明确的热点视频请求进入 HTML 图解工作流；`LessonReport.hotResearch` 保存资料快照，实际渲染前与审查时核验时效。工具记录显示 `discover_hot_topics/select_hot_topics/search_news/read_news_sources/propose_hot_brief`；研究失败或无合格新稿不会伪造选题。参见 [热点研究](HOT_RESEARCH.md)。
+
+### Agent 能力评测
+
+以下接口均需 `Authorization: Bearer <admin-token>`，普通登录 Cookie 不能代替管理员令牌。成片与报告也经管理员鉴权；客户端用授权请求读取 Blob，不将令牌放在 URL 中。
+
+| 接口 | 输入 | 返回 |
+| --- | --- | --- |
+| `GET /api/admin/evaluations/cases` | 无 | `{cases,fixtures}`，用例及素材元数据 |
+| `POST /api/admin/evaluations/cases` | `EvaluationCase` 的可编辑字段 | `201 {case}`，分配 ID 与版本 |
+| `PUT /api/admin/evaluations/cases/:id` | 用例可编辑字段 | `{case}`，版本递增；历史不变 |
+| `POST /api/admin/evaluations/fixtures` | `multipart/form-data`，单视频字段 `file`，最大 100 MB | `201 {fixture}`，实际时长、音轨、文件 SHA-256 |
+| `GET /api/admin/evaluations/runs` | 无 | `{runs}`，不含逐例大对象，含各轮汇总 |
+| `POST /api/admin/evaluations/runs` | `{caseIds,repeats?,name?,modelId?,maxCaseSeconds?}` | `202 {run}`，真实任务异步执行；已有运行返回 `409` |
+| `GET /api/admin/evaluations/runs/:id` | 无 | `{run}`，快照及逐例进度、结果、检查、工具记录 |
+| `POST /api/admin/evaluations/runs/:id/stop` | `{}` | `202 {run}`，先停止实际任务，执行退出后完成取消 |
+| `GET /api/admin/evaluations/runs/:id/report` | 无 | JSON 下载，包含本轮快照与结果 |
+| `GET /api/admin/evaluations/runs/:id/results/:resultId/video` | 无 | 当前例真实 MP4；未生成返回 `404` |
+| `PUT /api/admin/evaluations/runs/:id/results/:resultId/human-review` | `{score,note}`，0–100 分、最多 3000 字 | `{result}`，独立人工评分，不覆盖自动判定 |
+
+`EvaluationCase` 含 `name/category/description/messages/fixtureIds/expectation/threshold/enabled`。`category` 为 `hot-news/knowledge/multi-video`；`messages` 为 1–6 轮原始指令。`expectation` 包含 `seconds/toleranceSeconds/format/captions/minSources/html/originalOnly/requiredWords`，最终一轮按该预期核验。多素材用例要求 `minSources >= 2`，开始前必须绑定足够的有效素材。
+
+运行状态为 `running/stopping/completed/cancelled/interrupted`；单例状态为 `queued/running/passed/failed/cancelled/interrupted`。`completed` 表示批次结束，不表示每例通过。单例未生成成片时没有自动分数；有成片但检查未过保留文件及失败检查。汇总的完成率、通过率包含失败与取消的次数，均分只针对有评分的成片。
+
+每轮保留不可变用例、输入哈希及非敏感模型/代码/skill/评分规则快照。模型配置在执行上下文冻结，密钥不进报告。单例默认时限 1800 秒，可指定 60–3600 秒。每轮最多 30 例、每例重复 1–3 次、总计不超过 60 次。停止或重启中断不自动重新执行；历史基线仅比较指令、约束和素材内容一致的用例。参见[评测说明](AGENT_EVALUATIONS.md)。

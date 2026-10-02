@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawnForJob as spawn, currentJobSignal, onJobAbort, throwIfJobCancelled } from './jobExecution';
 import ffmpegPath from 'ffmpeg-static';
 import { Agent, type AgentTool } from '@earendil-works/pi-agent-core';
 import { createModels, createProvider, type Model } from '@earendil-works/pi-ai';
@@ -128,14 +128,28 @@ function textModel(config: ModelConfig) {
 
 export function getAgent(config: ModelConfig, tools: AgentTool[], systemPrompt: string, requireTools = false) {
   const { models, model } = textModel(config);
-  return new Agent({
-    initialState: { systemPrompt, model, tools },
+  const signal = currentJobSignal();
+  const agent = new Agent({
+    initialState: { systemPrompt, model, tools: tools.map(tool => ({ ...tool, execute: async (...args: Parameters<AgentTool['execute']>) => {
+      throwIfJobCancelled(signal);
+      const result = await tool.execute(...args);
+      throwIfJobCancelled(signal);
+      return result;
+    } })) },
     streamFn: models.streamSimple.bind(models),
     // Ark enables thinking by default; this registry explicitly declares its
     // tool-planning model non-reasoning. Keep that contract in the wire payload.
     onPayload: (payload) => payload && typeof payload === 'object' ? { ...payload, ...(new URL(config.baseUrl).hostname === 'ark.cn-beijing.volces.com' ? { thinking: { type: 'disabled' } } : {}), ...(requireTools ? { tool_choice: 'required' } : {}) } : undefined,
     toolExecution: 'sequential',
   });
+  const prompt = agent.prompt.bind(agent);
+  agent.prompt = (async (...args: Parameters<Agent['prompt']>) => {
+    throwIfJobCancelled(signal);
+    const unbind = onJobAbort(() => agent.abort(), signal);
+    try { await prompt(...args); throwIfJobCancelled(signal); }
+    finally { unbind(); }
+  }) as Agent['prompt'];
+  return agent;
 }
 
 export async function createPlanWithPi(prompt: string, config: ModelConfig, media: MediaItem[], history: ChatMessage[], previous: EditPlan | null, attached: MediaItem[] = [], analyzeAudio?: (sourceId: string) => Promise<AudioAnalysis>, progress?: (events:WorkflowEvent[])=>Promise<void>): Promise<EditPlan> {

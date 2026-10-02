@@ -2,7 +2,7 @@ export type Format = '9:16' | '16:9' | '1:1';
 export type MediaKind = 'video' | 'image' | 'audio';
 export type ArtifactKind = 'image' | 'audio' | 'video';
 export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music' | 'effect' | 'understanding' | 'review';
-export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+export type JobStatus = 'queued' | 'running' | 'stopping' | 'cancelled' | 'succeeded' | 'failed';
 export type ModelKind = 'text' | 'image' | 'audio' | 'understanding';
 export interface PublicUser { id: string; email: string; displayName: string; }
 
@@ -238,6 +238,8 @@ export interface Artifact {
 }
 
 export interface Job {
+  stopRequestedAt?: string;
+  cancelledAt?: string;
   workflow?: WorkflowEvent[];
   stage?: string;
   ownerId?: string;

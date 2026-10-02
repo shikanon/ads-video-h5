@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, Check, KeyRound, Plus, Save, ShieldCheck, Trash2, X } from 'lucide-react';
 import type { ModelKind } from './types';
 import EffectAdmin from './EffectAdmin';
+const EvaluationAdmin = lazy(() => import('./EvaluationAdmin'));
 
 interface AdminModel {
   id: string;
@@ -49,7 +50,7 @@ export default function Admin() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [tab, setTab] = useState<'models' | 'effects'>('models');
+  const [tab, setTab] = useState<'models' | 'effects' | 'evaluations'>('models');
 
   const load = useCallback(async (accessToken: string) => {
     const data = await request<{ models: AdminModel[]; defaultTextModelId: string | null }>('/api/admin/models', accessToken);
@@ -165,8 +166,8 @@ export default function Admin() {
         </main>
       ) : (
         <main className="admin-layout">
-          <nav className="admin-tabs" aria-label="管理功能"><button type="button" className={tab === 'models' ? 'is-active' : ''} onClick={() => setTab('models')}>模型与密钥</button><button type="button" className={tab === 'effects' ? 'is-active' : ''} onClick={() => setTab('effects')}>HTML 视频特效</button></nav>
-          {tab === 'effects' ? <EffectAdmin token={token} /> : <>
+          <nav className="admin-tabs" aria-label="管理功能"><button type="button" className={tab === 'models' ? 'is-active' : ''} onClick={() => setTab('models')}>模型与密钥</button><button type="button" className={tab === 'effects' ? 'is-active' : ''} onClick={() => setTab('effects')}>HTML 视频特效</button><button type="button" className={tab === 'evaluations' ? 'is-active' : ''} onClick={() => setTab('evaluations')}>Agent 能力评测</button></nav>
+          {tab === 'effects' ? <EffectAdmin token={token} /> : tab === 'evaluations' ? <Suspense fallback={<p>正在加载评测台…</p>}><EvaluationAdmin token={token} models={models}/></Suspense> : <>
           <div className="admin-heading"><div><h1>模型与密钥</h1><p>配置对话、图片和口播模型。新密钥保存后仅显示配置状态。</p></div><ShieldCheck size={28} /></div>
           {error ? <div className="admin-alert" role="alert">{error}<button onClick={() => setError('')} aria-label="关闭错误"><X size={16} /></button></div> : null}
           {notice ? <div className="admin-notice" role="status"><Check size={16} />{notice}</div> : null}

@@ -1,3 +1,4 @@
+import { jobFetch } from './jobExecution';
 import { randomUUID } from 'node:crypto';
 import type { ModelConfig } from './modelRegistry';
 
@@ -87,7 +88,7 @@ async function readLimited(response: Response, limit: number): Promise<Buffer> {
 async function postJson(url: string, key: string, body: object, kind: 'image' | 'audio'): Promise<Record<string, unknown>> {
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await jobFetch(url, {
       method: 'POST',
       redirect: 'error',
       // Reference-image inference can exceed two minutes. Jobs remain async,
@@ -169,7 +170,7 @@ async function downloadVendorAudio(value: unknown): Promise<Buffer> {
   const url = safeVendorMediaUrl(value);
   let response: Response;
   try {
-    response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(60_000) });
+    response = await jobFetch(url, { redirect: 'error', signal: AbortSignal.timeout(60_000) });
   } catch {
     throw new ProviderError('无法下载模型生成的音频。', 'DOWNLOAD_ERROR', undefined, true);
   }

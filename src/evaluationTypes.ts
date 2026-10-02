@@ -1,0 +1,87 @@
+import type { Artifact, Format, Job, ModelKind, WorkflowEvent } from './types';
+
+export type EvaluationCategory = 'hot-news' | 'knowledge' | 'multi-video';
+export interface EvaluationExpectation {
+  seconds: number;
+  toleranceSeconds: number;
+  format: Format;
+  captions: boolean;
+  minSources: number;
+  html: boolean;
+  originalOnly: boolean;
+  requiredWords: string[];
+}
+export interface EvaluationCase {
+  id: string;
+  name: string;
+  category: EvaluationCategory;
+  description: string;
+  messages: string[];
+  fixtureIds: string[];
+  expectation: EvaluationExpectation;
+  threshold: number;
+  enabled: boolean;
+  version: number;
+  updatedAt: string;
+}
+export interface EvaluationFixture {
+  id: string;
+  name: string;
+  bytes: number;
+  duration: number;
+  hasAudio: boolean;
+  sha256: string;
+  createdAt: string;
+}
+export interface EvaluationCheck {
+  id: string;
+  name: string;
+  passed: boolean;
+  weight: number;
+  detail: string;
+}
+export type EvaluationResultStatus = 'queued' | 'running' | 'passed' | 'failed' | 'cancelled' | 'interrupted';
+export interface EvaluationResult {
+  id: string;
+  case: EvaluationCase;
+  caseHash: string;
+  fixtures: EvaluationFixture[];
+  repeat: number;
+  status: EvaluationResultStatus;
+  jobIds: string[];
+  stage?: string;
+  progress?: number;
+  startedAt?: string;
+  finishedAt?: string;
+  elapsedMs?: number;
+  error?: string;
+  score?: number;
+  checks?: EvaluationCheck[];
+  workflow?: WorkflowEvent[];
+  artifact?: Omit<Artifact, 'url' | 'downloadUrl' | 'ownerId'> & { sha256: string; bytes: number; actualDuration: number };
+  spokenText?: string;
+  humanReview?: { score: number; note: string; reviewedAt: string };
+}
+export interface EvaluationRun {
+  id: string;
+  name: string;
+  status: 'running' | 'stopping' | 'completed' | 'cancelled' | 'interrupted';
+  createdAt: string;
+  finishedAt?: string;
+  maxCaseSeconds: number;
+  snapshot: {
+    revision: string | null;
+    implementationHash: string;
+    skillHash: string;
+    rubricVersion: string;
+    models: Array<{ id: string; name: string; modelId: string; kind: ModelKind; provider: string }>;
+  };
+  results: EvaluationResult[];
+}
+export interface EvaluationSummary {
+  total: number; finished: number; passed: number; failed: number; cancelled: number;
+  rendered: number; completionRate: number; passRate: number; averageScore: number | null; elapsedMs: number;
+  categories: Array<{ category: EvaluationCategory; total: number; passed: number; averageScore: number | null }>;
+}
+export type EvaluationRunSummary = Omit<EvaluationRun, 'results'> & { summary: EvaluationSummary };
+export interface EvaluationProgress { jobs: Pick<Job, 'id' | 'status' | 'stage' | 'progress' | 'workflow'>[] }

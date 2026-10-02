@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns';
 import { isIP } from 'node:net';
 import { request } from 'node:https';
+import { currentJobSignal, throwIfJobCancelled } from './jobExecution';
 
 export function publicAddress(ip: string): boolean {
   if (isIP(ip) === 4) {
@@ -25,10 +26,12 @@ export type PublicReader = (url: string) => Promise<PublicPage>;
 // Validate and pin every resolved connection, including redirects. No proxy,
 // cookies, TLS exceptions or access to private addresses for external sources.
 export async function readPublicPage(value: string, redirects = 0): Promise<PublicPage> {
+  throwIfJobCancelled();
   const safe = publicResearchUrl(value);
   if (!safe || redirects > 3) throw new Error('研究资料 URL 必须是公开 HTTPS 页面。');
   return new Promise((resolve, reject) => {
     const req = request(safe, {
+      signal: currentJobSignal(),
       headers: { Accept: 'text/html,application/json,text/plain', 'User-Agent': 'Qingjian-Research/1.0' },
       lookup: (host, options, cb) => lookup(host, { all: true }, (error, addresses) => {
         if (error) return cb(error, '', 4);

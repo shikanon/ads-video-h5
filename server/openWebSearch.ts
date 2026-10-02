@@ -1,3 +1,4 @@
+import { jobFetch } from './jobExecution';
 import { publicResearchUrl } from './publicResearch';
 import type { ResearchResult } from './researchTypes';
 
@@ -34,7 +35,7 @@ export function decodeOpenWebSearch(body: any, query: string, now = new Date().t
 }
 export async function searchOpenWeb(query: string, base = openWebBase()!, engines = openWebEngines()): Promise<ResearchResult> {
   if (!base || query.length > 1800) throw new Error('open-webSearch 服务未配置或查询过长。');
-  const response = await fetch(openWebBase(base)!+'/search', { method:'POST', headers:{'Content-Type':'application/json'}, redirect:'error', signal:AbortSignal.timeout(45000), body:JSON.stringify({query,limit:10,engines,searchMode:'request'}) });
+  const response = await jobFetch(openWebBase(base)!+'/search', { method:'POST', headers:{'Content-Type':'application/json'}, redirect:'error', signal:AbortSignal.timeout(45000), body:JSON.stringify({query,limit:10,engines,searchMode:'request'}) });
   if (!response.ok) { await response.body?.cancel(); throw new Error(`open-webSearch 搜索 HTTP ${response.status}。`); }
   return decodeOpenWebSearch(await response.json(), query);
 }

@@ -1,0 +1,50 @@
+.evaluation-admin { display: grid; gap: 20px; min-width: 0; }
+.evaluation-admin .admin-heading { margin-bottom: 2px; }
+.evaluation-admin input:not([type=checkbox]), .evaluation-admin select, .eval-dialog input:not([type=checkbox]), .eval-dialog select, .evaluation-admin textarea, .eval-dialog textarea { width: 100%; min-height: 42px; border: 1px solid #e6ddd6; border-radius: 9px; padding: 9px 11px; background: #fff; font: inherit; color: #3d3d45; }
+.evaluation-admin textarea, .eval-dialog textarea { resize: vertical; line-height: 1.6; }
+.evaluation-admin label, .eval-dialog label { font-size: 12px; }
+.evaluation-admin button, .eval-dialog button { cursor: pointer; }
+.evaluation-admin button:disabled, .eval-dialog button:disabled { cursor: not-allowed; opacity: .5; }
+.eval-nav, .eval-inline, .eval-filters, .eval-case-toolbar, .eval-tags, .eval-category-summary { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.eval-nav button, .eval-filters button { border: 0; padding: 10px 15px; border-radius: 9px; color: #84736a; background: #f1e9e3; font-weight: 600; }
+.eval-nav button.active, .eval-filters button.active { background: #fee9df; color: #bd593d; }
+.eval-nav span { margin-left: 7px; color: #9d8276; }
+.eval-secondary { display: inline-flex; gap: 6px; align-items: center; justify-content: center; border: 1px solid #e6d9d0; background: #fffdfa; border-radius: 9px; padding: 8px 11px; color: #725950; font-size: 12px; text-decoration: none; min-height: 34px; }
+.eval-secondary:hover { border-color: #edac92; color: #c56b4c; }
+.eval-launch-fields { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1.2fr) 100px auto; gap: 14px; align-items: end; }
+.eval-launch-fields label, .eval-history-toolbar label { display: grid; gap: 7px; color: #76665d; font-weight: 600; }
+.eval-muted { color: #8c7e74; line-height: 1.65; font-size: 12px; overflow-wrap: anywhere; margin: 5px 0; }
+.eval-launch .eval-muted { margin-top: 14px; }
+.eval-case-toolbar { justify-content: space-between; }
+.eval-case-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+.eval-case.admin-panel { padding: 20px; }
+.eval-case.selected { border-color: #f3aa8f; box-shadow: 0 0 0 1px #f3aa8f; }
+.eval-case-title { display: flex; justify-content: space-between; gap: 9px; }
+.eval-case-title label { display: flex; gap: 8px; align-items: center; font-size: 15px; }
+.eval-case-title input, .eval-fixture-binding input, .eval-toggles input { accent-color: #ec7a55; width: 16px; height: 16px; flex: none; }
+.eval-case-title button { color: #ac9385; border: 0; background: none; padding: 0; }
+.eval-case > p { font-size: 12px; line-height: 1.6; color: #8c7c71; }
+.eval-tags span, .eval-category-summary span { border-radius: 6px; background: #f5eee8; padding: 4px 7px; color: #9c7763; font-size: 10px; }
+.evaluation-admin details { font-size: 12px; color: #7d6b60; margin-top: 12px; }
+.evaluation-admin summary { cursor: pointer; }
+.evaluation-admin details li, .evaluation-admin details p { line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.eval-needs-fixture { display: block; margin-top: 10px; color: #ac6f39; font-size: 11px; }
+.eval-review-findings { padding: 14px; border: 1px solid #f0d1bf; border-radius: 10px; background: #fff6ef; }
+.eval-review-findings summary { color: #a55e3d; font-weight: 600; }
+.eval-review-findings ul { padding-left: 18px; }
+.eval-fixtures .admin-panel-heading { margin-bottom: 12px; }
+.eval-upload { position: relative; cursor: pointer; overflow: hidden; }
+.eval-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.eval-fixture-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 17px; }
+.eval-fixture-list article { display: flex; gap: 9px; padding: 12px; border: 1px solid #eee3da; border-radius: 10px; color: #bd8b70; }
+.eval-fixture-list div { min-width: 0; }.eval-fixture-list strong { display: block; font-size: 12px; color: #66564d; overflow-wrap: anywhere; }.eval-fixture-list small { display: block; color: #a09085; font-size: 10px; margin-top: 5px; }
+.eval-empty { text-align: center; color: #a18c7d; padding: 26px; font-size: 13px; }
+.eval-history-toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }.eval-history-toolbar label { flex: 1; min-width: 200px; }
+.eval-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }.eval-stats article { display: grid; gap: 8px; background: #fffdfa; border: 1px solid #e9ddd4; border-radius: 14px; padding: 18px; }.eval-stats small { font-size: 12px; color: #8c7768; }.eval-stats strong { font-size: 28px; color: #383845; }.eval-stats span { font-size: 10px; color: #a79588; }
+.eval-table-wrap { padding: 10px 18px; overflow-x: auto; }.eval-table { border-collapse: collapse; text-align: left; width: 100%; font-size: 12px; }.eval-table th { font-size: 11px; color: #a18a7a; padding: 15px 8px; font-weight: 500; white-space: nowrap; }.eval-table td { padding: 15px 8px; border-top: 1px solid #efe5dc; vertical-align: top; }.eval-table small { display: block; color: #a39184; font-size: 10px; margin-top: 5px; max-width: 300px; overflow-wrap: anywhere; }.eval-status { font-size: 11px; display: inline-block; border-radius: 6px; background: #f2eae3; padding: 4px 7px; color: #8a7e73; }.eval-status.passed { color: #35845f; background: #eaf6ee; }.eval-status.failed { color: #aa5c3f; background: #fff0e5; }.eval-status.running { color: #297d98; background: #eaf4f6; }
+.eval-result-detail .admin-panel-heading { gap: 12px; flex-wrap: wrap; }.eval-result-detail h2 { font-size: 18px; }.eval-result-detail .admin-panel-heading span { font-size: 12px; color: #9d8070; }
+.eval-preview { display: grid; gap: 12px; justify-items: start; margin-top: 18px; }.eval-preview video { width: 100%; max-height: 480px; background: #252935; border-radius: 12px; }.eval-preview small { max-width: 100%; word-break: break-all; color: #9d8a7b; font-size: 10px; }
+.eval-checks { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 22px; }.eval-checks article { border: 1px solid #e6e9dd; border-radius: 10px; padding: 12px; background: #fcfdf8; }.eval-checks article.failed { border-color: #f0d1bf; background: #fff6ef; }.eval-checks strong { color: #647b56; font-size: 12px; display: flex; justify-content: space-between; }.eval-checks .failed strong { color: #a55e3d; }.eval-checks p { margin: 8px 0 0; font-size: 11px; line-height: 1.6; color: #9c8878; }
+.eval-human-review { margin-top: 22px; border-top: 1px solid #eadfd4; padding-top: 15px; display: grid; gap: 12px; }.eval-human-review h3 { font-size: 14px; margin: 0; }.eval-human-review p { color: #9d8878; font-size: 12px; margin: 0; }.eval-human-review label { display: grid; gap: 7px; }.eval-human-review input { max-width: 100px; }.eval-human-review button { width: fit-content; }.eval-human-review small { color: #a59385; font-size: 10px; }
+.eval-overlay { position: fixed; z-index: 100; inset: 0; background: #2e292966; display: flex; align-items: center; justify-content: center; padding: 24px; }.eval-dialog { width: min(720px,100%); max-height: 90vh; overflow-y: auto; }.eval-toggles { display: flex; gap: 16px; flex-wrap: wrap; }.eval-toggles label { display: inline-flex; align-items: center; gap: 6px; }.eval-fixture-binding { margin: 20px 0; border: 1px solid #e7ddd3; border-radius: 10px; padding: 13px; }.eval-fixture-binding legend { color: #8f7768; font-size: 12px; }.eval-fixture-binding label { display: flex; gap: 8px; align-items: center; padding: 8px 0; color: #6f5d50; }.eval-fixture-binding span { overflow-wrap: anywhere; }.eval-fixture-binding small { display: block; color: #ad9683; font-size: 10px; margin-top: 3px; }.eval-fixture-binding p { color: #a18c7d; font-size: 12px; }
+@media(max-width:760px) { .eval-case-grid, .eval-fixture-list, .eval-checks { grid-template-columns: 1fr; }.eval-launch-fields { grid-template-columns: 1fr 1fr; }.eval-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }.eval-history-toolbar label { min-width: 140px; }.eval-overlay { padding: 10px; }.eval-dialog { padding: 18px; }.admin-tabs { max-width: 100%; flex-wrap: wrap; }.admin-tabs button { padding: 10px 12px; }.eval-table { min-width: 560px; } }

@@ -29,6 +29,12 @@ import { updateReply, recordWorkflowReply } from './replies';
 import { runLessonWorkflow } from './lessonWorkflow';
 import { sessionSources } from './sourceSelection';
 import { researchHotTopics } from './hotResearch';
+import { wantsScheduleManagement } from './scheduleIntent';
+import { jobDelay, JobCancelledError, throwIfJobCancelled } from './jobExecution';
+import { createJobRunner, restoreInterruptedJobs } from './jobRunner';
+import { createEvaluations, evaluationFileHash, evaluationImplementation, EvaluationError } from './evaluations';
+import { privateEvaluationStorage, isEvaluationOwner } from './evaluationIsolation';
+import { withModelSnapshot, type ModelSnapshot } from './modelContext';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -36,7 +42,7 @@ const ossEnvFile = path.join(dataDir, 'oss.env');
 if (existsSync(ossEnvFile)) process.loadEnvFile(ossEnvFile);
 const resendEnvFile = path.join(dataDir, 'resend.env');
 if (existsSync(resendEnvFile)) process.loadEnvFile(resendEnvFile);
-const oss = createOssStorage();
+const oss = privateEvaluationStorage(createOssStorage());
 const mediaDir = path.join(dataDir, 'media');
 const artifactDir = path.join(dataDir, 'artifacts');
 const exportDir = path.join(dataDir, 'exports');
@@ -83,9 +89,12 @@ state.profiles ||= {};
 for (const session of state.sessions) if (session.plan) session.plan = normalizePlanSummary(session.plan);
 for (const artifact of state.artifacts) if (artifact.plan) artifact.plan = normalizePlanSummary(artifact.plan);
 if (!state.sessions.some((session) => session.id === state.activeSessionId)) state.activeSessionId = state.sessions[0].id;
-for (const job of state.jobs) if (job.status === 'running') job.status = 'queued';
+restoreInterruptedJobs(state.jobs, now());
+const jobRunner = createJobRunner();
+const evaluationJobModels = new Map<string, ModelSnapshot>();
 let saveTail = Promise.resolve();
 function saveState(): Promise<void> {
+  throwIfJobCancelled();
   const snapshot = JSON.stringify(state, null, 2);
   saveTail = saveTail.catch(() => undefined).then(async () => {
     const temp = `${stateFile}.${randomUUID()}.tmp`;
@@ -124,6 +133,7 @@ function addReply(session: Session, job: Job, text: string, artifactId?: string)
   return updateReply(session, job, text, 'final', 'final', artifactId);
 }
 async function addArtifact(session: Session, job: Job, kind: Artifact['kind'], name: string, bytes: Buffer, mimeType: string, text?: string, duration?: number): Promise<Artifact> {
+  throwIfJobCancelled();
   const id = randomUUID();
   const filename = `${id}.${extFor(mimeType)}`;
   const artifactPath = path.join(artifactDir, filename);
@@ -134,6 +144,7 @@ async function addArtifact(session: Session, job: Job, kind: Artifact['kind'], n
     await copyFile(artifactPath, mediaPath);
     await oss?.put(session.ownerId!, 'artifacts', id, artifactPath, mimeType);
     await oss?.put(session.ownerId!, 'media', mediaId, mediaPath, mimeType);
+    throwIfJobCancelled();
   } catch (error) {
     await Promise.all([rm(artifactPath, { force: true }), rm(mediaPath, { force: true })]);
     if (oss) await Promise.allSettled([oss.remove(session.ownerId!, 'artifacts', id), oss.remove(session.ownerId!, 'media', mediaId)]);
@@ -177,6 +188,7 @@ async function performJob(job: Job): Promise<void> {
   };
   const selectedSources = () => sessionSources(prompt,media,attached,session.plan,history);
   const workflowProgress = async (events:NonNullable<Job['workflow']>) => {
+    throwIfJobCancelled();
     job.workflow=structuredClone(events);recordWorkflowReply(session,job,events);
     job.stage=[...events].reverse().find(e=>e.status==='running')?.stage||events.at(-1)?.stage;
     job.progress=Math.max(job.progress||0,Math.min(88,10+events.filter(e=>e.status==='succeeded').length*2));await saveState();
@@ -226,7 +238,7 @@ async function performJob(job: Job): Promise<void> {
     const render = await effects.render(effect, values, visual ? { file: path.join(mediaDir, visual.id), kind: visual.kind as 'image' | 'video', mimeType: visual.mimeType } : undefined);
     job.progress = 15; await saveState();
     while (render.status === 'queued' || render.status === 'running') {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await jobDelay(500);
       job.progress = Math.min(90, (job.progress || 15) + 1);
     }
     if (render.status !== 'succeeded' || !render.file) throw new Error(render.error || '特效渲染失败。');
@@ -293,8 +305,8 @@ async function performJob(job: Job): Promise<void> {
     if(!config)throw new Error('文本模型尚未配置。');
     const workflow=await runLessonWorkflow({prompt:lessonPrompt,config,audioConfig:await getModelConfig('audio'),media,dataDir,mediaDir,ownerId:job.ownerId!,checkpointKey:job.id,export:job.kind==='export',
       analyze:(item,file)=>audioUnderstanding.analyze(item,file),
-      register:async item=>{await oss?.put(job.ownerId!,'media',item.id,path.join(mediaDir,item.id),item.mimeType);state.media.push(item);await saveState();},
-      persist:async next=>{session.plan=next;await saveState();},saveDraft:async next=>{session.lessonDraft=structuredClone(next);await saveState();},progress:workflowProgress,stage:async stage=>{job.stage=stage;await saveState();},
+      register:async item=>{throwIfJobCancelled();await oss?.put(job.ownerId!,'media',item.id,path.join(mediaDir,item.id),item.mimeType);throwIfJobCancelled();state.media.push(item);await saveState();},
+      persist:async next=>{throwIfJobCancelled();session.plan=next;await saveState();},saveDraft:async next=>{throwIfJobCancelled();session.lessonDraft=structuredClone(next);await saveState();},progress:workflowProgress,stage:async stage=>{throwIfJobCancelled();job.stage=stage;await saveState();},
       render:next=>renderPlan(next,media,mediaDir,exportDir),review:(file,next)=>reviewRender(file,next,media,lessonPrompt+'，字幕和声音一致性检查')});
     if(job.kind==='plan'){
       const r=workflow.report;
@@ -372,8 +384,8 @@ async function performJob(job: Job): Promise<void> {
       originalOnly: !/补充|联网|新增台词|重写台词/.test(reconstructionPrompt!) || /不(?:要)?(?:重新)?(?:生成|合成)配音|只用原话/.test(reconstructionPrompt!),
       voiceAuthorized: voiceReferenceAuthorized(history),
       transcribe: analyzeAudio, verifySelection: scenes => verifySceneQuotes(scenes,sources,path.join(dataDir,'sentence-audit')),
-      register: async item => { await oss?.put(job.ownerId!, 'media', item.id, path.join(mediaDir,item.id),item.mimeType);state.media.push(item);await saveState(); },
-      persist: async next => {session.plan=next;await saveState();},
+      register: async item => { throwIfJobCancelled();await oss?.put(job.ownerId!, 'media', item.id, path.join(mediaDir,item.id),item.mimeType);throwIfJobCancelled();state.media.push(item);await saveState(); },
+      persist: async next => {throwIfJobCancelled();session.plan=next;await saveState();},
       progress: async events => {job.workflow=structuredClone(events);recordWorkflowReply(session,job,events);job.stage=events.at(-1)?.stage;job.progress=Math.min(88,10+events.filter(e=>e.status==='succeeded').length*6);await saveState();},
       render: next => renderPlan(next,media,mediaDir,exportDir,undefined,bgmFile),review: (file,next) => reviewRender(file,next,media,reconstructionPrompt+'，同步字幕') };
   };
@@ -516,30 +528,108 @@ async function processQueue() {
       const activeSession=getSession(job.sessionId);
       if(activeSession)updateReply(activeSession,job,'收到请求，正在整理素材和制作要求。','commentary','start');
       await saveState();
-      try { await performJob(job); job.status = 'succeeded'; job.progress = 100; }
+      try {
+        await jobRunner.run(job, () => {
+          const models = evaluationJobModels.get(job.id);
+          if (isEvaluationOwner(job.ownerId) && !models) throw new EvaluationError('评测模型快照已中断，请重新运行评测。');
+          return models ? withModelSnapshot(models, () => performJob(job)) : performJob(job);
+        });
+        job.status = 'succeeded'; job.progress = 100;
+      }
       catch (error) {
-        job.status = 'failed'; job.progress = undefined;
-        const message = error instanceof Error ? error.message : '处理失败';
-        job.error = error instanceof ProviderError
-          ? `${error.message}（${error.code}${error.status ? ` / HTTP ${error.status}` : ''}）`
-          : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件|音频理解|语义分句|字幕|分句|特效|重构工作流未完成|教学工作流未完成|教学研究|教学视频|热点研究/.test(message)
-            ? message : '生成失败，请检查模型配置、素材格式或网络后重试。';
-        const session = getSession(job.sessionId);
-        if (session) {
-          addReply(session, job, `本次处理未完成：${job.error}`);
+        if (error instanceof JobCancelledError || job.stopRequestedAt) {
+          job.status = 'cancelled'; job.cancelledAt = now(); job.progress = undefined; job.error = undefined; job.stage = '已停止运行';
+          const session = getSession(job.sessionId);
+          if (session) addReply(session, job, '已停止运行。已完成的步骤和生成结果已保留。');
+        } else {
+          job.status = 'failed'; job.progress = undefined;
+          const message = error instanceof Error ? error.message : '处理失败';
+          job.error = error instanceof ProviderError
+            ? `${error.message}（${error.code}${error.status ? ` / HTTP ${error.status}` : ''}）`
+            : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件|音频理解|语义分句|字幕|分句|特效|重构工作流未完成|教学工作流未完成|教学研究|教学视频|热点研究/.test(message)
+              ? message : '生成失败，请检查模型配置、素材格式或网络后重试。';
+          const session = getSession(job.sessionId);
+          if (session) addReply(session, job, `本次处理未完成：${job.error}`);
         }
       }
       job.updatedAt = now();
+      evaluationJobModels.delete(job.id);
       const session = getSession(job.sessionId); if (session) session.updatedAt = now();
       await saveState();
     }
   } finally { processing = false; }
 }
 
+function enqueueAgentMessage(session: Session, text: string, attachmentIds: string[]): Job {
+  const createdAt = now();
+  const message: ChatMessage = { id: randomUUID(), role: 'user', text, createdAt, attachmentIds };
+  const job: Job = { id: randomUUID(), ownerId: session.ownerId, sessionId: session.id, messageId: message.id, kind: classify(text), status: 'queued', createdAt, updatedAt: createdAt, progress: 0 };
+  message.jobId = job.id;
+  session.messages.push(message);
+  if (session.title === '新对话' || session.title === '新会话') session.title = text.slice(0, 24);
+  session.updatedAt = createdAt;
+  state.jobs.push(job);
+  return job;
+}
+const evaluations = createEvaluations({
+  dataDir,
+  implementation: await evaluationImplementation(root),
+  models: async preferred => {
+    const [text, audio, understanding, image] = await Promise.all([getModelConfig('text', preferred), getModelConfig('audio'), getModelConfig('understanding'), getModelConfig('image')]);
+    return { text, audio, understanding, image };
+  },
+  stop: async runId => {
+    for (const session of state.sessions.filter(s => s.ownerId?.startsWith(`evaluation:${runId}:`))) jobRunner.stopSession(state.jobs, session.ownerId!, session.id, now());
+    await saveState();
+  },
+  artifactFile: (runId, resultId, artifactId) => {
+    const artifact = state.artifacts.find(a => a.id === artifactId && a.ownerId === `evaluation:${runId}:${resultId}`);
+    return artifact ? artifactFile(artifact) || undefined : undefined;
+  },
+  execute: async (test, context) => {
+    const ownerId = `evaluation:${context.runId}:${context.resultId}`, session = { ...newSession(context.models.text!.id), ownerId, title: `评测 · ${test.name}` };
+    const sources: MediaItem[] = [];
+    for (const fixture of context.fixtures) {
+      if (context.signal.aborted) throw new EvaluationError('评测已停止。');
+      if (await evaluationFileHash(fixture.file) !== fixture.sha256) throw new EvaluationError('评测素材哈希已改变，请重新上传并绑定。');
+      const id = randomUUID(); await copyFile(fixture.file, path.join(mediaDir, id));
+      sources.push({ id, ownerId, name: fixture.name, kind: 'video', mimeType: 'video/mp4', duration: fixture.duration, hasAudio: fixture.hasAudio, shots: fixture.shots.map(s => ({ ...s, thumbnailUrl: '' })), url: `/api/media/${id}`, origin: 'upload', createdAt: now() });
+    }
+    state.sessions.push(session); state.media.push(...sources); await saveState();
+    const sourceIds = sources.map(m => m.id), jobs: Job[] = [];
+    const onAbort = () => { jobRunner.stopSession(state.jobs, ownerId, session.id, now()); void saveState().catch(() => undefined); };
+    context.signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      for (const text of test.messages) {
+        if (context.signal.aborted) throw new EvaluationError('评测已停止。');
+        if (wantsScheduleManagement(text)) throw new EvaluationError('视频评测不执行定时任务管理，请填写研究、剪辑或视频制作指令。');
+        const job = enqueueAgentMessage(session, text, sourceIds); jobs.push(job); evaluationJobModels.set(job.id, context.models);
+        await saveState(); await context.progress({ jobs }); void processQueue();
+        while (['queued','running','stopping'].includes(job.status)) {
+          if (context.signal.aborted) onAbort();
+          await new Promise(resolve => setTimeout(resolve, 1000)); await context.progress({ jobs });
+        }
+        if (job.status !== 'succeeded') throw new EvaluationError(job.error || '评测执行已停止。');
+      }
+      const last = jobs.at(-1), artifact = state.artifacts.find(a => a.id === last?.artifactId && a.ownerId === ownerId && a.kind === 'video');
+      const file = artifact && artifactFile(artifact);
+      if (!artifact || !file) throw new EvaluationError('最后一轮指令未生成视频，不能视为完成评测。');
+      return { artifact: structuredClone(artifact), file, media: state.media.filter(m => m.ownerId === ownerId), sourceIds, workflow: jobs.flatMap(j => j.workflow || []) };
+    } finally {
+      context.signal.removeEventListener('abort', onAbort);
+      const unfinished = jobs.some(job => ['queued','running','stopping'].includes(job.status));
+      if (unfinished) jobRunner.stopSession(state.jobs, ownerId, session.id, now());
+      for (const job of jobs) evaluationJobModels.delete(job.id);
+      if (unfinished) await saveState();
+    }
+  },
+});
+await evaluations.init();
+
 const app = express();
 app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
-mountAdminRoutes(app, effects, publicBase);
+mountAdminRoutes(app, effects, publicBase, evaluations);
 app.get('/api/effects', (_request, response) => response.json({ effects: effects.list().filter((item) => item.enabled).map(({ id, name, description, duration, width, height }) => ({ id, name, description, duration, width, height })) }));
 app.get('/api/effects/assets/:id', async (request, response) => {
   const asset = effects.getAsset(request.params.id);
@@ -599,12 +689,7 @@ app.post('/api/chat', async (request, response) => {
   if (!text) return response.status(400).json({ error: '请输入想让轻剪完成的内容。' });
   const attachments = Array.isArray(request.body?.attachmentIds) ? request.body.attachmentIds : [];
   if (attachments.length > 6 || attachments.some((id: unknown) => typeof id !== 'string' || !state.media.some((item) => item.id === id && owned(item, user.id)))) return response.status(400).json({ error: '附件不存在或一次添加过多。' });
-  const createdAt = now();
-  const message: ChatMessage = { id: randomUUID(), role: 'user', text, createdAt, attachmentIds: attachments };
-  const job: Job = { id: randomUUID(), ownerId: user.id, sessionId: session.id, messageId: message.id, kind: classify(text), status: 'queued', createdAt, updatedAt: createdAt, progress: 0 };
-  message.jobId = job.id; session.messages.push(message);
-  if (session.title === '新对话' || session.title === '新会话') session.title = text.slice(0, 24);
-  session.updatedAt = createdAt; state.jobs.push(job);
+  enqueueAgentMessage(session, text, attachments);
   await saveState(); response.json(await publicState(user)); void processQueue();
 });
 app.post('/api/media', upload.array('files', 6), async (request, response) => {

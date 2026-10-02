@@ -1,3 +1,4 @@
+import { jobFetch } from './jobExecution';
 import { Buffer } from 'node:buffer';
 import type { MusicSearch } from '../src/types';
 
@@ -83,7 +84,7 @@ function parsePixabaySearch(html: string): PixabayTrack[] {
 }
 
 async function fetchPixabay(url: URL, accept: string): Promise<{ response: Response; body: string }> {
-  const response = await fetch(url, {
+  const response = await jobFetch(url, {
     redirect: 'manual',
     signal: AbortSignal.timeout(30_000),
     headers: {
@@ -130,7 +131,7 @@ function validate24bitPage(pageInput: unknown): number {
 }
 
 async function post24bit(path: string, payload: Record<string, unknown>, referer = 'https://www.24bit.net/'): Promise<{ status: number; contentType: string; body: string }> {
-  const response = await fetch(`https://www.24bit.net/api${path}`, {
+  const response = await jobFetch(`https://www.24bit.net/api${path}`, {
     method: 'POST',
     redirect: 'manual',
     signal: AbortSignal.timeout(30_000),
@@ -223,7 +224,7 @@ export async function downloadPixabayAudio(url: URL): Promise<{ bytes: Buffer; n
   let current = url;
   for (let redirect = 0; redirect < 3; redirect++) {
     if (current.protocol !== 'https:' || current.hostname !== 'cdn.pixabay.com' || !/^\/download\/audio\/[\w/-]+\.mp3$/.test(current.pathname)) throw new Error('只支持 Pixabay 官方 CDN 的 MP3 下载地址。');
-    const response = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(30_000), headers: { ...browserHeaders, accept: 'audio/mpeg', referer: 'https://pixabay.com/zh/music/' } });
+    const response = await jobFetch(current, { redirect: 'manual', signal: AbortSignal.timeout(30_000), headers: { ...browserHeaders, accept: 'audio/mpeg', referer: 'https://pixabay.com/zh/music/' } });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
       if (!location) throw new Error('Pixabay 下载地址没有可用的跳转目标。');
@@ -252,7 +253,7 @@ export async function download24bitAudio(trackInput: unknown, audioUrlInput: unk
   try { grantResult = JSON.parse(grant.body); } catch { throw new MusicSourceError('24bit 下载授权接口返回格式异常。', 'UPSTREAM_SCHEMA_CHANGED', '24bit'); }
   if (!grantResult || typeof grantResult !== 'object' || (grantResult as Record<string, unknown>).status !== true) throw new MusicSourceError('24bit 未授权下载此曲目。', 'DOWNLOAD_NOT_AUTHORIZED', '24bit');
 
-  const response = await fetch(audioUrl, { redirect: 'manual', signal: AbortSignal.timeout(90_000), headers: { ...browserHeaders, accept: 'audio/*,application/octet-stream;q=0.9,*/*;q=0.8', referer } });
+  const response = await jobFetch(audioUrl, { redirect: 'manual', signal: AbortSignal.timeout(90_000), headers: { ...browserHeaders, accept: 'audio/*,application/octet-stream;q=0.9,*/*;q=0.8', referer } });
   const contentType = response.headers.get('content-type') || '';
   if (/text\/html/i.test(contentType)) {
     const body = await response.text();
