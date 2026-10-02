@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, copyFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { classify, shouldUpdatePlan } from '../server/intents';
-import { validateTranscript, regroupWords, splitRepeatedLeads } from '../server/audioUnderstanding';
+import { validateTranscript, regroupWords, splitRepeatedLeads, wordBoundaryCaptionBreaks, validateCaptionBreaks } from '../server/audioUnderstanding';
 import { applyTimelineRequest, captionsFromTranscript } from '../server/timeline';
 import { validatePlan, runFFmpeg, renderPlan, probeVideo } from '../server/core';
 import { planHash } from '../server/renderTimeline';
@@ -19,6 +19,18 @@ test('semantic captions keep Chinese words intact while conserving all source te
   const captions=captionsFromTranscript({...plan,clips:[{...plan.clips[0],end:3.7}]},[source]);
   assert.deepEqual(captions.map((c)=>c.text),['生成一张效果','非常棒']);
   assert.equal(captions.map((c)=>c.text).join(''),text);assert.equal(captions[0].start,0);assert.equal(captions.at(-1)!.end,2.7);
+});
+test('caption fallback conserves real multi-character words and audio positions after malformed model indices',()=>{
+  const words=['针对于','四十五秒','真人感爆棚的AI图片','但是','不要','拆开','原词。'].map((text,i)=>({text,start:i*.6,end:(i+1)*.6}));
+  assert.throws(()=>validateCaptionBreaks([2,1,6],words.length),/递增/);
+  const ends=wordBoundaryCaptionBreaks(words);let first=0;
+  const groups=ends.map(last=>{const group={first,last,complete:true};first=last+1;return group;});
+  const result=regroupWords(words,{groups},'fallback');
+  assert.deepEqual(result.flatMap(s=>s.words),words);
+  assert.equal(result.map(s=>s.text).join(''),words.map(w=>w.text).join(''));
+  assert.equal(result[0].start,words[0].start);assert.equal(result.at(-1)!.end,words.at(-1)!.end);
+  assert.ok(result.every(s=>s.end-s.start<=3.2));
+  assert.throws(()=>wordBoundaryCaptionBreaks([{text:'错时间码',start:0,end:8}]),/时间码问题/);
 });
 test('negative BGM request clears the executable volume even with a previously configured track',()=>{
   const next=applyTimelineRequest({...plan,audio:{originalVolume:1,bgmVolume:.2,narrationVolume:1,normalize:true}},'保留原声，不加背景音乐',[fixture]);

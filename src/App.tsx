@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { WorkflowTrace } from './WorkflowTrace';
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -36,6 +37,8 @@ import type {
   Session,
 } from "./types";
 import { MAX_MEDIA_UPLOAD_BYTES } from "./uploadLimits";
+import AssistantReply from "./AssistantReply";
+import HotResearchCard from "./HotResearchCard";
 
 type Page =
   | "chat"
@@ -70,7 +73,7 @@ const labels = {
     timeline: "剪辑拼接",
     newChat: "新会话",
     hero: "一句话，剪出好视频",
-    sub: "添加素材，告诉轻剪你想要的节奏",
+    sub: "添加素材来剪辑，或说一个主题生成教学视频",
     input: "继续说说你想怎么剪…",
     add: "添加素材",
     download: "下载",
@@ -113,7 +116,7 @@ const labels = {
     timeline: "Edit preview",
     newChat: "New conversation",
     hero: "Make a video with one sentence",
-    sub: "Add media and tell Qingjian your idea",
+    sub: "Edit your media or turn a topic into a teaching video",
     input: "Describe your next edit…",
     add: "Add media",
     download: "Download",
@@ -159,6 +162,7 @@ const hints = {
     "生成阳光开场特效视频，标题「去看更大的世界」",
     "写一段温柔的口播，并生成独立音频",
     "生成一张暖色调的封面图",
+    "生成一个从浅入深讲解损失函数变迁史的教学视频",
     "搜索轻快的 BGM",
   ],
   "en-US": [
@@ -240,7 +244,8 @@ function JobCard({
 }) {
   const t = labels[locale];
   const name =
-    job.kind === "understanding" ? (locale === "zh-CN" ? "原声音频理解" : "Audio understanding")
+    job.workflow?.some(e=>e.tool==='discover_hot_topics') && job.kind==='plan' ? (locale==='zh-CN'?'热点选题研究':'Hot topic research')
+      : job.kind === "understanding" ? (locale === "zh-CN" ? "原声音频理解" : "Audio understanding")
       : job.kind === "review" ? (locale === "zh-CN" ? "成片审查" : "Render review")
       : job.kind === "music"
       ? locale === "zh-CN" ? "BGM 搜索" : "Music search"
@@ -279,6 +284,7 @@ function JobCard({
         <p className="job-complete-detail">
           {locale === "zh-CN" ? "任务记录已收起，生成结果见对话中的回复与作品。" : "The task record is collapsed. See the reply and output in this chat."}
         </p>
+        <WorkflowTrace events={job.workflow} />
       </details>
     );
   }
@@ -292,6 +298,7 @@ function JobCard({
         <span className="job-status">{status}</span>
       </div>
       {job.stage ? <p className="workflow-stage">{job.stage}{job.workflow?.length ? ` · ${job.workflow.filter((e) => e.status === "succeeded").length} 个步骤已完成` : ''}</p> : null}
+      <WorkflowTrace events={job.workflow} />
       {job.status === "queued" || job.status === "running" ? (
         <div
           className="progress-track"
@@ -325,11 +332,13 @@ function ArtifactCard({
   locale,
   open,
   add,
+  repair,
 }: {
   artifact: Artifact;
   locale: Locale;
   open: (artifact: Artifact) => void;
   add?: (artifact: Artifact) => void;
+  repair?: () => void;
 }) {
   const t = labels[locale];
   if (artifact.kind === "audio")
@@ -434,6 +443,23 @@ function ArtifactCard({
           <ArrowDownToLine size={18} />
         </a>
       </div>
+      {artifact.plan?.lesson ? <details className="editorial-report">
+        <summary>教学脚本与来源 · {artifact.plan.lesson.chapters.length} 章</summary>
+        <strong>{artifact.plan.lesson.title}</strong>
+        <p>{artifact.plan.lesson.arc}</p>
+        <p>学习目标：{artifact.plan.lesson.objectives.join('；')}</p>
+        {artifact.plan.lesson.factReview?<p>脚本事实审查：{artifact.plan.lesson.factReview.score}/100 · {artifact.plan.lesson.factReview.needsRepair?'仍需修复':'通过'}{artifact.plan.lesson.factReview.adjudication?` · 独立复核 ${artifact.plan.lesson.factReview.adjudication.modelId}，首轮 ${artifact.plan.lesson.factReview.adjudication.primaryScore}/100` : ''}</p>:null}
+        {artifact.plan.lesson.factReview?.suggestions?.map((s,i)=><small key={i}>改进建议：{s}</small>)}
+        {artifact.plan.lesson.chapters.map((chapter,index)=><article key={chapter.id}>
+          <strong>{index+1}. {chapter.title}</strong><small>HTML / GSAP · {chapter.duration?.toFixed(2)}秒 · 旁白匹配 {Math.round((chapter.speechMatch||0)*100)}%</small>
+          <p>目标：{chapter.goal}</p><blockquote>{chapter.narration}</blockquote><p>编排理由：{chapter.reason}</p>
+          <small>图解：{chapter.visual.takeaway} · 前置章节：{chapter.prerequisites.join('、')||'无'}</small>
+          {chapter.claims.map((claim,i)=><p key={i}><small>{claim.basis==='calculation'?'数学定义与课堂演算':claim.basis==='synthesis'?'教学归纳':'文献事实'}：{claim.text}{claim.explanation?` · ${claim.explanation}`:''}</small></p>)}
+          {chapter.referenceIds.map(id=>{const ref=artifact.plan!.lesson!.references.find(r=>r.id===id);return ref?<a key={id} href={ref.url} target="_blank" rel="noreferrer">[{id}] {ref.title}</a>:null;})}
+        </article>)}
+        <a href={artifact.downloadUrl.replace('/api/download/', '/api/artifacts/') + '/edit-report'} download>下载教学制作记录 JSON</a>
+        {artifact.plan.lesson.limitations.map((s,i)=><small key={i}>{s}</small>)}
+      </details> : null}
       {artifact.plan?.reconstruction ? <details className="editorial-report">
         <summary>重构脚本与补充来源 · {artifact.plan.reconstruction.beats.length} 段</summary>
         <strong>{artifact.plan.reconstruction.premise}</strong>
@@ -460,6 +486,7 @@ function ArtifactCard({
         <a href={artifact.downloadUrl.replace('/api/download/', '/api/artifacts/') + '/edit-report'} download>下载剪辑记录 JSON</a>
         <small>源时间码为模型估计；画面分析基于分镜抽帧。</small>
       </details> : null}
+      {artifact.plan?.lesson&&artifact.review?.status==='needs-review'&&repair?<button type="button" className="ghost-button" onClick={repair}>{locale==='zh-CN'?'修复并重新审查':'Repair and review again'}</button>:null}
       {artifact.review ? <details className="render-review">
         <summary>{locale === "zh-CN" ? "成片审查" : "Review"} · {artifact.review.score}/100 · {artifact.review.status === 'passed' ? (locale === "zh-CN" ? '检查通过' : 'Passed') : (locale === "zh-CN" ? '需要复核' : 'Needs review')}</summary>
         {artifact.review.audio ? <section className="sound-review" aria-label={locale === 'zh-CN' ? '声音检查' : 'Sound checks'}>
@@ -472,6 +499,7 @@ function ArtifactCard({
           {artifact.review.audio.userReportedMismatch ? <p className="sound-feedback">{locale === 'zh-CN' ? '你已反馈音色不似。仍使用被拒绝的合成声音时，音色检查不能通过。' : 'Your voice mismatch feedback applies to this audio. Re-exporting the same synthesis cannot pass the voice checks.'}</p> : null}
         </section> : null}
         {artifact.review.checks.filter(check => !artifact.review!.audio || !/分段人声|段落衔接|段内音量|声音峰值|参考音色|段落音色|声音审听/.test(check.name)).map((check) => <p key={check.name}>{check.passed ? '✓' : '△'} {check.name}：{check.detail}</p>)}
+        {artifact.review.semantic?.suggestions?.map((suggestion,index)=><p key={`suggestion-${index}`}>{locale==='zh-CN'?'改进建议':'Suggestion'}：{suggestion}</p>)}
         {artifact.review.limitations.map((detail) => <small key={detail}>{detail}</small>)}
       </details> : null}
     </div>
@@ -492,8 +520,10 @@ function Message({
   open: (artifact: Artifact) => void;
   add: (artifact: Artifact) => void;
 }) {
-  const jobs = state.jobs.filter((x) => x.messageId === message.id);
-  const artifacts = state.artifacts.filter((x) => x.messageId === message.id);
+  const replyForJob = message.role === "user" && message.jobId ? state.sessions.some(s=>s.messages.some(m=>m.role==='assistant'&&m.jobId===message.jobId)) : false;
+  const job = state.jobs.find(x=>x.id===message.jobId);
+  const jobs = message.role==='assistant' ? (job?[job]:[]) : replyForJob?[]:state.jobs.filter(x=>x.messageId===message.id);
+  const artifacts = message.role==='assistant' && job ? state.artifacts.filter(x=>x.messageId===job.messageId) : replyForJob?[]:state.artifacts.filter(x=>x.messageId===message.id);
   const attachments = (message.attachmentIds || [])
     .map((id) => state.media.find((x) => x.id === id))
     .filter((x): x is MediaItem => Boolean(x));
@@ -505,7 +535,7 @@ function Message({
         </span>
       ) : null}
       <div className="message-main">
-        {message.text ? (
+        {message.role==='assistant' ? <AssistantReply message={message} job={job} locale={locale}/> : message.text ? (
           <div className="message-bubble">{message.text}</div>
         ) : null}
         {attachments.length ? (
@@ -518,6 +548,7 @@ function Message({
             ))}
           </div>
         ) : null}
+        {message.research?<HotResearchCard research={message.research}/>:null}
         {message.musicSearch ? (
           <div className="music-search-card">
             <div className="music-search-heading">
@@ -536,7 +567,7 @@ function Message({
             <p>{locale === "zh-CN" ? "在原站下载并确认使用权后，回到轻剪上传音频；随后通过对话指定为 BGM。" : "Download from the source, check usage rights, then upload the audio and choose it in chat."}</p>
           </div>
         ) : null}
-        {jobs.map((job) => (
+        {jobs.filter(job=>job.status!=='succeeded'||!message.parts?.length).map((job) => (
           <JobCard key={job.id} job={job} locale={locale} retry={retry} />
         ))}
         {artifacts.map((artifact) => (
@@ -546,6 +577,7 @@ function Message({
             locale={locale}
             open={open}
             add={add}
+            repair={job?.status==='succeeded'&&job.artifactId===artifact.id?()=>retry(job.id):undefined}
           />
         ))}
       </div>
@@ -652,6 +684,8 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   const sessionPreview = (item: Session) =>
     item.messages.at(-1)?.text ||
     (locale === "zh-CN" ? "开始对话，创建这个主题" : "Start chatting in this topic");
+  const lastReply = session?.messages.at(-1);
+  const replySize = lastReply?.parts?.reduce((total,part)=>total+part.text.length,0) || 0;
   useLayoutEffect(() => {
     if (page !== "chat" || !chatScroll.current || !state?.activeSessionId) return;
     const view = chatScroll.current;
@@ -660,11 +694,11 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
       : view.scrollHeight;
     visibleSessionId.current = state.activeSessionId;
   }, [page, state?.activeSessionId]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (page === "chat" && chatAtBottom.current && chatScroll.current) {
       chatScroll.current.scrollTop = chatScroll.current.scrollHeight;
     }
-  }, [page, session?.messages.length]);
+  }, [page, session?.messages.length, lastReply?.text.length, replySize]);
   const artifacts =
     state?.artifacts.filter((a) => a.sessionId === session?.id) || [];
   const latestVideo =

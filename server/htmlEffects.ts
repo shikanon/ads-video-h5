@@ -8,6 +8,9 @@ import ffmpegPath from 'ffmpeg-static';
 import { detectImage, probeVideo } from './core';
 import type { createOssStorage } from './ossStorage';
 import { MAX_EFFECT_IMAGE_UPLOAD_BYTES, MAX_MEDIA_UPLOAD_BYTES } from '../src/uploadLimits';
+import { motionLibrary } from './motionComponents';
+import { richMotionIds, richMotionTemplates } from './motionTemplates';
+export { motionLibrary } from './motionComponents';
 
 export interface EffectValues { eyebrow: string; title: string; subtitle: string; imageUrl: string; videoUrl: string; assetId: string; accent: string }
 export interface EffectAsset { id: string; name: string; kind: 'image' | 'video'; mimeType: string; size: number; createdAt: string }
@@ -26,21 +29,6 @@ const ffprobePath: string = createRequire(import.meta.url)('ffprobe-static').pat
 const allowedAccent = /^#[0-9a-fA-F]{6}$/;
 const blankValues: EffectValues = { eyebrow: '轻剪 · YOUR STORY', title: '去看更大的世界', subtitle: '把今天，剪成值得收藏的片段。', imageUrl: '', videoUrl: '', assetId: '', accent: '#fb7353' };
 
-// This is the product motion library. Each primitive adds frame-addressable GSAP tweens.
-export const motionLibrary = `window.QJMotion = Object.freeze({
-  textRise(tl, selector, at=0.2) { return tl.fromTo(selector,{y:90,opacity:0,filter:'blur(14px)'},{y:0,opacity:1,filter:'blur(0px)',duration:0.68,ease:'power3.out'},at); },
-  cardPop(tl, selector, at=0.35) { return tl.fromTo(selector,{scale:0.86,opacity:0,rotation:-3},{scale:1,opacity:1,rotation:0,duration:0.82,ease:'back.out(1.3)'},at); },
-  lineDraw(tl, selector, at=0.7) { return tl.fromTo(selector,{scaleX:0,transformOrigin:'left center'},{scaleX:1,duration:0.42,ease:'expo.out'},at); },
-  imageDrift(tl, selector, at=0.2, duration=4.8) { return tl.fromTo(selector,{scale:1.08,x:-24},{scale:1.17,x:24,duration,ease:'none'},at); },
-  splitWipe(tl, selector, at=0.18) { return tl.fromTo(selector,{clipPath:'inset(0 100% 0 0)'},{clipPath:'inset(0 0% 0 0)',duration:0.76,ease:'power4.out'},at); },
-  fadeOut(tl, selector, at, duration=0.3) { return tl.to(selector,{opacity:0,y:-18,duration,ease:'power2.in'},at); },
-  keywordPunch(tl, selector, at=.3) { return tl.fromTo(selector,{scale:.94,opacity:0},{scale:1,opacity:1,duration:.42,ease:'back.out(1.1)'},at); },
-  lowerThird(tl, selector, at=.4) { return tl.fromTo(selector,{x:-32,opacity:0},{x:0,opacity:1,duration:.5,ease:'power3.out'},at); },
-  chapterProgress(tl, selector, at=.4, duration=4.8) { return tl.fromTo(selector,{scaleX:0,transformOrigin:'left center'},{scaleX:1,duration,ease:'none'},at); },
-  compareReveal(tl, selector, at=.6) { return tl.fromTo(selector,{x:36,opacity:0},{x:0,opacity:1,duration:.62,ease:'expo.out',stagger:.18},at); },
-  drawStroke(tl, selector, at=.4, duration=.7) { gsap.utils.toArray(selector).forEach((node,i)=>{const length=node.getTotalLength();tl.set(node,{strokeDasharray:length,strokeDashoffset:length},0);tl.fromTo(node,{strokeDashoffset:length},{strokeDashoffset:0,duration,ease:'power2.out'},at+i*.12);});return tl; },
-  markerSweep(tl, selector, at=.5) { return tl.fromTo(selector,{scaleX:0,transformOrigin:'left center'},{scaleX:1,duration:.55,ease:'expo.out'},at); }
-});`;
 
 const baseCss = `@font-face{font-family:"PingFang SC";src:local("PingFang SC"),local("Hiragino Sans GB")}@font-face{font-family:"Microsoft YaHei";src:local("Microsoft YaHei"),local("Noto Sans CJK SC")}*{box-sizing:border-box}html,body{margin:0;width:var(--qj-width,1080px);height:var(--qj-height,1920px);overflow:hidden;background:#fffdfa;font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;color:#252935}#root{position:relative;width:var(--qj-width,1080px);height:var(--qj-height,1920px);overflow:hidden;background:#fffdfa}.eyebrow{font-size:30px;letter-spacing:.22em;font-weight:700;color:#866d62}.title{font-size:118px;line-height:1.15;font-weight:800;letter-spacing:-.045em}.subtitle{font-size:43px;line-height:1.5;color:#625b59}.brand{font-size:42px;font-weight:800;letter-spacing:-.08em}.brand i{color:var(--qj-accent,#fb7353);font-style:normal}.line{height:7px;width:250px;border-radius:8px;background:var(--qj-accent,#fb7353)}.photo{background:linear-gradient(145deg,#c5e8ed 0%,#7bbbd0 38%,#ecb98f 63%,#e78163 100%);background-position:center;background-size:cover}.safe{position:absolute;left:90px;right:90px}`;
 const head = (extra = '') => `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=1080,height=1920"><style>${baseCss}${extra}</style><!--QJ_RUNTIME--></head><body>`;
@@ -58,6 +46,7 @@ const seed = (): HtmlEffect[] => {
     { id: 'photo-drift', name: '照片推镜', description: '照片缓慢推镜，底部卡片承载地点和故事。', html: photoHtml(), duration: 6, width: 1080, height: 1920, enabled: true, defaults: { ...blankValues, eyebrow: 'TRAVEL NOTE · 02', title: '沿着海风走', subtitle: '每一步都有新的风景。' }, createdAt: now, updatedAt: now },
     { id: 'story-outro', name: '故事收束', description: '温暖的引用字幕和品牌落版。', html: captionHtml(), duration: 6, width: 1080, height: 1920, enabled: true, defaults: { ...blankValues, eyebrow: 'THE END · 03', title: '好故事，值得被看见', subtitle: '下一段旅程，从一句话开始。' }, createdAt: now, updatedAt: now },
     { id: 'argument-card', name: '观点强调', description: '用一句观点和一行原话摘要建立信息重点，适合口播章节提示。', html: argumentHtml(), duration: 6, width: 1080, height: 1920, enabled: true, defaults: { ...blankValues, eyebrow: '核心观点', title: '先理解原声，再做精剪', subtitle: '保留完整原话，让每一次剪切都有依据。' }, createdAt: now, updatedAt: now },
+    ...richMotionTemplates().map(({title,subtitle,...item})=>({...item,duration:6,width:1080,height:1920,enabled:true,defaults:{...blankValues,eyebrow:'轻剪 · 信息可视化',title,subtitle},createdAt:now,updatedAt:now})),
     { id: 'compare-card', name: '观点对比', description: '标题与解释依次揭示，对比方法、误区和结论。', html: argumentHtml(true), duration: 6, width: 1080, height: 1920, enabled: true, defaults: { ...blankValues, eyebrow: '方法对比', title: '从按时长截取，到按观点组织', subtitle: '看懂上下文，保留论证与结论。' }, createdAt: now, updatedAt: now },
   ];
 };
@@ -125,6 +114,11 @@ export function createEffectStore(dataDir: string, oss?: ReturnType<typeof creat
     if (!(await stat(motionUpgrade).catch(() => undefined))) {
       for (const effect of seed().filter((item) => ['argument-card', 'compare-card'].includes(item.id))) if (!get(effect.id)) catalog.push(effect);
       await save(); await writeFile(motionUpgrade, '2\n', { mode: 0o600 });
+    }
+    const designUpgrade = path.join(dir, 'motion-design-v1');
+    if (!(await stat(designUpgrade).catch(() => undefined))) {
+      for (const effect of seed().filter(item => richMotionIds.includes(item.id))) if (!get(effect.id)) catalog.push(effect);
+      await save(); await writeFile(designUpgrade, '1\n', { mode: 0o600 });
     }
     assets = await readFile(assetsFile, 'utf8').then((value) => JSON.parse(value) as EffectAsset[]).catch(() => []);
     if (!Array.isArray(assets)) assets = [];

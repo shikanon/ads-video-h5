@@ -10,6 +10,10 @@ import { captionsFromTranscript, timelineOffsets } from './timeline';
 import { loadEditingSkill } from './skills';
 import { excludesBgm } from './intents';
 import { inspectAudioLevels, inspectVoice, soundChecks, hasRejectedVoice } from './audioQuality';
+import { validateSemanticReview } from './reviewResults';
+import { currentResearchExpired } from './hotResearch';
+import { compactSpeech, lessonPadding } from './lessonSpec';
+import { inspectLessonSpeechGaps, lessonPacingCheck } from './lessonAudio';
 
 export async function reviewRender(file: string, plan: EditPlan, media: MediaItem[], prompt: string): Promise<RenderReview> {
   const checks: RenderReview['checks'] = [];
@@ -27,7 +31,7 @@ export async function reviewRender(file: string, plan: EditPlan, media: MediaIte
     return Boolean(s && s.sourceHash===source?.sourceHash && s.reason && s.quote===source?.sentences.filter((v)=>c.sentenceIds?.includes(v.id)).map((v)=>v.text).join('') && plan.editorial!.script.beats[i]?.sceneId===c.sceneId);
   }), '原话、源时间码、选择理由、脚本顺序与实际方案比对');
   if (plan.motions?.length) add('绘制动效合成', manifest.drawingEngine==='GSAP/HyperFrames' && JSON.stringify(manifest.motions)===JSON.stringify(plan.motions), `实际合成${manifest.motions?.length||0}段GSAP透明绘制层，关键时刻参与抽帧审查`);
-  const wantsCaptions = /字幕|subtitle|caption/i.test(prompt) && !/不要.{0,8}字幕|去掉字幕|关闭字幕|no captions|without subtitles/i.test(prompt);
+  const wantsCaptions = (Boolean(plan.lesson)||/字幕|subtitle|caption/i.test(prompt)) && !/不要.{0,8}字幕|去掉字幕|关闭字幕|no captions|without subtitles/i.test(prompt);
   add('字幕执行', !wantsCaptions || manifest.captions > 0, `实际渲染指令包含${manifest.captions}条字幕，${manifest.overlays}条叠字`);
   const noEmphasis = /不要.{0,6}(?:叠字|覆盖层|关键词)|去掉.{0,6}(?:叠字|覆盖层|关键词)/.test(prompt);
   const wantsEmphasis = /叠字|覆盖层|关键词/.test(prompt) && !noEmphasis;
@@ -48,12 +52,29 @@ export async function reviewRender(file: string, plan: EditPlan, media: MediaIte
   add('转场执行', !wantsFade || plan.clips.length < 2 || plan.clips.some((c) => c.transition?.kind === 'fade'), '检查实际渲染方案的入场叠化');
   add('响度归一化执行', !(plan.audio?.normalize||/响度|音量均衡|音量统一|normalize/i.test(prompt)) || manifest.audioNormalization?.mode==='segment-two-pass+mix-two-pass', manifest.audioNormalization?.mode==='segment-two-pass+mix-two-pass'?'渲染记录包含逐段和混音两遍测量/处理参数，仍须实测输出一致性':'未取得逐段两遍处理记录，不能只凭normalize配置判定通过');
   const expected = captionsFromTranscript(plan, media);
+  if(plan.lesson){
+    const r=plan.lesson;
+    const tolerance=r.explicitDuration?Math.max(2,r.requestedSeconds*.05):Math.max(10,r.requestedSeconds*.15);
+    add('教学目标时长',Math.abs(probe.duration-r.requestedSeconds)<=tolerance,`目标${r.requestedSeconds}秒，实际${probe.duration.toFixed(3)}秒`);
+    if(r.pacing){
+      const characters=plan.clips.reduce((n,c)=>n+compactSpeech(media.find(m=>m.id===c.sourceId)?.analysis?.transcript||'').length,0);
+      const actual=lessonPacingCheck(characters,probe.duration-lessonPadding(plan.clips.length,r.pacing),r.pacing);
+      add('旁白语速执行',Boolean(r.voice?.charactersPerSecond)&&actual.passed,actual.detail+' 根据实际编码时长和分镜转写核对。');
+      try{const gaps=await inspectLessonSpeechGaps(file,r.pacing.maxPauseSeconds);add('旁白停顿节奏',gaps.length===0,`停顿上限${r.pacing.maxPauseSeconds}秒；实际超限区间${JSON.stringify(gaps)}`);}catch{add('旁白停顿节奏',false,'实际成片停顿测量失败，不能视为节奏通过');}
+    }
+    add('教学事实与来源',Boolean(r.factReview&&!r.factReview.needsRepair&&r.factReview.score>=80)&&r.chapters.every(c=>c.claims.length>0&&c.claims.every(cl=>(cl.basis==='calculation'?Boolean(cl.explanation):cl.referenceIds.length>0)&&cl.referenceIds.every(id=>r.references.some(ref=>ref.id===id&&['search-cited','primary-page','primary-record','primary-paper','news-page'].includes(ref.verification))))),`独立脚本事实审查${r.factReview?.score??'未完成'}/100；文献事实核对来源，数学定义与课堂演算独立核算`);
+    if(r.hotResearch)add('热点来源与时效',!currentResearchExpired({summary:'',references:r.references,queries:[],current:r.hotResearch})&&r.references.some(ref=>ref.verification==='news-page'&&ref.freshness==='fresh'),`资料截止${r.hotResearch.asOf}；新闻窗口${r.hotResearch.windowHours}小时；检查发布日期与真实正文，榜单热度不能替代事实`);
+    add('教学HTML分镜执行',r.chapters.length>0&&r.chapters.every((c,i)=>{const m=media.find(m=>m.id===c.mediaId),g=m?.generation;return Boolean(c.id===plan.clips[i]?.sceneId&&g?.workflowId===r.workflowId&&g.htmlHash===c.htmlHash&&g.audioHash===c.audioHash&&g.referenceHash===r.voice?.anchorHash);}),`实际${r.chapters.length}段HTML/GSAP分镜；核对画面、声音哈希及统一参考`);
+    add('教学旁白与动画时间码',r.chapters.every(c=>(c.speechMatch??0)>=.86&&c.cues?.length===c.visual.items.length&&c.cues.every(q=>q.start>=0&&q.end>q.start&&q.end<(c.duration??0))), '字幕和重点动画来自生成音频的真实转写匹配，未用计划文案替代转写');
+    add('教学概念递进',r.chapters.every((c,i)=>i===0||c.prerequisites.length>0&&c.prerequisites.every(id=>r.chapters.slice(0,i).some(p=>p.id===id))),'后章前置知识指向先前章节；实际讲解效果另经音频与图解审查');
+  }
   if(plan.reconstruction){
     const r=plan.reconstruction;
     add('用户目标时长',Math.abs(probe.duration-r.requestedSeconds)<=2,`用户${r.requestedSeconds}秒，实际${probe.duration.toFixed(3)}秒；不能通过修改方案目标绕过`);
     add('原声与新增分镜来源',r.beats.every((b,i)=>b.mediaId===plan.clips[i]?.sourceId&&b.id===plan.clips[i]?.sceneId&&Boolean(b.mode==='original'?b.evidence?.quote===b.line:media.find(m=>m.id===b.mediaId)?.generation?.referenceHash===r.voiceReference?.audioHash)), '原话有真实源时间码，新增台词有用户声音参考与媒体哈希');
     add('联网补充引用',r.beats.filter(b=>b.mode==='generated').every(b=>b.referenceIds.length>0&&b.referenceIds.every(id=>r.references.some(ref=>ref.id===id&&ref.verification==='search-cited'))), '引用来自实际联网搜索；引用关联不代表全文事实核查');
-    add('HTML分镜执行',r.beats.filter(b=>b.visual==='html').every(b=>Boolean(b.htmlHash&&media.find(m=>m.id===b.mediaId)?.generation?.htmlHash===b.htmlHash)), '逐镜HTML来源哈希与实际生成媒体比对');
+    const htmlBeats=r.beats.filter(b=>b.visual==='html');
+    add('HTML分镜执行',htmlBeats.length>0&&htmlBeats.every(b=>Boolean(b.htmlHash&&media.find(m=>m.id===b.mediaId)?.generation?.htmlHash===b.htmlHash&&plan.clips.some(c=>c.sceneId===b.id&&c.sourceId===b.mediaId))), `实际${htmlBeats.length}段HTML；逐镜核对HTML哈希、生成媒体与成片时间线，零段不能视为通过`);
   }
   const compact = (text: string) => text.replace(/[\s，。！？、；：,.!?;:]/g, '');
   add('字幕原话', !wantsCaptions || (expected.length > 0 && compact(expected.map((s) => s.text).join('')) === compact((plan.captions || []).map((s) => s.text).join(''))), wantsCaptions ? '字幕与选中原声逐字稿比对' : '本次未要求字幕');
@@ -75,6 +96,7 @@ export async function reviewRender(file: string, plan: EditPlan, media: MediaIte
     catch {add('声音实测完成度',false,'逐段音量实测失败，不能视为声音一致性通过');}
   }
   if(plan.reconstruction)limitations.push(...plan.reconstruction.limitations);
+  if(plan.lesson)limitations.push(...plan.lesson.limitations);
   let semantic: RenderReview['semantic'];
   const config = await getModelConfig('understanding');
   if (!config) {limitations.push('未配置音频理解模型，未进行成片音频和抽帧语义审查。');if(audio)add('声音审听完成度',false,'未配置模型，音色一致性未经审听');}
@@ -93,30 +115,32 @@ export async function reviewRender(file: string, plan: EditPlan, media: MediaIte
           if(generatedIds.length)add('参考音色相似度',!audio.userReportedMismatch&&Boolean(referenceFile)&&audio.voice.segments.filter(s=>generatedIds.includes(s.id)).every(s=>s.status==='passed'),`${concern}${referenceFile?'实际原声参考对照':'没有可验证的原声参考'}；模型辅助结果：${audio.voice.segments.filter(s=>generatedIds.includes(s.id)).map(s=>`${s.id}[${s.status}] ${s.detail}`).join('；')}`);
           add('段落音色一致性',!audio.userReportedMismatch&&audio.voice.consistency.status==='passed',`${concern}${audio.voice.consistency.status}：${audio.voice.consistency.detail}；定性听辨，不是声纹认证`);
         }catch{add('声音审听完成度',false,'音色对照审听未完成，不能因相同参考哈希或音量统一默认通过');}
-        limitations.push('音色由模型对真实参考音与成片分段做定性听辨，非声纹身份认证；听辨串匹配音量，实际响度以未改动的成片测量为准。');
+        limitations.push(plan.lesson?'教学旁白为合成声音；音色一致性由模型对实际分段做定性听辨，非声纹认证。':'音色由模型对真实参考音与成片分段做定性听辨，非声纹身份认证；听辨串匹配音量，实际响度以未改动的成片测量为准。');
       }
       const wav = path.join(temp, 'audio.wav');
       await runFFmpeg(['-v', 'error', '-y', '-i', file, '-vn', '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav]);
       const frames: Array<{ type: string; image_url?: { url: string }; text?: string }> = [];
       const offsets=timelineOffsets(plan);
       const candidates=[...new Set([...[0.02,0.2,0.5,0.8,0.98].map((r)=>plan.targetSeconds*r), ...(plan.editorial||plan.reconstruction?plan.clips.map((c,i)=>offsets[i]+(c.end-c.start)/2):[]), ...(plan.motions||[]).flatMap((m)=>[m.start+.22,Math.min(m.end-.1,m.start+1.1)])].map((t)=>+Math.min(plan.targetSeconds-.05,t).toFixed(3)))].sort((a,b)=>a-b);
-      const times=candidates.length<=18?candidates:Array.from({length:18},(_,i)=>candidates[Math.round(i*(candidates.length-1)/17)]);
+      if(plan.lesson)for(const [i,c] of plan.clips.entries()){const duration=c.end-c.start,lastCue=Math.max(0,...(plan.lesson.chapters[i]?.cues||[]).map(cue=>cue.end));candidates.push(offsets[i]+Math.min(2.5,duration*.2),offsets[i]+Math.min(duration-.2,Math.max(duration*.7,lastCue+1)));}
+      candidates.sort((a,b)=>a-b);
+      const frameLimit=plan.lesson?24:18;
+      const times=candidates.length<=frameLimit?candidates:Array.from({length:frameLimit},(_,i)=>candidates[Math.round(i*(candidates.length-1)/(frameLimit-1))]);
       for (const time of times) {
         const image = path.join(temp, `${time}.jpg`);
-        await runFFmpeg(['-v', 'error', '-y', '-ss', String(time), '-i', file, '-frames:v', '1', '-vf', 'scale=540:-2', image]);
+        await runFFmpeg(['-v', 'error', '-y', '-ss', String(time), '-i', file, '-frames:v', '1', '-vf', plan.lesson?'scale=960:-2':'scale=540:-2', image]);
         frames.push({type:'text',text:`成片时间 ${time} 秒`});
         frames.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${(await readFile(image)).toString('base64')}` } });
       }
-      const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(180_000), body: JSON.stringify({ model: config.modelId, thinking: { type: 'enabled' }, response_format: { type: 'json_object' }, max_tokens: 8000, messages: [{ role: 'system', content: await loadEditingSkill('qingjian-render-review') }, { role: 'user', content: [
+      const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(180_000), body: JSON.stringify({ model: config.modelId, thinking: { type: 'enabled' }, response_format: { type: 'json_object' }, max_tokens: 8000, messages: [{ role: 'system', content: (await loadEditingSkill('qingjian-render-review'))+(plan.lesson?'\n'+await loadEditingSkill('qingjian-teaching-video'):'') }, { role: 'user', content: [
         { type: 'input_audio', input_audio: { data: (await readFile(wav)).toString('base64'), format: 'wav' } }, ...frames,
-        { type: 'text', text: `这是成片的完整音频以及${times.length}张标有时间的抽帧，含各分镜和绘制动画早期/稳定阶段。用户要求：${prompt}。实际混音输入：${JSON.stringify({original:true,bgm:manifest.bgm,narration:manifest.narration})}；只有实际输入为true才表示有该音轨，未启用的音量参数不意味着加了音乐或配音。实际方案：${JSON.stringify(plan)}。真实剪切边界(成片秒)：${JSON.stringify(timelineOffsets(plan).slice(1))}。音频剪切只发生在这些边界附近；位于一个连续源片段内部的字幕短语切换不是硬切。原素材的口误或停顿可单独评价，不能捏造成新增剪切。原声与新增分镜已按mode标记；新增台词是获授权的参考声音合成，不是源录音。审查图形能否解释因果、SOP与知识库而非只重复字幕；示意成果标注示意，不能当作实测。注意合成音色与原音差异。所选源原话：${JSON.stringify(expected)}。只据真实音频和这些抽帧评审，无法观察的部分不要编造。评分必须严格：80分表示可发布但有改进空间，90分以上须接近专业成片。不要只罗列优点。保留原声不代表必须保留重录残句，选句中缺少谓语的半句或重复同一观点需要返修。检查标签是否拥挤、孤字换行、仅重复字幕，以及明显的近远景突跳。严审观点、论据、结论，跳句是否导致逻辑断裂，动效标签是否有信息用途、是否遮脸/字幕。输出JSON：{"score":0到100,"findings":["可执行的改进或缺陷"],"needsRepair":true或false}。细微标点、语气词差异不判错；抽帧不能证明完整观看。字幕按短语分行，单帧不显示下一行不等于遗漏或硬切原音。只有听到原话被截断或实际漏字才能报告。抽帧无法验证完整推镜或每处转场，应记为未验证，不能凭此判失败。不要给未经音频核实的精确词时间码。` },
+        { type: 'text', text: `这是成片的完整音频以及${times.length}张标有时间的抽帧，含各分镜和绘制动画早期/稳定阶段。用户要求：${prompt}。实际混音输入：${JSON.stringify({original:true,bgm:manifest.bgm,narration:manifest.narration})}；只有实际输入为true才表示有该音轨，未启用的音量参数不意味着加了音乐或配音。实际方案：${JSON.stringify(plan)}。真实剪切边界(成片秒)：${JSON.stringify(timelineOffsets(plan).slice(1))}。音频剪切只发生在这些边界附近；位于一个连续源片段内部的字幕短语切换不是硬切。原素材的口误或停顿可单独评价，不能捏造成新增剪切。${plan.lesson?'这是从主题制作的教学视频，全部旁白为同一合成声音。每条实际缺陷必须注明对应章节ID（如ch7）及具体修复要求；全局问题标明global，避免返修漏掉其他章节。仅实际听到的残句、错读、不可读图解或核心概念错误要求返修；额外推导或可选背景建议不能当作错误。检查定义、公式与参数、数值例子、曲线坐标、年代、任务差异、前置概念和应用是否讲清楚；图解应解释概念，不能只重复字幕。所有章节已完整渲染，早期抽帧未出现后续节点不等于最终遗漏。检查教学节奏和朗读英文字母的准确性。':'原声与新增分镜已按mode标记；新增台词是获授权的参考声音合成，不是源录音。审查图形能否解释因果、SOP与知识库而非只重复字幕；示意成果标注示意，不能当作实测。注意合成音色与原音差异。'}所选源原话：${JSON.stringify(expected)}。只据真实音频和这些抽帧评审，无法观察的部分不要编造。评分必须严格：80分表示可发布但有改进空间，90分以上须接近专业成片。不要只罗列优点。保留原声不代表必须保留重录残句，选句中缺少谓语的半句或重复同一观点需要返修。检查标签是否拥挤、孤字换行、仅重复字幕，以及明显的近远景突跳。严审观点、论据、结论，跳句是否导致逻辑断裂，动效标签是否有信息用途、是否遮脸/字幕。输出JSON：{"score":0到100,"findings":["仅实际且需返修的缺陷，注明章节ID"],"suggestions":["非阻塞改进建议"],"needsRepair":true或false}。findings和suggestions须区分：更多历史节点、额外推导、镜头创意等可选扩展放入suggestions，实际错读、漏字、不可读画面或核心概念错误放入findings。needsRepair只用于实际缺陷或低于80分；任何实际缺陷仍必须返修，不得把错误降为建议。细微标点、语气词差异不判错；抽帧不能证明完整观看。字幕按短语分行，单帧不显示下一行不等于遗漏或硬切原音。只有听到原话被截断或实际漏字才能报告。抽帧无法验证完整推镜或每处转场，应记为未验证，不能凭此判失败。不要给未经音频核实的精确词时间码。` },
       ] }] }) });
       const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const result = JSON.parse(body.choices?.[0]?.message?.content || '') as { score: number; findings: string[]; needsRepair: boolean };
-      if (!Number.isFinite(result.score) || result.score < 0 || result.score > 100 || !Array.isArray(result.findings) || result.findings.some((f) => typeof f !== 'string') || typeof result.needsRepair !== 'boolean') throw new Error('审查输出格式无效');
-      semantic = { score: result.score, findings: result.findings.slice(0, 10).map((f) => f.slice(0, 500)) };
-      add('成片语义审查', !result.needsRepair, result.findings.join('；').slice(0, 1200) || `完整音频和${times.length}张抽帧未发现需返修的问题`);
+      const result=validateSemanticReview(JSON.parse(body.choices?.[0]?.message?.content || ''));
+      semantic = { score: result.score, findings: result.findings.slice(0, 10).map((f) => f.slice(0, 500)),suggestions:result.suggestions.slice(0,10).map(f=>f.slice(0,500)) };
+      add('成片语义审查', !result.needsRepair && result.score >= 80, result.findings.join('；').slice(0, 1200) || `完整音频和${times.length}张抽帧未发现需返修的问题`);
       limitations.push(`语义审查覆盖完整音频和${times.length}张关键抽帧，未逐帧审阅整片。`);
     } catch (error) {
       limitations.push(`成片语义审查未完成（${error instanceof Error && /^HTTP \d+$/.test(error.message) ? error.message : '模型或网络错误'}），需要人工复核。`);

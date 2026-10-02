@@ -10,10 +10,20 @@ import { selectScenes } from './editorialWorkflow';
 import { applyTimelineRequest, captionsFromTranscript, timelineDuration, timelineOffsets } from './timeline';
 import { researchGaps, mergeResearch } from './narrativeResearch';
 import { drawingHtml, hashBytes, produceHtmlBeat } from './narrativeScenes';
-import { loadEditingSkill } from './skills';
+import { loadEditingSkill, loadMotionDesignContext } from './skills';
 import { inspectScene } from './sceneUnderstanding';
 
-export const wantsReconstruction = (prompt:string) => /重构|重组观点|补充缺失|补充信息|联网补充|知识短片|重写叙事/.test(prompt);
+export { wantsReconstruction } from './intents';
+export function validateVisualProduction(beats:ReconstructionBeat[], originalOnly=false) {
+  if(!beats.some(b=>b.visual==='html'))throw new Error('知识制片必须包含实际HTML分镜，不能只剪原视频或仅叠字。请选择适合图解的原话，visual=html。');
+  if(originalOnly&&beats.some(b=>b.mode==='generated'))throw new Error('本次只重绘画面，台词须来自完整原话；不要合成配音或新增事实。');
+  const selected=new Set<string>();
+  for(const b of beats.filter(b=>b.mode==='original'))for(const sentence of b.sentenceIds||[]){
+    const key=`${b.sourceId}:${sentence}`;
+    if(selected.has(key))throw new Error('同一句原话不能重复播放来凑时长。真人与HTML应承接不同完整句；read_transcript检索其他短句，如主题相关的方法、场景或结论。');
+    selected.add(key);
+  }
+}
 export function voiceReferenceAuthorized(history:Array<{role:string;text:string}>):boolean {
   const requests=history.filter(m=>m.role==='user'&&/(?:我的|本人|用户的|素材中的)(?:声音|音色)|授权.{0,12}(?:声音|音色)/.test(m.text));
   const latest=requests.at(-1)?.text;
@@ -48,6 +58,7 @@ interface Options {
   prompt:string; config:ModelConfig; audioConfig:ModelConfig|null; sources:MediaItem[]; media:MediaItem[]; previous:EditPlan|null;
   mediaDir:string; dataDir:string; ownerId:string; export:boolean;
   voiceAuthorized:boolean;
+  originalOnly?:boolean;
   checkpointKey?:string;
   transcribe:(id:string)=>Promise<AudioAnalysis>;
   verifySelection:(scenes:NonNullable<ReconstructionBeat['evidence']>[])=>Promise<void>;
@@ -56,13 +67,13 @@ interface Options {
   progress:(events:WorkflowEvent[])=>Promise<void>;
 }
 export async function runNarrativeWorkflow(o:Options) {
-  let analyzed=false;let research:Awaited<ReturnType<typeof researchGaps>>|undefined;let report:ReconstructionReport|undefined;let gaps:string[]=[];
+  let analyzed=false;let research:Awaited<ReturnType<typeof researchGaps>>|undefined=o.originalOnly?{summary:'只基于素材原话重绘画面，不增加事实或新台词，无需联网补充。',references:[],queries:[],usage:{}}:undefined;let report:ReconstructionReport|undefined;let gaps:string[]=[];
   let voice:Buffer|undefined;let produced=false;let refinementRequired=false;let plan:EditPlan|undefined;let rendered:{id:string;file:string}|undefined;let review:RenderReview|undefined;
   let renders=0,failures=0,reads=0,turns=0;const events:WorkflowEvent[]=[];
   const checkpointDir=path.join(o.dataDir,'workflow-checkpoints');await mkdir(checkpointDir,{recursive:true});
   const key=o.checkpointKey&&/^[a-f0-9-]{36}$/.test(o.checkpointKey)?o.checkpointKey:randomUUID();
   const checkpoint=path.join(checkpointDir,`${key}.json`);
-  const fingerprint=hashBytes(JSON.stringify({owner:o.ownerId,prompt:o.prompt,voice:o.voiceAuthorized,sources:o.sources.map(s=>s.id)}));
+  const fingerprint=hashBytes(JSON.stringify({owner:o.ownerId,prompt:o.prompt,voice:o.voiceAuthorized,originalOnly:o.originalOnly,sources:o.sources.map(s=>s.id)}));
   let workflowId=randomUUID();
   try {
     const saved=JSON.parse(await readFile(checkpoint,'utf8'));
@@ -70,8 +81,9 @@ export async function runNarrativeWorkflow(o:Options) {
       const prior=JSON.parse(await readFile(path.join(o.dataDir,'narrative-scenes',saved.workflowId,'script.json'),'utf8')) as ReconstructionReport;
       if(prior.sourceIds?.join()===o.sources.map(s=>s.id).join()&&o.sources.every(s=>s.analysis?.status==='ready')){
         const checked=hydrateRebuiltBeats(prior.beats,o.sources,prior.references.map(r=>r.id));
+        validateVisualProduction(checked,o.originalOnly);
         if(checked.some((b,i)=>b.evidence&&b.evidence.sourceHash!==prior.beats[i].evidence?.sourceHash))throw new Error('素材已变化');
-        workflowId=saved.workflowId;research=JSON.parse(await readFile(path.join(o.dataDir,'narrative-scenes',workflowId,'research.json'),'utf8'));gaps=prior.gaps;
+        workflowId=saved.workflowId;if(!o.originalOnly)research=JSON.parse(await readFile(path.join(o.dataDir,'narrative-scenes',workflowId,'research.json'),'utf8'));gaps=prior.gaps;
         if(/企业\s*AI落地/i.test(o.prompt))validateEnterpriseNarrative(prior.beats);
         report=prior;
         if(Number.isInteger(saved.renders)&&saved.renders>=0&&saved.renders<=2)renders=saved.renders;
@@ -112,11 +124,12 @@ export async function runNarrativeWorkflow(o:Options) {
   });
   const enterprise=/企业\s*AI落地/i.test(o.prompt);
   const roles=['hook','requirements','scenario','rework','sop','prompt-knowledge','result'];
-  const beatSchema=Type.Object({id:Type.String(),role:enterprise?Type.Union(roles.map(v=>Type.Literal(v))):Type.String(),line:Type.String(),reason:Type.String(),mode:Type.Union([Type.Literal('original'),Type.Literal('generated')]),sourceId:Type.Optional(Type.String()),sentenceIds:Type.Optional(Type.Array(Type.String())),referenceIds:Type.Array(Type.String()),visual:Type.Union([Type.Literal('person'),Type.Literal('html')]),title:Type.String(),visualBrief:Type.String()});
+  const beatSchema=Type.Object({id:Type.String(),role:enterprise?Type.Union(roles.map(v=>Type.Literal(v))):Type.String(),line:Type.String(),reason:Type.String(),mode:o.originalOnly?Type.Literal('original'):Type.Union([Type.Literal('original'),Type.Literal('generated')]),sourceId:o.originalOnly?Type.String():Type.Optional(Type.String()),sentenceIds:o.originalOnly?Type.Array(Type.String(),{minItems:1}):Type.Optional(Type.Array(Type.String())),referenceIds:Type.Array(Type.String(),o.originalOnly?{maxItems:0}:{}),visual:Type.Union([Type.Literal('person'),Type.Literal('html')]),title:Type.String(),visualBrief:Type.String()});
   add('write_rebuilt_script','重组叙事脚本','提交原声与补充台词混合脚本，原句完整且引用ID正确；新增台词尽量短。目标约36秒但不能截断原话。',Type.Object({premise:Type.String(),audience:Type.String(),arc:Type.String(),style:Type.String(),requestedSeconds:Type.Number(),beats:Type.Array(beatSchema)}),async(a)=>{
     await writeFile(path.join(work,'script-attempt.json'),JSON.stringify(a,null,2),{mode:0o600});
     if(!research)throw new Error('先联网查证缺口。');if(![a.premise,a.audience,a.arc,a.style].every(s=>typeof s==='string'&&s.trim()&&s.length<=600)||a.requestedSeconds<10||a.requestedSeconds>60)throw new Error('脚本主题、受众、叙事、风格或时长无效。');
     const beats=hydrateRebuiltBeats(a.beats,o.sources,research.references.map(r=>r.id));const original=beats.flatMap(b=>b.evidence?[b.evidence]:[]);
+    validateVisualProduction(beats,o.originalOnly);
     if(enterprise){
       validateEnterpriseNarrative(beats);
     }
@@ -128,9 +141,9 @@ export async function runNarrativeWorkflow(o:Options) {
     if(estimate>Math.min(59,requested+2))throw new Error(`脚本保守估计${estimate.toFixed(1)}秒，目标${requested}秒。各镜：${beats.map(b=>`${b.id}=${b.evidence?(b.evidence.end-b.evidence.start).toFixed(2)+'秒原声':b.line.length+'字新增'}`).join('；')}。36秒建议2段完整原声约12秒，其余5镜新增总计70–80字，重点精简钩子和收束。不能截断原话。`);
     await o.verifySelection(original);
     for(const b of beats)if(b.evidence)b.evidence.visual=await inspectScene(b.evidence,o.mediaDir,path.join(o.dataDir,'scene-understanding'));
-    report={workflowId,sourceIds:o.sources.map(s=>s.id),premise:a.premise,audience:a.audience,arc:a.arc,style:a.style,requestedSeconds:a.requestedSeconds,gaps,references:research.references,beats,limitations:['联网补充来自带引用的搜索结果，尚未独立逐条核查原网页全文。','参考声音合成不保证与原音完全一致，须听辨衔接。']};
+    report={workflowId,sourceIds:o.sources.map(s=>s.id),premise:a.premise,audience:a.audience,arc:a.arc,style:a.style,requestedSeconds:a.requestedSeconds,gaps,references:research.references,beats,limitations:o.originalOnly?[]:['联网补充来自带引用的搜索结果，尚未独立逐条核查原网页全文。','参考声音合成不保证与原音完全一致，须听辨衔接。']};
     produced=false;plan=undefined;rendered=undefined;review=undefined;voice=undefined;
-    await writeFile(path.join(work,'script.json'),JSON.stringify(report,null,2));await saveCheckpoint();return {beats:report.beats,estimatedSeconds:+estimate.toFixed(2),nextTool:'prepare_voice'};
+    await writeFile(path.join(work,'script.json'),JSON.stringify(report,null,2));await saveCheckpoint();return {beats:report.beats,estimatedSeconds:+estimate.toFixed(2),nextTool:beats.some(b=>b.mode==='generated')?'prepare_voice':'produce_scenes'};
   });
   add('prepare_voice','提取用户声音参考','从所选原话提取3–25秒单人干净声音，不更换为默认音色。',Type.Object({beatId:Type.String()}),async(a)=>{
     if(!report)throw new Error('先脚本。');if(!report.beats.some(b=>b.mode==='generated'))return {required:false};
@@ -153,7 +166,7 @@ export async function runNarrativeWorkflow(o:Options) {
       if(b.mediaId&&o.media.some(m=>m.id===b.mediaId))continue;
       if(b.visual==='person') {b.mediaId=b.sourceId;b.duration=b.evidence!.end-b.evidence!.start;continue;}
       const p=path.join(work,b.id);
-      const sceneSpecHash=hashBytes(JSON.stringify({line:b.line,title:b.title,visual:b.visual,visualBrief:b.visualBrief,mode:b.mode,voiceRevision:b.voiceRevision??0,evidence:b.evidence?{sourceHash:b.evidence.sourceHash,start:b.evidence.start,end:b.evidence.end}:null}));
+      const sceneSpecHash=hashBytes(JSON.stringify({style:report.style,line:b.line,title:b.title,visual:b.visual,visualBrief:b.visualBrief,mode:b.mode,voiceRevision:b.voiceRevision??0,evidence:b.evidence?{sourceHash:b.evidence.sourceHash,start:b.evidence.start,end:b.evidence.end}:null}));
       let m=[...o.media].reverse().find(item=>item.generation?.workflowId===workflowId&&item.generation.beatId===b.id&&item.generation.sceneSpecHash===sceneSpecHash&&(b.mode==='original'||item.generation.referenceHash===(voice&&hashBytes(voice))));
       if(m){
         try {
@@ -162,7 +175,7 @@ export async function runNarrativeWorkflow(o:Options) {
         } catch {m=undefined;}
       }
       if(!m){
-        const generated=await produceHtmlBeat(b,o.config,o.audioConfig,voice,o.sources,o.mediaDir,p);
+        const generated=await produceHtmlBeat({...b,visualBrief:`整片风格：${report.style}。保持一致。\n${b.visualBrief}`},o.config,o.audioConfig,voice,o.sources,o.mediaDir,p);
         const id=randomUUID();await copyFile(generated.file,path.join(o.mediaDir,id));
         m={id,ownerId:o.ownerId,name:`HTML分镜-${b.title}.mp4`,kind:'video',mimeType:'video/mp4',duration:generated.duration,url:`/api/media/${id}`,createdAt:new Date().toISOString(),origin:'generated',hasAudio:true,generation:{workflowId,beatId:b.id,mode:b.mode,lineHash:hashBytes(b.line),sceneSpecHash,audioHash:generated.audioHash,htmlHash:generated.htmlHash,referenceHash:generated.referenceHash,...(b.evidence?{originalSourceId:b.evidence.sourceId,originalStart:b.evidence.start,originalEnd:b.evidence.end}:{})}};
         await o.register(m);o.media.push(m);
@@ -184,6 +197,7 @@ export async function runNarrativeWorkflow(o:Options) {
     const replacements=hydrateRebuiltBeats(a.replacements,o.sources,report.references.map(r=>r.id));
     if(!replacements.length)throw new Error('请提交需要修正的分镜。');
     const next=report.beats.map(b=>replacements.find(v=>v.id===b.id)||b);
+    validateVisualProduction(next,o.originalOnly);
     if(replacements.some(b=>!report!.beats.some(prior=>prior.id===b.id&&prior.role===b.role&&(prior.mode!=='original'||b.mode==='original'))))throw new Error('只能更新已有分镜，原声不得改成合成。');
     if(enterprise)validateEnterpriseNarrative(next);
     const estimate=next.reduce((n,b)=>n+(b.duration??(b.evidence?b.evidence.end-b.evidence.start:b.line.length/3.6)+(b.visual==='html'?.25:0)),0);
@@ -220,6 +234,7 @@ export async function runNarrativeWorkflow(o:Options) {
     if(!a.replacements.length){renders=2;return {retained:true,limitations:review.limitations};}
     const repaired=hydrateRebuiltBeats(a.replacements,o.sources,report.references.map(r=>r.id));
     const proposed=report.beats.map(b=>repaired.find(v=>v.id===b.id)||b);
+    validateVisualProduction(proposed,o.originalOnly);
     const estimate=proposed.reduce((n,b)=>n+(b.duration??(b.evidence?b.evidence.end-b.evidence.start:b.line.length/3.6)+(b.visual==='html'?.25:0)),0);
     if(estimate>report.requestedSeconds+2)throw new Error(`返修仍估计${estimate.toFixed(1)}秒，目标${report.requestedSeconds}秒；原声${proposed.filter(b=>b.evidence).reduce((n,b)=>n+b.evidence!.end-b.evidence!.start,0).toFixed(1)}秒必须完整，新增5镜合计需约70–80字。请一次提交所有需要缩短的新增分镜，而非只改一镜。`);
     await o.verifySelection(repaired.flatMap(b=>b.evidence?[b.evidence]:[]));
@@ -227,11 +242,11 @@ export async function runNarrativeWorkflow(o:Options) {
     report.limitations=report.limitations.filter(s=>!s.startsWith('目标'));
     produced=false;plan=undefined;rendered=undefined;review=undefined;await writeFile(path.join(work,'script.json'),JSON.stringify(report,null,2));await saveCheckpoint();return {nextTool:'produce_scenes'};
   });
-  const agent=getAgent(o.config,tools,await loadEditingSkill('qingjian-narrative-rebuild'),true);
-  const nextTool=()=>!analyzed?'transcribe_sources':!research?undefined:!report?'write_rebuilt_script':report.beats.some(b=>b.mode==='generated')&&!voice?'prepare_voice':refinementRequired?'refine_script':!produced?'produce_scenes':!plan?'arrange_timeline':o.export&&!rendered?'render_edit':o.export&&!review?'review_edit':review?.status==='needs-review'&&renders===1?'repair_scenes':undefined;
+  const agent=getAgent(o.config,tools,(await loadEditingSkill('qingjian-narrative-rebuild'))+'\n'+(await loadEditingSkill('qingjian-html-video'))+'\n'+(await loadMotionDesignContext())+(o.originalOnly?'\n本次为原声可视化制片：只用original完整原句，按内容选person或html。至少一段html，使用原片音轨，不调用联网搜索或prepare_voice，不生成新台词。referenceIds必须=[]；sourceId填素材ID；sentenceIds是必填的原句ID数组，不能把句子ID放进referenceIds。必须先read_transcript获得句子ID，line照录选中句子的完整原文。requestedSeconds严格用用户给出的秒数，未指定才默认36秒。':''),true);
+  const nextTool=()=>!analyzed?'transcribe_sources':!research||!report?undefined:report.beats.some(b=>b.mode==='generated')&&!voice?'prepare_voice':refinementRequired?'refine_script':!produced?'produce_scenes':!plan?'arrange_timeline':o.export&&!rendered?'render_edit':o.export&&!review?'review_edit':review?.status==='needs-review'&&renders===1?'repair_scenes':undefined;
   agent.onPayload=async payload=>{
     if(!payload||typeof payload!=='object')return;const next=nextTool();
-    const allowed=next?[next]:!analyzed?['transcribe_sources']:!report?['read_transcript','research_gaps','write_rebuilt_script']:['repair_scenes'];
+    const allowed=next?[next]:!analyzed?['transcribe_sources']:!report?['read_transcript',...(!o.originalOnly?['research_gaps']:[]),'write_rebuilt_script']:['repair_scenes'];
     const p=payload as Record<string,any>;
     const declarations=Array.isArray(p.tools)?p.tools.filter(t=>allowed.includes(t.function?.name)):p.tools;
     await appendFile(path.join(work,'llm-request-meta.jsonl'),JSON.stringify({at:new Date().toISOString(),model:p.model,max_tokens:p.max_tokens,max_completion_tokens:p.max_completion_tokens,allowed,tools:declarations?.map((t:any)=>t.function?.name)})+'\n',{mode:0o600});

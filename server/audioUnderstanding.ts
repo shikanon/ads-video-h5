@@ -118,6 +118,20 @@ export function validateCaptionBreaks(raw:unknown,count:number):number[] {
   return raw;
 }
 
+export function wordBoundaryCaptionBreaks(words:TranscriptWord[]):number[]{
+  if(!words.length)return [];
+  const ends:number[]=[];let first=0,width=0;
+  for(let i=0;i<words.length;i++){
+    const word=words[i],size=[...word.text].reduce((n,c)=>n+(/[\u0000-\u007f]/.test(c)?.5:1),0);
+    if(word.end-word.start>6||size>40)throw new Error('源字词本身超出字幕可读范围，不能以分行兜底掩盖时间码问题。');
+    if(i>first&&(width+size>18||word.end-words[first].start>3.2||width>=8&&(word.start-words[i-1].end>.35||/^(?:那么|首先|但是|所以|同时)/.test(word.text)))){ends.push(i-1);first=i;width=0;}
+    width+=size;
+    if(/[。！？；.!?;]$/.test(word.text)){ends.push(i);first=i+1;width=0;}
+  }
+  if(ends.at(-1)!==words.length-1)ends.push(words.length-1);
+  return validateCaptionBreaks(ends,words.length);
+}
+
 async function captionBreaksBatch(sentences: TranscriptSentence[], config: ModelConfig): Promise<number[]> {
   const words = sentences.flatMap((s) => s.words);
   if (!words.length) return [];
@@ -137,7 +151,7 @@ async function captionBreaksBatch(sentences: TranscriptSentence[], config: Model
   return ends;
 }
 
-async function captionBreaks(sentences: TranscriptSentence[], config: ModelConfig): Promise<number[]> {
+async function captionBreaks(sentences: TranscriptSentence[], config: ModelConfig,warn?:(message:string)=>void): Promise<number[]> {
   const words=sentences.flatMap((s)=>s.words); const breaks:number[]=[];
   let cursor=0;const sentenceEnds=sentences.map((s)=>cursor+=s.words.length);
   for(let offset=0;offset<words.length;) {
@@ -147,7 +161,7 @@ async function captionBreaks(sentences: TranscriptSentence[], config: ModelConfi
     const wrapper:TranscriptSentence={id:'caption-batch',start:batch[0].start,end:batch.at(-1)!.end,text:batch.map((w)=>w.text).join(''),complete:true,words:batch};
     let value:number[]|undefined; let error:unknown;
     for(let attempt=0;attempt<2;attempt++){try{value=await captionBreaksBatch([wrapper],config);break;}catch(e){error=e;}}
-    if(!value)throw error;
+    if(!value){value=wordBoundaryCaptionBreaks(batch);warn?.(`字幕语义分行未通过校验，已按真实原词、停顿与阅读长度分行；没有改写台词或时间码。原因：${error instanceof Error?error.message:'分行模型失败'}`);}
     breaks.push(...value.map((n)=>n+offset));
     offset=end;
   }
@@ -204,7 +218,7 @@ export function createAudioUnderstanding(dataDir: string) {
     const dir = path.join(dataDir, 'audio-understanding', media.id);
     await mkdir(dir, { recursive: true });
     const finalFile = path.join(dir, 'analysis.json');
-    const contextHint=media.generation?media.name.slice(0,200):'';
+    const contextHint=media.generation||media.origin==='generated'?media.name.slice(0,200):'';
     const chunkKey = `${analysisVersion}:${config.modelId}:${sourceHash}${contextHint?':hint-'+createHash('sha256').update(contextHint).digest('hex'):''}`;
     const cacheKey = `${chunkKey}:segmentation-${segmentationVersion}`;
     try {
@@ -213,7 +227,7 @@ export function createAudioUnderstanding(dataDir: string) {
         const sentences = splitRepeatedLeads(cached.analysis.sentences);
         if (sentences.length !== cached.analysis.sentences.length || cached.analysis.captionBreaks === undefined) {
           cached.analysis.sentences = sentences; cached.analysis.transcript = sentences.map((s) => s.text).join('\n');
-          cached.analysis.captionBreaks = await captionBreaks(sentences, config);
+          cached.analysis.captionBreaks = await captionBreaks(sentences, config,message=>cached.analysis.warnings.push(message));
           await atomicJson(finalFile, cached);
         }
         return cached.analysis;
@@ -269,7 +283,7 @@ export function createAudioUnderstanding(dataDir: string) {
     if (regrouped.some((s) => !s.complete)) warnings.push('存在未说完或重录的残句，精剪时不选择这些句子。');
     const analysis: AudioAnalysis = { ...base, status: 'ready', transcript: regrouped.map((s) => s.text).join('\n'), sentences: regrouped, pauses, warnings };
     await atomicJson(finalFile, { cacheKey, analysis });
-    analysis.captionBreaks=await captionBreaks(regrouped,config);
+    analysis.captionBreaks=await captionBreaks(regrouped,config,message=>analysis.warnings.push(message));
     await atomicJson(finalFile, {cacheKey,analysis}); return analysis;
   }
   return {

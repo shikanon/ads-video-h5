@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hydrateRebuiltBeats, voiceReferenceAuthorized, validateEnterpriseNarrative } from '../server/narrativeWorkflow';
+import { hydrateRebuiltBeats, voiceReferenceAuthorized, validateEnterpriseNarrative, validateVisualProduction } from '../server/narrativeWorkflow';
 import { drawingHtml, validateDrawing } from '../server/narrativeScenes';
-import { classify } from '../server/intents';
+import { classify, narrativeRequest } from '../server/intents';
 import { validatePlan } from '../server/core';
 import { getAgent } from '../server/core';
 import { mergeResearch } from '../server/narrativeResearch';
@@ -14,6 +14,26 @@ const generated:ReconstructionBeat={id:'generated',role:'补充',line:'定义验
 test('one brief reconstruction prompt routes to a complete export, preserving plan-only requests',()=>{
   assert.equal(classify('重构36秒知识短片，联网补充，用我的声音，直接出片。'),'export');
   assert.equal(classify('重构知识短片，先给脚本，不要导出'),'plan');
+});
+test('HTML production and knowledge briefs enter the real scene workflow without a reconstruction keyword',()=>{
+  for(const prompt of ['用这些口播制作知识讲解视频','用HTML制作视频，保留素材口播','生成视频，用流程图呈现步骤','制作科普视频'])assert.equal(classify(prompt),'export');
+  assert.equal(classify('用HTML制作视频，先给脚本，不要导出'),'plan');
+  assert.equal(classify('生成阳光开场特效视频'),'effect');
+  assert.equal(classify('剪辑视频，不要HTML，保留原声'),'plan');
+  assert.equal(classify('只用原视频的声音，HTML绘制新画面，生成视频'),'export');
+});
+test('short export retains the human HTML brief, including before a plan exists; revocation wins',()=>{
+  const brief='用HTML制作知识讲解视频，30秒，先给脚本';
+  assert.ok(narrativeRequest('生成成片',[{role:'user',text:brief},{role:'assistant',text:'只剪原片'},{role:'user',text:'生成成片'}])?.includes('30秒'));
+  assert.equal(narrativeRequest('生成成片',[{role:'assistant',text:brief}]),undefined);
+  assert.equal(narrativeRequest('只剪已有视频，不用HTML',[{role:'user',text:brief}],true),undefined);
+  assert.equal(narrativeRequest('生成成片',[{role:'user',text:brief},{role:'user',text:'只剪已有视频，不用HTML'}]),undefined);
+});
+test('visual production refuses all-person scripts and original-only production refuses new narration',()=>{
+  assert.throws(()=>validateVisualProduction([original]),/实际HTML/);
+  assert.doesNotThrow(()=>validateVisualProduction([original,{...original,id:'diagram',visual:'html',sentenceIds:['s2']}],true));
+  assert.throws(()=>validateVisualProduction([original,{...original,id:'diagram',visual:'html'}],true),/重复播放/);
+  assert.throws(()=>validateVisualProduction([original,generated],true),/不要合成配音/);
 });
 test('rebuilt narrative cannot rewrite a recorded line or invent a research citation',()=>{
   const beats=hydrateRebuiltBeats([original,generated],[source],['ref-1']);assert.equal(beats[0].evidence?.sourceHash,'raw-hash');assert.equal(beats[1].evidence,undefined);

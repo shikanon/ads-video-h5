@@ -2,6 +2,8 @@
 
 所有接口使用同源 `/api`（远端测试部署使用 `/qingjian/api`），JSON 错误统一为 `{ "error": "可读的中文错误" }`。浏览器只接收 `PublicModel`，不能获得 API Key。公共类型见 `src/types.ts`。当 `OSS_PUBLIC_READ=true` 时，`AppState` 中的素材、产物、封面、分镜缩略图预览 URL 为可匿名访问的新加坡 OSS HTTPS 直链；`downloadUrl` 仍为应用内接口。
 
+教学主题可在无附件的新会话直接生成视频，一般教学默认180秒横屏，从浅入深/变迁史默认240秒，详见[教学流程](TEACHING_WORKFLOW.md)。`Session.lessonDraft` 保存已核查脚本，`EditPlan.lesson` 保存逐章目标、旁白、引用、图解数据及音视频证据；`Job.workflow` / `Artifact.workflow` 保存脱敏工具输入、输出、调用标识与耗时，供页面折叠查看及制作记录导出。
+
 | 方法与路径 | 请求 | 响应/行为 |
 | --- | --- | --- |
 | `GET /api/health` | 无 | 无敏感信息的服务健康状态 |
@@ -62,3 +64,12 @@ HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说�
 重构知识短片请求自动导出，工具链增加 `research_gaps/write_rebuilt_script/prepare_voice/produce_scenes/repair_scenes`。`EditPlan.reconstruction`记录缺口、搜索引用、原声与新增混合脚本、参考音频哈希和实测时长。新增视频素材的 `generation`记录工作流、分镜、台词、音频、HTML及原声来源哈希；时间线校验完整源句、所有生成音轨范围与声音参考。渲染清单区分整片旁白与分镜内新增配音。原声与新增都从实际音频转写生成字幕，不用预期台词伪造字幕。参见[重构工作流](NARRATIVE_REBUILD.md)。
 
 `RenderReview.audio` 保存逐段实测LUFS、真峰值、有声窗P90−P10、相邻段综合差和头尾瞬时差、音色审听结果及 `userReportedMismatch`。声音检查独立决定 `needs-review`，整片平均响度或参考哈希不能代替逐段验证。`MediaItem.generation.voiceRejectedAudioHash` 将用户的音色拒绝关联到具体音频；重合成递增分镜 `voiceRevision` 使旧TTS缓存失效，实际新声音仍须再次审听。
+
+### 分段 Agent 回复
+
+`ChatMessage.parts` 为可选数组，每项含 `id`、`phase: commentary | final`、`text`、`createdAt`。同一个请求使用同一 `jobId` 的 assistant 消息，过程部分按稳定 id 更新，最后增加 final 部分。`ChatMessage.text` 仅保存最终总结，兼容旧客户端并用于后续模型上下文；过程段落不重新作为指令送入模型。
+
+任务运行时客户端通过现有任务/状态刷新显示增量段落。完成状态决定自动折叠，失败时也显示最终结果与重试按钮。无 parts 的历史消息按旧格式读取，长文本支持展开原文。
+### 热点研究
+
+热点选题仍通过现有消息接口提交，`plan` 任务在无视频生产请求时只执行研究。`ChatMessage.research` 保存选题钩子、角度、视觉建议、原文摘录、来源、发布日期、榜单观察时间与失败记录。明确的热点视频请求进入 HTML 图解工作流；`LessonReport.hotResearch` 保存资料快照，实际渲染前与审查时核验时效。工具记录显示 `discover_hot_topics/select_hot_topics/search_news/read_news_sources/propose_hot_brief`；研究失败或无合格新稿不会伪造选题。参见 [热点研究](HOT_RESEARCH.md)。

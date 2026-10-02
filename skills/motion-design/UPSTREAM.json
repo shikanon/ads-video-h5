@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/LottieFiles/motion-design-skill",
+  "path": "skills/motion-design",
+  "commit": "f9a8a041b85185ee4881b3471d3415e939aac772",
+  "license": "MIT",
+  "installedAt": "2026-10-01",
+  "integration": "server/skills.ts loadMotionDesignContext, narrative planner and authorDrawing"
+}

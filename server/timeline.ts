@@ -1,6 +1,7 @@
 import type { EditPlan, MediaItem, TimelineText } from '../src/types';
 import { excludesBgm } from './intents';
 import { createHash } from 'node:crypto';
+import { validateLesson } from './lessonSpec';
 
 export function timelineOffsets(plan: EditPlan): number[] {
   let position = 0;
@@ -21,17 +22,30 @@ export function captionsFromTranscript(plan: EditPlan, media: MediaItem[], style
     const breakWords = new Set(analysis?.captionBreaks?.map((i) => allWords[i]));
     const words = allWords.filter((w) => w.start >= clip.start - 0.03 && w.end <= clip.end + 0.03);
     const safeEnds=new Set([...new Intl.Segmenter('zh',{granularity:'word'}).segment(words.map((w)=>w.text).join(''))].map((s)=>s.index+s.segment.length));
+    if(plan.lesson){
+      const joined=words.map(w=>w.text).join('');
+      const terms=['德尔塔','西格玛','伽马','贝塔','铰链损失','交叉熵','均方误差','易样本','难样本','简单样本','相似关系','残差','正在训练','正确类别概率','合页','InfoNCE','Focal Loss',...(joined.match(/[零〇一二三四五六七八九]+点[零〇一二三四五六七八九]+/g)||[])];
+      for(const term of terms){let start=joined.indexOf(term);while(start>=0){for(let k=start+1;k<start+term.length;k++)safeEnds.delete(k);safeEnds.add(start+term.length);start=joined.indexOf(term,start+term.length);}}
+      // A verified sentence end separates adjacent numbers ("损失零；零点五").
+      // Protecting a decimal in concatenated ASR must not erase that boundary.
+      if(analysis?.captionBoundarySource==='matched-clauses'){let end=0;for(const word of words){end+=word.text.length;if(breakWords.has(word))safeEnds.add(end);}}
+    }
     let position=0;let pendingBreak=false;
-    let text = ''; let start = 0; let end = 0;
+    let text = ''; let start = 0; let end = 0;let lastWord:typeof words[number]|undefined;let previousEndedClause=true;
     const flush = () => {
-      if (text) captions.push({ start: +(offsets[index] + start - clip.start).toFixed(3), end: +(offsets[index] + end - clip.start).toFixed(3), text, style, animation: 'none' });
-      text = '';
+      if (text){
+        const caption={ start: +(offsets[index] + start - clip.start).toFixed(3), end: +(offsets[index] + end - clip.start).toFixed(3), text, style, animation:'none' as const },prior=captions.at(-1);
+        if(plan.lesson&&text.length<=2&&!previousEndedClause&&prior&&prior.start>=offsets[index]&&prior.text.length+text.length<=26&&caption.end-prior.start<=6&&caption.start-prior.end<=.6){prior.text+=text;prior.end=caption.end;}
+        else captions.push(caption);
+        previousEndedClause=Boolean(lastWord&&breakWords.has(lastWord));
+      }
+      text = '';lastWord=undefined;
     };
     for (const w of words) {
-      if (text && (text.length + w.text.length > 40 || (!analysis?.captionBreaks && (text.length + w.text.length > 18 || w.end - start > 3 || w.start - end > 0.5)))) flush();
+      if (text && (text.length + w.text.length > 40 || (plan.lesson&&w.start-end>0.5&&safeEnds.has(position)) || (!analysis?.captionBreaks && (text.length + w.text.length > 18 || w.end - start > 3 || w.start - end > 0.5)))) {flush();pendingBreak=false;}
       if (!text) start = w.start;
-      text += w.text; end = w.end;
-      position+=w.text.length;pendingBreak ||= breakWords.has(w);
+      text += w.text; end = w.end;lastWord=w;
+      position+=w.text.length;pendingBreak ||= breakWords.has(w)||Boolean(plan.lesson&&(text.length>=18||w.end-start>=3));
       if (pendingBreak&&safeEnds.has(position)) {flush();pendingBreak=false;}
     }
     flush();
@@ -60,6 +74,16 @@ export function validateTimeline(plan: EditPlan, media: MediaItem[]): EditPlan {
   });
   const candidate = { ...plan, clips };
   const duration = timelineDuration(candidate);
+  if(plan.lesson){
+    const lesson=validateLesson(plan.lesson,`教学视频 ${plan.lesson.requestedSeconds}秒 ${plan.lesson.format}`,plan.lesson.pacing);
+    if(lesson.chapters.length!==clips.length||lesson.format!==plan.format||duration>600.05||!lesson.factReview||lesson.factReview.needsRepair||!lesson.voice?.anchorHash)throw new Error('教学方案的章节、事实审查、画幅或统一声音参考无效。');
+    for(const [i,ch] of lesson.chapters.entries()){
+      const c=clips[i],m=media.find(m=>m.id===c.sourceId),g=m?.generation;
+      const lineHash=createHash('sha256').update(ch.narration).digest('hex');
+      if(c.sceneId!==ch.id||c.sourceId!==ch.mediaId||!g||g.workflowId!==lesson.workflowId||g.beatId!==ch.id||g.mode!=='generated'||g.lineHash!==lineHash||!ch.htmlHash||g.htmlHash!==ch.htmlHash||!ch.audioHash||g.audioHash!==ch.audioHash||g.referenceHash!==lesson.voice.anchorHash||c.start!==0||Math.abs(c.end-(m?.duration||0))>.03)throw new Error('教学HTML、旁白或分镜时间范围与生成记录不一致。');
+      if(!ch.speechMatch||ch.speechMatch<.86||ch.cues?.length!==ch.visual.items.length||!m?.analysis?.sentences.length)throw new Error('教学旁白缺少实际转写、匹配或动画时间码。');
+    }
+  }
   if (plan.motions) {
     if (plan.motions.length > 16 || plan.motions.some((m) => !Number.isFinite(m.start) || !Number.isFinite(m.end) || m.start < 0 || m.end - m.start < 1 || m.end > duration + 0.03 || !['underline','circle','arrow','steps'].includes(m.kind) || !['top','bottom'].includes(m.zone) || !m.label.trim() || m.label.length > 20 || !plan.clips.some((c) => c.sceneId === m.sceneId))) throw new Error('绘制动效的分镜、时长或标签无效。');
   }

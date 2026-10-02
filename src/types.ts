@@ -38,6 +38,7 @@ export interface TranscriptSentence extends TimeRange {
   complete: boolean;
 }
 export interface AudioAnalysis {
+  captionBoundarySource?: 'model' | 'matched-clauses';
   status: 'ready' | 'no-audio';
   modelId: string;
   sourceHash: string;
@@ -74,7 +75,23 @@ export interface NarrativeScript {
   beats: Array<{ sceneId: string; intent: string; graphic: 'none' | 'underline' | 'circle' | 'arrow' | 'steps'; label: string }>;
 }
 export interface EditorialReport { scenes: SelectedScene[]; script: NarrativeScript; }
-export interface ResearchReference { id: string; title: string; url: string; excerpt: string; retrievedAt: string; verification: 'search-cited'; }
+export interface ResearchReference {
+  id: string; title: string; url: string; excerpt: string; retrievedAt: string;
+  verification: 'search-cited'|'primary-page'|'primary-record'|'primary-paper'|'news-page';
+  publishedAt?: string; dateEvidence?: string; freshness?: 'fresh'|'stale'|'undated'|'future';
+}
+export interface HotTopicSignal {
+  id: string; title: string; url: string; boardUrl: string; source: 'baidu'|'hackernews';
+  rank: number; observedAt: string; submittedAt?: string; pinned?: boolean;
+  metric?: { label: string; value: number }; description: string;
+}
+export interface HotResearchBrief {
+  asOf: string; expiresAt: string; windowHours: number; signals: HotTopicSignal[];
+  topics: Array<{ title: string; hook: string; angle: string; signalIds: string[];
+    facts: Array<{ text: string; evidence: Array<{ referenceId: string; quote: string }> }>;
+    visualPlan: string; uncertainties: string[] }>;
+  failures: string[];
+}
 export interface ReconstructionBeat {
   id: string; role: string; line: string; reason: string; mode: 'original' | 'generated';
   sourceId?: string; sentenceIds?: string[]; evidence?: SelectedScene;
@@ -90,7 +107,46 @@ export interface ReconstructionReport {
   sourceIds?: string[];
 }
 export interface DrawingMotion extends TimeRange { sceneId: string; kind: 'underline' | 'circle' | 'arrow' | 'steps'; label: string; zone: 'top' | 'bottom'; }
-export interface WorkflowEvent { tool: string; stage: string; status: 'running' | 'succeeded' | 'failed'; at: string; detail?: string; }
+export interface WorkflowEvent {
+  tool: string; stage: string; status: 'running' | 'succeeded' | 'failed'; at: string; detail?: string;
+  callId?: string; input?: unknown; output?: unknown; durationMs?: number;
+}
+
+export type LessonCurveFunction = 'mse' | 'mae' | 'huber' | 'cross-entropy' | 'hinge' | 'focal';
+export interface LessonVisual {
+  kind: 'concept' | 'formula' | 'curve' | 'timeline' | 'comparison';
+  takeaway: string;
+  items: Array<{ label: string; detail: string; cue: string }>;
+  formula?: string;
+  plot?: {
+    xLabel: string; yLabel: string; xMin: number; xMax: number; yMin: number; yMax: number;
+    curves: Array<{ label: string; fn: LessonCurveFunction; parameter?: number }>;
+  };
+}
+export interface LessonChapter {
+  id: string; title: string; role: 'hook' | 'foundation' | 'development' | 'application' | 'recap';
+  goal: string; prerequisites: string[]; narration: string; reason: string;
+  referenceIds: string[]; claims: Array<{ text: string; referenceIds: string[]; basis?: 'source' | 'calculation' | 'synthesis'; explanation?: string }>;
+  visual: LessonVisual;
+  mediaId?: string; duration?: number; audioHash?: string; htmlHash?: string;
+  speechMatch?: number; cues?: Array<{ text: string; start: number; end: number }>;
+}
+export interface LessonReport {
+  hotResearch?: HotResearchBrief;
+  workflowId: string; title: string; audience: string; objectives: string[]; arc: string;
+  requestedSeconds: number; explicitDuration: boolean; format: Format;
+  chapters: LessonChapter[]; references: ResearchReference[];
+  pacing?: LessonPacing;
+  factReview?: { score: number; needsRepair: boolean; findings: string[]; suggestions?: string[]; adjudication?: { modelId: string; primaryScore: number; primaryNeedsRepair: boolean; primaryFindings: string[] } };
+  voice?: { mode: 'preset'; modelId: string; anchorHash: string; revision: number; tempo: number; spokenCharacters?: number; spokenSeconds?: number; charactersPerSecond?: number };
+  limitations: string[];
+}
+
+export interface LessonPacing {
+  mode: 'brisk' | 'standard' | 'deliberate';
+  targetCharactersPerSecond: number; minCharactersPerSecond: number; maxCharactersPerSecond: number;
+  maxPauseSeconds: number; leadSeconds: number; tailSeconds: number; transitionSeconds: number;
+}
 
 export interface TimelineText extends TimeRange {
   text: string;
@@ -101,7 +157,7 @@ export interface RenderReview {
   status: 'passed' | 'needs-review';
   score: number;
   checks: Array<{ name: string; passed: boolean; detail: string }>;
-  semantic?: { score: number; findings: string[]; repaired?: boolean };
+  semantic?: { score: number; findings: string[]; suggestions?: string[]; repaired?: boolean };
   audio?: {
     limits: { targetLufs:number;truePeakDb:number;segmentSpreadLu:number;adjacentJumpLu:number;withinSpreadLu:number };
     segments: Array<{id:string;mode:string;start:number;end:number;integratedLufs:number|null;truePeakDb:number|null;voicedSpreadLu:number|null;headLufs:number|null;tailLufs:number|null}>;
@@ -115,6 +171,7 @@ export interface RenderReview {
 }
 
 export interface EditPlan {
+  lesson?: LessonReport;
   reconstruction?: ReconstructionReport;
   editorial?: EditorialReport;
   motions?: DrawingMotion[];
@@ -131,6 +188,7 @@ export interface EditPlan {
 }
 
 export interface ChatMessage {
+  research?: { brief: HotResearchBrief; references: ResearchReference[] };
   id: string;
   role: 'user' | 'assistant';
   text: string;
@@ -139,6 +197,14 @@ export interface ChatMessage {
   artifactIds?: string[];
   jobId?: string;
   musicSearch?: MusicSearch;
+  parts?: ReplyPart[];
+}
+
+export interface ReplyPart {
+  id: string;
+  phase: 'commentary' | 'final';
+  text: string;
+  createdAt: string;
 }
 
 export interface MusicSearch {
@@ -188,6 +254,7 @@ export interface Job {
 }
 
 export interface Session {
+  lessonDraft?: LessonReport;
   ownerId?: string;
   id: string;
   title: string;

@@ -6,10 +6,11 @@ import type { EditPlan, MediaItem, TimelineText } from '../src/types';
 import { runFFmpeg, probeVideo } from './core';
 import { timelineDuration, validateTimeline } from './timeline';
 import { renderDrawings } from './motionDrawing';
+import { lessonDimensions } from './lessonSpec';
 import { measureLoudness, parseLoudness, twoPassLoudnorm, voicedSpread, SOUND_LIMITS, type LoudnessMeasurement } from './audioQuality';
 
 export const planHash = (plan: EditPlan) => createHash('sha256').update(JSON.stringify(plan)).digest('hex');
-export const dimensions = (plan: EditPlan) => plan.format === '16:9' ? [960, 540] : plan.format === '1:1' ? [720, 720] : plan.reconstruction ? [720, 1280] : [540, 960];
+export const dimensions = (plan: EditPlan) => plan.lesson ? lessonDimensions(plan.format) : plan.format === '16:9' ? [960, 540] : plan.format === '1:1' ? [720, 720] : plan.reconstruction ? [720, 1280] : [540, 960];
 const assTime = (seconds: number) => { const n = Math.round(seconds * 100); return `${Math.floor(n / 360000)}:${String(Math.floor(n / 6000) % 60).padStart(2, '0')}:${String(Math.floor(n / 100) % 60).padStart(2, '0')}.${String(n % 100).padStart(2, '0')}`; };
 const assText = (text: string) => text.replace(/\\/g, '＼').replace(/[{}]/g, '').replace(/\r?\n/g, '\\N');
 const filterPath = (value: string) => value.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "'\\''");
@@ -18,8 +19,9 @@ export function createAss(plan: EditPlan): string {
   const [w, h] = dimensions(plan);
   const font = process.env.QINGJIAN_SUBTITLE_FONT || (process.platform === 'darwin' ? 'PingFang SC' : 'Noto Sans CJK SC');
   if (!/^[\w \u4e00-\u9fff-]{1,80}$/.test(font)) throw new Error('字幕字体配置无效。');
-  const size = Math.round(w / 14);
-  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: ${w}\nPlayResY: ${h}\nWrapStyle: 0\nScaledBorderAndShadow: yes\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: subtitle,${font},${size},&H00FFFFFF,&H000000FF,&H00181818,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,32,32,${Math.round(h * 0.13)},1\nStyle: title,${font},${Math.round(size * 1.45)},&H00FFFFFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,8,32,32,${Math.round(h * 0.1)},1\nStyle: keyword,${font},${Math.round(size * 1.15)},&H0053BBFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,8,32,32,${Math.round(h * 0.25)},1\nStyle: lower-third,${font},${size},&H00FFFFFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,1,32,32,${Math.round(h * 0.28)},1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n`;
+  const size = plan.lesson ? (plan.format==='16:9'?34:38) : Math.round(w / 14);
+  const subtitleMargin = plan.lesson ? (plan.format==='16:9'?60:100) : Math.round(h*.13);
+  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: ${w}\nPlayResY: ${h}\nWrapStyle: 0\nScaledBorderAndShadow: yes\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: subtitle,${font},${size},&H00FFFFFF,&H000000FF,&H00181818,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,32,32,${subtitleMargin},1\nStyle: title,${font},${Math.round(size * 1.45)},&H00FFFFFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,8,32,32,${Math.round(h * 0.1)},1\nStyle: keyword,${font},${Math.round(size * 1.15)},&H0053BBFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,8,32,32,${Math.round(h * 0.25)},1\nStyle: lower-third,${font},${size},&H00FFFFFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,1,32,32,${Math.round(h * 0.28)},1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n`;
   const event = (item: TimelineText, layer: number) => {
     let animation = '';
     if (item.animation === 'pop') animation = '{\\fscx85\\fscy85\\t(0,180,\\fscx100\\fscy100)\\fad(80,80)}';
@@ -39,7 +41,7 @@ export async function renderTimeline(inputPlan: EditPlan, media: MediaItem[], me
   const [width, height] = dimensions(plan); const output = path.join(exportDir, `${id}.mp4`);
   try {
     const segments: string[] = [];
-    const segmentMeasurements:Array<{sourceId:string;start:number;end:number;measurement:LoudnessMeasurement;preparationFilter:string;filter:string;candidateSpreads:Array<{ratio:number;spreadLu:number|null}>}>=[];
+    const segmentMeasurements:Array<{sourceId:string;start:number;end:number;measurement:LoudnessMeasurement;preparationFilter:string;filter:string;candidateSpreads:Array<{ratio:number;spreadLu:number|null;method?:string}>}>=[];
     for (const [index, clip] of plan.clips.entries()) {
       const source = media.find((m) => m.id === clip.sourceId);
       if (!source) throw new Error('剪辑方案使用的素材已被移除。');
@@ -54,17 +56,24 @@ export async function renderTimeline(inputPlan: EditPlan, media: MediaItem[], me
         if(raw.integrated!==null){
           const gain=Math.max(-24,Math.min(24,-18-raw.integrated));
           const candidates=source.generation?.mode==='generated'?[[0.1,2],[0.05,4],[0.04,6]]:[[0.1,2]];
-          let best:{preparation:string;measurement:LoudnessMeasurement;filter:string;spreadLu:number|null}|undefined;
-          const candidateSpreads:Array<{ratio:number;spreadLu:number|null}>=[];
+          let best:{ratio:number;preparation:string;measurement:LoudnessMeasurement;filter:string;spreadLu:number|null}|undefined;
+          const candidateSpreads:Array<{ratio:number;spreadLu:number|null;method?:string}>=[];
           for(const [threshold,ratio] of candidates){
             const preparation=`${audioBase},volume=${gain.toFixed(3)}dB,acompressor=threshold=${threshold}:ratio=${ratio}:attack=10:release=160:knee=2.828:makeup=1:link=average`;
             const measurement=await measureLoudness(input,clip.start,duration,preparation);const filter=twoPassLoudnorm(measurement);
             const log=await runFFmpeg(['-hide_banner','-nostats','-ss',String(clip.start),'-i',input,'-t',String(duration),'-vn','-af',`atrim=duration=${duration},asetpts=PTS-STARTPTS,${preparation},${filter},ebur128=framelog=info`,'-f','null','-'],180000,250000);
             const spreadLu=voicedSpread(log);candidateSpreads.push({ratio,spreadLu});
-            if(!best||(spreadLu??Infinity)<(best.spreadLu??Infinity))best={preparation,measurement,filter,spreadLu};
+            if(!best||(spreadLu??Infinity)<(best.spreadLu??Infinity))best={ratio,preparation,measurement,filter,spreadLu};
             // Prefer the gentlest passing treatment, with a small margin for
             // resampling/AAC. Final encoded output still has an independent gate.
             if(best.spreadLu!==null&&best.spreadLu<=SOUND_LIMITS.withinSpreadLu-.5)break;
+          }
+          if(best&&source.generation?.mode==='generated'&&best.spreadLu!==null&&best.spreadLu>SOUND_LIMITS.withinSpreadLu-.5){
+            const preparation=best.preparation+',dynaudnorm=f=100:g=5:p=0.7:m=6:r=0.15';
+            const measurement=await measureLoudness(input,clip.start,duration,preparation),filter=twoPassLoudnorm(measurement);
+            const log=await runFFmpeg(['-hide_banner','-nostats','-ss',String(clip.start),'-i',input,'-t',String(duration),'-vn','-af',`atrim=duration=${duration},asetpts=PTS-STARTPTS,${preparation},${filter},ebur128=framelog=info`,'-f','null','-'],180000,250000);
+            const spreadLu=voicedSpread(log);candidateSpreads.push({ratio:best.ratio,spreadLu,method:'compressor+dynaudnorm'});
+            if(spreadLu!==null&&spreadLu<best.spreadLu)best={ratio:best.ratio,preparation,measurement,filter,spreadLu};
           }
           if(best){audioBase=best.preparation;normalizeFilter=best.filter+',';segmentMeasurements.push({sourceId:source.id,start:clip.start,end:clip.end,measurement:best.measurement,preparationFilter:audioBase,filter:best.filter,candidateSpreads});}
         }
