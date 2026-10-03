@@ -81,7 +81,7 @@ test('a follow-up script revision inherits the video task and cannot downgrade t
   globalThis.fetch=async(_url,init)=>{
     const body=JSON.parse(String(init?.body));requests++;
     const schema=body.tools.find((t:any)=>t.function.name==='route_video_request').function.parameters;
-    assert.doesNotMatch(JSON.stringify(schema.properties.mode),/research|conversation/);
+    assert.deepEqual(schema.properties.mode.anyOf.map((choice:any)=>choice.const).sort(),['explainer','news']);
     return reply('route_video_request',{mode:'explainer',topic:'Fable5.5核验',export:true,reason:'继承上一轮视频脚本，只修改脚本'});
   };
   try{
