@@ -36,6 +36,7 @@ import { createEvaluations, evaluationFileHash, evaluationImplementation, Evalua
 import { privateEvaluationStorage, isEvaluationOwner } from './evaluationIsolation';
 import { withModelSnapshot, type ModelSnapshot } from './modelContext';
 import { isActiveJob } from '../src/jobStatus';
+import { needsCreativeRouting, resolveCreativeRequest } from './creativeRequest';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -301,7 +302,17 @@ async function performJob(job: Job): Promise<void> {
     const reply=session.messages.find(m=>m.role==='assistant'&&m.jobId===job.id);if(reply)reply.research={brief,references:result.references};return;
   }
   const selectedHotPrompt=selectedHotVideoRequest(prompt,history);
-  const lessonPrompt=selectedHotPrompt&&/第\s*(?:\d+|一|二|三)/.test(prompt)?selectedHotPrompt:lessonRequest(prompt,history,Boolean(session.plan?.lesson||session.lessonDraft),session.lessonDraft||session.plan?.lesson)||selectedHotPrompt;
+  let lessonPrompt=selectedHotPrompt&&/第\s*(?:\d+|一|二|三)/.test(prompt)?selectedHotPrompt:lessonRequest(prompt,history,Boolean(session.plan?.lesson||session.lessonDraft),session.lessonDraft||session.plan?.lesson)||selectedHotPrompt;
+  const sourceCount=selectedSources().filter(m=>m.kind!=='audio').length;
+  if(!lessonPrompt&&(job.kind==='plan'||job.kind==='export')&&(needsCreativeRouting(prompt,Boolean(session.plan))||job.kind==='export'&&!session.plan&&!sourceCount)){
+    const config=await getModelConfig('text',session.modelId);if(!config)throw new Error('文本模型尚未配置。');
+    const request=await resolveCreativeRequest(config,prompt,history,sourceCount,basicProgress);
+    if(request.mode==='news'||request.mode==='explainer'){
+      lessonPrompt=`${prompt}\n制作路径：围绕用户指定主题${JSON.stringify(request.topic)}制作${request.mode==='news'?'新闻资讯视频':'图解讲解视频'}。自主查证资料、编写脚本、绘制画面、合成旁白；用户指定的风格、时长与画幅优先。`;
+      job.kind=request.export?'export':'plan';
+    }
+    else if(request.mode==='conversation')job.kind='plan';
+  }
   if(lessonPrompt&&(job.kind==='export'||job.kind==='plan')){
     const config=await getModelConfig('text',session.modelId);
     if(!config)throw new Error('文本模型尚未配置。');
@@ -309,17 +320,17 @@ async function performJob(job: Job): Promise<void> {
       analyze:(item,file)=>audioUnderstanding.analyze(item,file),
       register:async item=>{throwIfJobCancelled();await oss?.put(job.ownerId!,'media',item.id,path.join(mediaDir,item.id),item.mimeType);throwIfJobCancelled();state.media.push(item);await saveState();},
       persist:async next=>{throwIfJobCancelled();session.plan=next;await saveState();},saveDraft:async next=>{throwIfJobCancelled();session.lessonDraft=structuredClone(next);await saveState();},progress:workflowProgress,stage:async stage=>{throwIfJobCancelled();job.stage=stage;await saveState();},
-      render:next=>renderPlan(next,media,mediaDir,exportDir),review:(file,next)=>reviewRender(file,next,media,lessonPrompt+'，字幕和声音一致性检查')});
+      render:(next,bgm)=>renderPlan(next,media,mediaDir,exportDir,undefined,bgm),review:(file,next)=>reviewRender(file,next,media,lessonPrompt+'，字幕和声音一致性检查')});
     if(job.kind==='plan'){
       const r=workflow.report;
-      addReply(session,job,`教学脚本已整理：${r.title}，${r.chapters.length}章，约${r.requestedSeconds}秒。事实审查${r.factReview?.score}/100。\n${r.chapters.map((c,i)=>`${i+1}. ${c.title}：${c.goal}`).join('\n')}\n发送“生成成片”即可制作。`);return;
+      addReply(session,job,`${r.hotResearch?'新闻脚本':'教学脚本'}已整理：${r.title}，${r.chapters.length}章，约${r.requestedSeconds}秒。事实审查${r.factReview?.score}/100。\n${r.chapters.map((c,i)=>`${i+1}. ${c.title}：${c.goal}`).join('\n')}\n发送“生成成片”即可制作。`);return;
     }
     const plan=workflow.plan!,result=workflow.rendered!,review=workflow.review!;
     await oss?.put(job.ownerId!,'exports',result.id,result.file,'video/mp4');
     const version=state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1;
-    state.artifacts.push({id:result.id,ownerId:job.ownerId,sessionId:session.id,messageId:message.id,kind:'video',name:`轻剪教学视频-v${version}.mp4`,url:`/api/artifacts/${result.id}`,downloadUrl:`/api/download/${result.id}`,createdAt:now(),version,duration:plan.targetSeconds,format:plan.format,plan:structuredClone(plan),workflow:structuredClone(workflow.events),review,planHash:planHash(plan),hasNarration:true,hasBgm:false});
+    state.artifacts.push({id:result.id,ownerId:job.ownerId,sessionId:session.id,messageId:message.id,kind:'video',name:`轻剪${plan.lesson?.hotResearch?'新闻资讯':'教学'}视频-v${version}.mp4`,url:`/api/artifacts/${result.id}`,downloadUrl:`/api/download/${result.id}`,createdAt:now(),version,duration:plan.targetSeconds,format:plan.format,plan:structuredClone(plan),workflow:structuredClone(workflow.events),review,planHash:planHash(plan),hasNarration:true,hasBgm:Boolean(plan.lesson?.presentation?.bgm)});
     job.artifactId=result.id;
-    addReply(session,job,`教学视频 v${version} 已生成：${plan.lesson!.title}，${plan.clips.length}章，${plan.targetSeconds.toFixed(1)}秒。采用 HTML/GSAP 图解与统一旁白，审查${review.score}/100，${review.status==='passed'?'本次检查通过':'仍需复核'}。可预览、下载，并展开教学脚本和工具记录查看依据。`,result.id);return;
+    addReply(session,job,`${plan.lesson?.hotResearch?'新闻资讯视频':'教学视频'} v${version} 已生成：${plan.lesson!.title}，${plan.clips.length}章，${plan.targetSeconds.toFixed(1)}秒。采用 HTML/GSAP 图解与统一旁白，审查${review.score}/100，${review.status==='passed'?'本次检查通过':'仍需复核'}。可预览、下载，并展开教学脚本和工具记录查看依据。`,result.id);return;
   }
   const coverIntent = /(?:用|把|将|设置|设为|作为|指定|采用|use|set|make).{0,24}(?:封面|cover|thumbnail|poster)|(?:封面|cover|thumbnail|poster).{0,24}(?:设为|作为|使用|用作|as|for)/i.test(prompt);
   const removeCover = /(?:不要|移除|去掉|取消|remove|without|clear).{0,12}(?:封面|cover|thumbnail|poster)/i.test(prompt);
@@ -528,7 +539,7 @@ async function processQueue() {
       if (!job) break;
       job.status = 'running'; job.updatedAt = now(); job.progress = 5; job.error = undefined;
       const activeSession=getSession(job.sessionId);
-      if(activeSession)updateReply(activeSession,job,'收到请求，正在整理素材和制作要求。','commentary','start');
+      if(activeSession)updateReply(activeSession,job,'收到请求，正在理解制作要求并规划执行步骤。','commentary','start');
       await saveState();
       try {
         await jobRunner.run(job, async () => {

@@ -126,21 +126,23 @@ export function spokenLessonText(text:string):string{
 export function lessonSpeechLexicon(chapter:LessonChapter,prompt:string):string{
   const base=/损失函数|loss function/i.test(prompt)?['MSE','MAE','Huber','交叉熵','铰链','Focal','CPC','InfoNCE','DPO','德尔塔','伽马','陶','贝塔','西格玛','相似度','概率变化','负log']:[];
   const terms=chapter.visual.items.flatMap(item=>[item.cue,item.label]).filter(term=>term.length<=16&&!/[\n<>]/.test(term));
+  const names=chapter.narration.match(/\b(?:[A-Za-z][A-Za-z0-9.-]{1,24}(?:\s+\d+(?:\.\d+)+)?|\d+[A-Za-z]+)\b/g)||[];
   // A small vocabulary hint disambiguates heard homophones; never pass the
   // expected full narration as an ASR input. The audio-match checks still run.
-  return [...new Set([...base,...terms])].join('、').slice(0,160);
+  return [...new Set([...names,...base,...terms])].join('、').slice(0,160);
 }
-export function compactSpeech(text:string):string{
+export function compactSpeech(text:string,normalizeNumbers=true):string{
   const digits:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9'};
-  return spokenLessonText(text).toLowerCase().replace(/\b(?:delta|gamma|tau|beta|sigma|theta)\b/g,v=>({delta:'德尔塔',gamma:'伽马',tau:'陶',beta:'贝塔',sigma:'西格玛',theta:'西塔'}[v]!)).replace(/[零〇一二三四五六七八九]{3,}/g,v=>[...v].map(c=>digits[c]).join('')).replace(/[\s\p{P}\p{S}]/gu,'');
+  const spoken=spokenLessonText(text).toLowerCase().replace(/\b(?:delta|gamma|tau|beta|sigma|theta)\b/g,v=>({delta:'德尔塔',gamma:'伽马',tau:'陶',beta:'贝塔',sigma:'西格玛',theta:'西塔'}[v]!));
+  const numbers=normalizeNumbers?spoken.replace(/[零〇一二两三四五六七八九十百千万亿]+点[零〇一二三四五六七八九]+/g,v=>String(speechNumberValue(v))).replace(/[零〇一二三四五六七八九]+(?=[a-z])/g,v=>[...v].map(c=>digits[c]).join('')):spoken;
+  return numbers.replace(/[零〇一二三四五六七八九]{3,}/g,v=>[...v].map(c=>digits[c]).join('')).replace(/[\s\p{P}\p{S}]/gu,'');
 }
 function spokenYears(text:string):string[]{
   const digits:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9'};
   return [...text.replace(/\s/g,'').matchAll(/(\d{4}|[零〇一二三四五六七八九]{4})年/g)].map(m=>/^\d/.test(m[1])?m[1]:[...m[1]].map(c=>digits[c]).join(''));
 }
 function spokenDecimals(text:string):string[]{
-  const digits:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','两':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9','点':'.'};
-  return [...text.replace(/\s/g,'').matchAll(/\d+\.\d+|[零〇一二两三四五六七八九]+点[零〇一二三四五六七八九]+/g)].map(m=>String(Number(/^\d/.test(m[0])?m[0]:[...m[0]].map(c=>digits[c]).join(''))));
+  return [...text.replace(/\s/g,'').matchAll(/\d+\.\d+|[零〇一二两三四五六七八九十百千万亿]+点[零〇一二三四五六七八九]+/g)].map(m=>String(speechNumberValue(m[0])));
 }
 function speechNumberValue(s:string):number{
   const digits:Record<string,number>={'零':0,'〇':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
@@ -163,7 +165,8 @@ function speechQuantities(text:string):Array<{unit:string;value:number}>{
 // Keep the original ASR separately; the replacement inherits the heard span,
 // never invents missing speech or estimates a new sentence duration.
 export function correctLessonTranscript(chapter:LessonChapter,analysis:AudioAnalysis):AudioAnalysis{
-  const aliases:Array<[string,string]>=[['智源','智元'],['报到','报道'],['x二','X2'],['X二','X2'],['军方误差','均方误差'],['流族','留足'],['交叉商','交叉熵'],['交叉伤','交叉熵'],['交叉墒','交叉熵'],['绞链','铰链'],['饺链','铰链'],['易列','易例'],['编辑','边际'],['加码','伽马'],['加马','伽马'],['对其偏好','对齐偏好'],['复log','负log'],['sem','sim'],['派西塔','πθ'],['派ref','πref'],['德尔塔','δ'],['伽马','γ'],['陶','τ'],['贝塔','β'],['西格玛','σ']];
+  const aliases:Array<[string,string]>=[['智源','智元'],['报到','报道'],['cloud','Claude'],['Cloud','Claude'],['x二','X2'],['X二','X2'],['军方误差','均方误差'],['流族','留足'],['交叉商','交叉熵'],['交叉伤','交叉熵'],['交叉墒','交叉熵'],['绞链','铰链'],['饺链','铰链'],['易列','易例'],['编辑','边际'],['加码','伽马'],['加马','伽马'],['对其偏好','对齐偏好'],['复log','负log'],['sem','sim'],['派西塔','πθ'],['派ref','πref'],['德尔塔','δ'],['伽马','γ'],['陶','τ'],['贝塔','β'],['西格玛','σ']];
+  for(const term of chapter.narration.match(/\b[A-Za-z][A-Za-z-]{1,24}(?=\b|\d)/g)||[])if(term!==term.toLowerCase())aliases.push([term.toLowerCase(),term]);
   // These written forms have identical Mandarin pronunciation. Resolve only
   // a unique heard phrase in the generated script's surrounding context;
   // retain raw ASR and heard spans, and never substitute missing speech.
@@ -194,15 +197,46 @@ export function correctLessonTranscript(chapter:LessonChapter,analysis:AudioAnal
   const captionBreaks=analysis.captionBreaks&&[...new Set(analysis.captionBreaks.map(old=>{for(let i=sourceOwners.length-1;i>=0;i--)if(sourceOwners[i]<=old)return i;return -1;}))].filter(index=>index>=0);
   return {...analysis,sentences,captionBreaks,transcript:sentences.map(s=>s.text).join(''),warnings:[...analysis.warnings,'ASR术语规范化（原始转写另存，保留实际时间码并映射分行索引）：'+[...corrections].join('、')]};
 }
+function lessonSpeechCharacters(analysis:AudioAnalysis){
+  const raw=analysis.sentences.flatMap(s=>s.words).flatMap((w,owner)=>{
+    const text=[...compactSpeech(w.text)];
+    return text.map((char,i)=>({char,owner,start:w.start+(w.end-w.start)*i/text.length,end:w.start+(w.end-w.start)*(i+1)/text.length}));
+  });
+  const text=raw.map(c=>c.char).join(''),result:typeof raw=[];let position=0;
+  // ASR can split a number at every syllable. Normalize across token boundaries
+  // and preserve the original heard span and word owners for captions/cues.
+  for(const match of text.matchAll(/[零〇一二两三四五六七八九十百千万亿]+点[零〇一二三四五六七八九]+|[零〇一二三四五六七八九]+(?=[a-z])|[零〇一二三四五六七八九]{3,}/g)){
+    const start=match.index!,length=match[0].length;
+    result.push(...raw.slice(position,start));
+    const digit:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9'};
+    const value=match[0].includes('点')?compactSpeech(match[0]):[...match[0]].map(c=>digit[c]).join('');
+    [...value].forEach((char,i)=>{
+      const first=raw[start+Math.floor(i*length/value.length)],last=raw[start+Math.ceil((i+1)*length/value.length)-1];
+      result.push({...first,char,end:last.end});
+    });
+    position=start+length;
+  }
+  return [...result,...raw.slice(position)];
+}
 export function lessonCaptionAnalysis(chapter:LessonChapter,analysis:AudioAnalysis):AudioAnalysis{
-  const words=analysis.sentences.flatMap(s=>s.words),chars=words.flatMap((w,owner)=>[...compactSpeech(w.text)].map(char=>({char,owner})));
+  // Match literal clauses first, then equivalent numeric spellings in a
+  // bounded heard span. Normalizing the entire ASR could join numbers across
+  // a verified clause boundary ("损失零；零点五"). Never change heard words.
+  const words=analysis.sentences.flatMap(s=>s.words),chars=words.flatMap((w,owner)=>[...compactSpeech(w.text,false)].map(char=>({char,owner})));
   const digits:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9'};
   for(const m of chars.map(c=>c.char).join('').matchAll(/[零〇一二三四五六七八九]{3,}/g))for(let i=0;i<m[0].length;i++)chars[m.index!+i].char=digits[chars[m.index!+i].char];
   const heard=chars.map(c=>c.char).join(''),breaks:number[]=[];let position=0;
-  for(const clause of spokenLessonText(chapter.narration).split(/[，,；;。.!?！？：:]/)){
-    const phrase=compactSpeech(clause);if(phrase.length<3)continue;const start=heard.indexOf(phrase,position);if(start<0)continue;
+  for(const clause of spokenLessonText(chapter.narration).split(/[，,；;。!?！？：:]|(?<!\d)\.|\.(?!\d)/)){
+    const phrase=compactSpeech(clause,false);if(phrase.length<3)continue;let start=heard.indexOf(phrase,position),length=phrase.length;
+    if(start<0&&/\d|点/.test(clause)){
+      const canonical=compactSpeech(clause);
+      findNumber:for(let from=position;from<heard.length;from++)for(let end=from+1;end<=Math.min(heard.length,from+phrase.length*3+16);end++){
+        if(compactSpeech(heard.slice(from,end))===canonical){start=from;length=end-from;break findNumber;}
+      }
+    }
+    if(start<0)continue;
     if(start>0&&chars[start-1].owner!==chars[start].owner)breaks.push(chars[start-1].owner);
-    position=start+phrase.length;breaks.push(chars[position-1].owner);
+    position=start+length;breaks.push(chars[position-1].owner);
   }
   if(!breaks.length)return analysis;
   return {...analysis,captionBreaks:[...new Set(breaks)],captionBoundarySource:'matched-clauses',warnings:[...analysis.warnings,'字幕标点边界由已验证脚本的完整匹配短句映射到真实ASR字词；未替换原话或补齐缺失语音。']};
@@ -213,13 +247,7 @@ export function alignLessonSpeech(chapter:LessonChapter,analysis:AudioAnalysis):
   for(const marker of heardText.match(/(?:\[|【)(?:听不清|无法辨认|无法识别|inaudible|unintelligible)(?:\]|】)/gi)||[])if(!chapter.narration.toLowerCase().includes(marker.toLowerCase()))throw new Error(`章节${chapter.id}实际转写含无法辨认的占位${marker}，不能视为匹配，需要独立复听或重录。`);
   const expected=[...compactSpeech(chapter.narration)];
   if(expected.length>=6&&!compactSpeech(analysis.transcript).endsWith(expected.slice(-4).join('')))throw new Error(`章节${chapter.id}末尾台词匹配不完整或出现额外尾词，需要独立复听或重录，不能放行漏字字幕。`);
-  const heard=analysis.sentences.flatMap(s=>s.words).flatMap(w=>{
-    const chars=[...compactSpeech(w.text)];return chars.map((char,i)=>({char,start:w.start+(w.end-w.start)*i/chars.length,end:w.start+(w.end-w.start)*(i+1)/chars.length}));
-  });
-  // ASR may tokenize a spoken year into individual characters. Normalize the
-  // contiguous sequence after flattening, while retaining each audio position.
-  const chineseDigits:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9'};
-  for(const match of heard.map(h=>h.char).join('').matchAll(/[零〇一二三四五六七八九]{3,}/g))for(let k=0;k<match[0].length;k++)heard[match.index!+k].char=chineseDigits[match[0][k]];
+  const heard=lessonSpeechCharacters(analysis);
   if(expected.length>1000||heard.length>1500)throw new Error('单章音频超出对齐范围。');
   const rows=Array.from({length:expected.length+1},()=>new Uint16Array(heard.length+1));
   for(let i=0;i<=expected.length;i++)rows[i][0]=i;for(let j=0;j<=heard.length;j++)rows[0][j]=j;
@@ -241,6 +269,10 @@ export function alignLessonSpeech(chapter:LessonChapter,analysis:AudioAnalysis):
   while(i>0||j>0){if(i>0&&j>0&&rows[i][j]===rows[i-1][j-1]+(expected[i-1]===heard[j-1].char?0:1)){if(expected[i-1]===heard[j-1].char)mapped.set(i-1,j-1);i--;j--;}else if(i>0&&rows[i][j]===rows[i-1][j]+1)i--;else j--;}
   const heardMapped=new Set(mapped.values());
   for(let k=0;k<heard.length;k++)if(!heardMapped.has(k)&&/\p{Script=Han}/u.test(heard[k].char)&&(heard[k].char===heard[k-1]?.char||heard[k].char===heard[k+1]?.char)&&!compactSpeech(chapter.narration).includes(heard[k].char.repeat(2)))throw new Error(`章节${chapter.id}出现未计划的重复字「${heard[k].char.repeat(2)}」，需要重新核验或重录，不能直接删除字幕。`);
+  let extra='';for(let k=0;k<heard.length;k++){
+    extra=!heardMapped.has(k)&&/\p{Script=Han}/u.test(heard[k].char)?extra+heard[k].char:'';
+    if(extra.length>=2)throw new Error(`章节${chapter.id}出现连续未匹配的额外字词「${extra}」，需要独立复听或重录，不能删除真实识别结果或以平均匹配率放行。`);
+  }
   for(const [values,isMatched] of [[expected,(k:number)=>mapped.has(k)],[heard.map(v=>v.char),(k:number)=>heardMapped.has(k)]] as const){let run='';for(let k=0;k<values.length;k++){run=isMatched(k)?'':run+values[k];if(run.length>=4)throw new Error(`章节${chapter.id}存在连续未匹配台词「${run}」，需要核对并重录，不能用全章平均匹配率掩盖残句。`);}}
   const joined=expected.join('');
   const cues=chapter.visual.items.map(item=>{

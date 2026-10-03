@@ -115,7 +115,7 @@ export async function reviewRender(file: string, plan: EditPlan, media: MediaIte
           const concern=audio.userReportedMismatch?'用户已明确指出音色不似；仍使用被拒绝的合成音频，模型判断不能覆盖该反馈，需重新生成对应声音。':'';
           if(generatedIds.length)add('参考音色相似度',!audio.userReportedMismatch&&Boolean(referenceFile)&&audio.voice.segments.filter(s=>generatedIds.includes(s.id)).every(s=>s.status==='passed'),`${concern}${referenceFile?'实际原声参考对照':'没有可验证的原声参考'}；模型辅助结果：${audio.voice.segments.filter(s=>generatedIds.includes(s.id)).map(s=>`${s.id}[${s.status}] ${s.detail}`).join('；')}`);
           add('段落音色一致性',!audio.userReportedMismatch&&audio.voice.consistency.status==='passed',`${concern}${audio.voice.consistency.status}：${audio.voice.consistency.detail}；定性听辨，不是声纹认证`);
-        }catch{add('声音审听完成度',false,'音色对照审听未完成，不能因相同参考哈希或音量统一默认通过');}
+        }catch(error){add('声音审听完成度',false,`音色对照审听重试后未完成：${error instanceof Error?error.message:'请求失败'}；不能因相同参考哈希或音量统一默认通过`);}
         limitations.push(plan.lesson?'教学旁白为合成声音；音色一致性由模型对实际分段做定性听辨，非声纹认证。':'音色由模型对真实参考音与成片分段做定性听辨，非声纹身份认证；听辨串匹配音量，实际响度以未改动的成片测量为准。');
       }
       const wav = path.join(temp, 'audio.wav');

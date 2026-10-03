@@ -113,10 +113,11 @@ export interface WorkflowEvent {
 }
 
 export type LessonCurveFunction = 'mse' | 'mae' | 'huber' | 'cross-entropy' | 'hinge' | 'focal';
+export type LessonIllustration = 'interface' | 'steps' | 'code' | 'character' | 'controller' | 'interaction' | 'gallery' | 'announcement' | 'signal';
 export interface LessonVisual {
   kind: 'concept' | 'formula' | 'curve' | 'timeline' | 'comparison';
   takeaway: string;
-  items: Array<{ label: string; detail: string; cue: string }>;
+  items: Array<{ label: string; detail: string; cue: string; illustration?: LessonIllustration }>;
   formula?: string;
   plot?: {
     xLabel: string; yLabel: string; xMin: number; xMax: number; yMin: number; yMax: number;
@@ -133,6 +134,7 @@ export interface LessonChapter {
 }
 export interface LessonReport {
   hotResearch?: HotResearchBrief;
+  presentation?: LessonPresentation;
   workflowId: string; title: string; audience: string; objectives: string[]; arc: string;
   requestedSeconds: number; explicitDuration: boolean; format: Format;
   chapters: LessonChapter[]; references: ResearchReference[];
@@ -146,6 +148,11 @@ export interface LessonPacing {
   mode: 'brisk' | 'standard' | 'deliberate';
   targetCharactersPerSecond: number; minCharactersPerSecond: number; maxCharactersPerSecond: number;
   maxPauseSeconds: number; leadSeconds: number; tailSeconds: number; transitionSeconds: number;
+}
+
+export interface LessonPresentation {
+  mood: 'neutral' | 'urgent';
+  bgm: boolean;
 }
 
 export interface TimelineText extends TimeRange {
