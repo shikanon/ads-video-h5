@@ -712,6 +712,16 @@ app.patch('/api/sessions/:id/model', async (request, response) => {
   await saveState();
   response.json(await publicState(user));
 });
+app.post('/api/sessions/:id/stop', async (request, response) => {
+  const user = userOf(request);
+  const session = getSession(request.params.id, user.id);
+  if (!session) return response.status(404).json({ error: '对话不存在。' });
+  const stopped = jobRunner.stopSession(state.jobs, user.id, session.id, now());
+  for (const job of stopped) if (job.status === 'cancelled') addReply(session, job, '已停止运行。');
+  if (stopped.length) session.updatedAt = now();
+  await saveState();
+  response.json(await publicState(user));
+});
 app.post('/api/chat', async (request, response) => {
   const user = userOf(request);
   const session = getSession(String(request.body?.sessionId || ''), user.id);
