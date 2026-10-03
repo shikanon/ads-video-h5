@@ -71,13 +71,45 @@ for(let index=0;index<3;index++) {
     try{assert.equal(await answerWithPi('生成成片',config(index),[],[]),'请告诉我视频主题。');assert.equal(requests,2);}
     finally{globalThis.fetch=original;}
   });
+  test(`${TEXT_MODEL_PRESETS[index].modelId}: reply provider errors are recorded and a transient failure is retried`,async()=>{
+    const original=globalThis.fetch;let requests=0;const events:WorkflowEvent[]=[];
+    globalThis.fetch=async()=>{
+      requests++;
+      if(requests===1)return new Response(JSON.stringify({error:{message:'HTTP 503 temporarily unavailable test-private-credential',type:'server_error'}}),{status:503,headers:{'Content-Type':'application/json'}});
+      return reply('reply',{sections:[],summary:'没有素材也可以创作，请告诉我主题。'},config(index).modelId);
+    };
+    try{
+      const text=await answerForSessionWithPi({prompt:'没有素材可以制作吗？只解释。',config:config(index),media:[],history:[],plan:null,attached:[],progress:async updates=>{events.splice(0,events.length,...structuredClone(updates));}});
+      assert.equal(text,'没有素材也可以创作，请告诉我主题。');assert.equal(requests,2);
+      assert.ok(events.some(e=>e.tool==='answer_user'&&e.status==='failed'&&/503/.test(e.detail||'')));
+      assert.ok(events.some(e=>e.tool==='answer_user'&&e.status==='succeeded'));assert.equal(executionDiagnostics(events).recoveredFailures,1);
+      assert.doesNotMatch(JSON.stringify(events),/test-private-credential/);
+    }finally{globalThis.fetch=original;}
+  });
 }
 
 test('repeated invalid replies stop after three model requests',async()=>{
   const original=globalThis.fetch;let requests=0;
   globalThis.fetch=async()=>{requests++;return reply('reply',{sections:[],summary:''});};
-  try{await assert.rejects(()=>answerWithPi('生成成片',config(),[],[]),/暂时无法回复/);assert.equal(requests,3);}
+  try{await assert.rejects(()=>answerWithPi('生成成片',config(),[],[]),/对话回复暂时无法完成/);assert.equal(requests,3);}
   finally{globalThis.fetch=original;}
+});
+
+test('known missing-topic clarification needs no model request and never invents existing source frames',async()=>{
+  const result=await planCreationRoute({prompt:'生成成片',history:[],sourceCount:0,hasPlan:false},async()=>{throw new Error('Do not call a model for known missing information');},async()=>{});
+  assert.equal(result.mode,'conversation');assert.equal(result.export,false);assert.match(result.clarification!,/主题/);
+  assert.doesNotMatch(result.clarification!,/现有故事线|这些教学分镜|请先添加视频或图片素材/);
+  assert.match(inferCreationRoute({prompt:'make a video',history:[],sourceCount:0,hasPlan:false})!.clarification!,/about/);
+  const concrete=inferCreationRoute(requestEvaluationContext(cases.find(c=>c.id==='news-original')!));assert.equal(concrete?.clarification,undefined);assert.equal(concrete?.export,true);
+});
+
+test('reply authentication failures are recorded without futile retries or exposed credentials',async()=>{
+  const original=globalThis.fetch;let requests=0;const events:WorkflowEvent[]=[];
+  globalThis.fetch=async()=>{requests++;return new Response(JSON.stringify({error:{message:'invalid API key test-private-credential',type:'authentication_error'}}),{status:401,headers:{'Content-Type':'application/json'}});};
+  try{
+    await assert.rejects(()=>answerWithPi('解释制作流程',config(),[],[],undefined,async updates=>{events.splice(0,events.length,...structuredClone(updates));}),/对话回复暂时无法完成/);
+    assert.equal(requests,1);assert.ok(events.some(e=>e.tool==='answer_user'&&e.status==='failed'&&/401/.test(e.detail||'')));assert.doesNotMatch(JSON.stringify(events),/test-private-credential/);
+  }finally{globalThis.fetch=original;}
 });
 
 for(const c of cases)test(`request contract: ${c.id}`,async()=>{

@@ -362,8 +362,9 @@ async function performJob(job: Job): Promise<void> {
   },basicProgress):undefined;
   if(creationRoute&&creationRoute.mode!=='editing')job.kind=creationRoute.export?'export':'plan';
   if(creationRoute?.mode==='conversation'){
+    if(creationRoute.clarification){addReply(session,job,creationRoute.clarification);return;}
     const config=await getModelConfig('text',session.modelId);if(!config)throw new Error('文本模型尚未配置。');
-    addReply(session,job,await answerForSessionWithPi({prompt,config,media,history,plan:session.plan,attached,onSection:async(id,text)=>{updateReply(session,job,text,'commentary',id);await saveState();}}));return;
+    addReply(session,job,await answerForSessionWithPi({prompt,config,media,history,plan:session.plan,attached,progress:basicProgress,onSection:async(id,text)=>{updateReply(session,job,text,'commentary',id);await saveState();}}));return;
   }
   if(creationRoute?.requiresFootage&&!selectedSources().some(m=>m.kind==='video'||m.kind==='image'))throw new Error('本次要求保留原片、真人或原话，但尚未选定源素材。请添加要剪辑的原片；如果要从零制作主题图解，请说明可自行设计画面。');
   if(creationRoute?.mode==='research'){
@@ -600,7 +601,7 @@ async function performJob(job: Job): Promise<void> {
       session.plan = { ...plan, version: (session.plan?.version || 0) + 1 };
     }
     addReply(session, job, `${plan.summary} 已整理 ${plan.clips.length} 个片段，合计约 ${plan.targetSeconds} 秒。${bgmIntent ? '已加入背景音乐。' : ''}继续告诉我怎么调整，或发送“生成成片”。`);
-  } else addReply(session, job, await answerForSessionWithPi({prompt,config:textConfig,media,history,plan:session.plan,attached,onSection:async(id,text)=>{updateReply(session,job,text,'commentary',id);await saveState();}}));
+  } else addReply(session, job, await answerForSessionWithPi({prompt,config:textConfig,media,history,plan:session.plan,attached,progress:basicProgress,onSection:async(id,text)=>{updateReply(session,job,text,'commentary',id);await saveState();}}));
 }
 let processing = false;
 async function processQueue() {
@@ -638,7 +639,7 @@ async function processQueue() {
           const message = error instanceof Error ? error.message : '处理失败';
           job.error = error instanceof ProviderError
             ? `${error.message}（${error.code}${error.status ? ` / HTTP ${error.status}` : ''}）`
-            : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件|音频理解|语义分句|字幕|分句|特效|重构工作流未完成|教学工作流未完成|教学研究|教学视频|热点研究|形象|动画/.test(message)
+            : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|对话回复|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件|音频理解|语义分句|字幕|分句|特效|重构工作流未完成|教学工作流未完成|教学研究|教学视频|热点研究|形象|动画/.test(message)
               ? message : '生成失败，请检查模型配置、素材格式或网络后重试。';
           const session = getSession(job.sessionId);
           if (session) addReply(session, job, `本次处理未完成：${job.error}`);

@@ -34,6 +34,7 @@ export interface CreationRoute extends Omit<CreativeRequest,'mode'> {
   mode:CreativeRequest['mode']|'editing';
   basis:'rule'|'context'|'semantic';
   lessonPrompt?:string;
+  clarification?:string;
   requiresFootage:boolean;
 }
 export interface CreationContext {
@@ -55,7 +56,7 @@ export function inferCreationRoute(c:CreationContext):CreationRoute|undefined {
     const exportVideo=!wantsPlanOnly(prompt)&&(kind==='export'||Boolean(lesson&&/再来一版|再做一版|重新制作|重新生成/.test(prompt)));
     return route(wantsCurrentResearch(lessonPrompt)?'news':'explainer','主题创作可以自行查证、设计画面与生成旁白。',exportVideo,lessonPrompt,lesson?'context':'rule');
   }
-  if(!c.hasPlan&&!c.sourceCount&&!history.some(m=>m.role==='user'&&m.text.trim()!==prompt.trim())&&/^(?:请|帮我)?\s*(?:直接)?\s*(?:生成成片|制作视频|生成视频|做个视频|make a video|export video)\s*[。！!?]?$/i.test(intentText(prompt)))return route('conversation','尚未指定创作主题或源素材，应先询问主题与目标，不能要求必须上传视频。');
+  if(!c.hasPlan&&!c.sourceCount&&!history.some(m=>m.role==='user'&&m.text.trim()!==prompt.trim())&&/^(?:请|帮我)?\s*(?:直接)?\s*(?:生成成片|制作视频|生成视频|做个视频|make a video|export video)\s*[。！!?]?$/i.test(intentText(prompt)))return {...route('conversation','尚未指定创作主题或源素材，应先询问主题与目标，不能要求必须上传视频。'),clarification:/[\u4e00-\u9fff]/.test(prompt)?'这个视频要讲什么主题？也可以告诉我时长、画幅和风格。没有素材也能从零制作，例如：“做一个45秒的Fable5.5新闻视频，营造紧张迫切的氛围”。':'What should this video be about? You can also specify its duration, aspect ratio and style. No uploaded footage is needed to create a topic video from scratch.'};
   if(!needsCreativeRouting(prompt,c.hasPlan)&&!(kind==='export'&&!c.hasPlan&&!c.sourceCount))return route(c.hasPlan||c.sourceCount?'editing':'conversation','没有新的主题制作要求，保留已有编辑流程。',kind==='export');
 }
 
