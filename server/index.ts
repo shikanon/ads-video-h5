@@ -330,7 +330,7 @@ async function performJob(job: Job): Promise<void> {
     const version=state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1;
     state.artifacts.push({id:result.id,ownerId:job.ownerId,sessionId:session.id,messageId:message.id,kind:'video',name:`轻剪${plan.lesson?.hotResearch?'新闻资讯':'教学'}视频-v${version}.mp4`,url:`/api/artifacts/${result.id}`,downloadUrl:`/api/download/${result.id}`,createdAt:now(),version,duration:plan.targetSeconds,format:plan.format,plan:structuredClone(plan),workflow:structuredClone(workflow.events),review,planHash:planHash(plan),hasNarration:true,hasBgm:Boolean(plan.lesson?.presentation?.bgm)});
     job.artifactId=result.id;
-    addReply(session,job,`${plan.lesson?.hotResearch?'新闻资讯视频':'教学视频'} v${version} 已生成：${plan.lesson!.title}，${plan.clips.length}章，${plan.targetSeconds.toFixed(1)}秒。采用 HTML/GSAP 图解与统一旁白，审查${review.score}/100，${review.status==='passed'?'本次检查通过':'仍需复核'}。可预览、下载，并展开教学脚本和工具记录查看依据。`,result.id);return;
+    addReply(session,job,`${plan.lesson?.hotResearch?'新闻资讯视频':'教学视频'} v${version} 已生成：${plan.lesson!.title}，${plan.clips.length}章，${plan.targetSeconds.toFixed(1)}秒。${plan.lesson?.hotResearch?'已核验近期报道，完成新闻图解、播报旁白'+(plan.lesson.presentation?.bgm?'与氛围配乐':''):'采用图解画面与统一旁白'}，审查${review.score}/100，${review.status==='passed'?'本次检查通过':'仍需复核'}。可预览、下载，并展开${plan.lesson?.hotResearch?'新闻':'教学'}脚本和制作记录查看依据。`,result.id);return;
   }
   const coverIntent = /(?:用|把|将|设置|设为|作为|指定|采用|use|set|make).{0,24}(?:封面|cover|thumbnail|poster)|(?:封面|cover|thumbnail|poster).{0,24}(?:设为|作为|使用|用作|as|for)/i.test(prompt);
   const removeCover = /(?:不要|移除|去掉|取消|remove|without|clear).{0,12}(?:封面|cover|thumbnail|poster)/i.test(prompt);

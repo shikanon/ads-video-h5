@@ -143,6 +143,43 @@ test('an extra heard word requires independent listening even when the whole cha
   assert.equal(alignLessonSpeech(chapter,audio(chapter.narration)).similarity,1);
 });
 
+test('a measured pause separates a model version from the next date without excusing wrong digits',()=>{
+  const chapter={id:'official',narration:'官方列Fable 5.1，二十二日有Opus 5.5。',visual:{items:[]}} as unknown as LessonChapter;
+  const audio=(version:string,mixed=false):AudioAnalysis=>{
+    const parts=['官方列Fable'+version,'二十二日有Opus'+(mixed?'5点5':'五点五')],words:AudioAnalysis['sentences'][number]['words']=[];let position=0;
+    for(const [index,text] of parts.entries()){
+      if(index)position+=.45;
+      for(const char of text){words.push({text:char,start:position,end:position+.1});position+=.1;}
+    }
+    const text=words.map(w=>w.text).join('');return {status:'ready',modelId:'test',sourceHash:'test',duration:position,transcript:text,sentences:[{id:'s',text,start:0,end:position,complete:true,words}],pauses:[],timing:'model-estimated',warnings:[],createdAt:''};
+  };
+  const valid=audio('五点一'),before=structuredClone(valid);
+  assert.equal(alignLessonSpeech(chapter,valid).similarity,1);assert.deepEqual(valid,before);
+  assert.equal(alignLessonSpeech(chapter,audio('5点1',true)).similarity,1);
+  assert.throws(()=>alignLessonSpeech(chapter,audio('五点四')),/数字|匹配/);
+  const continuous=audio('五点一二');assert.throws(()=>alignLessonSpeech(chapter,continuous),/数字|匹配/,'a continuous extra fractional digit remains an actual version mismatch');
+  const paused=audio('五点一四'),at=paused.sentences[0].words.findIndex(w=>w.text==='四');
+  for(const word of paused.sentences[0].words.slice(at)){word.start+=.4;word.end+=.4;}
+  assert.throws(()=>alignLessonSpeech(chapter,paused),/数字|匹配/,'a pause inside the fraction cannot excuse the wrong version');
+  const raw=audio('五点一');const from=raw.sentences[0].words.findIndex(w=>w.text==='二');
+  raw.sentences[0].words.splice(from,4,{text:'22日',start:raw.sentences[0].words[from].start,end:raw.sentences[0].words[from+3].end});
+  raw.transcript=raw.sentences[0].text=raw.sentences[0].words.map(w=>w.text).join('');
+  const canonical=correctLessonTranscript(chapter,raw);assert.ok(canonical.transcript.includes('二十二日'));assert.ok(raw.transcript.includes('22日'));
+  assert.equal(alignLessonSpeech(chapter,canonical).similarity,1);
+  const wrong=structuredClone(raw);wrong.sentences[0].words.find(w=>w.text==='22日')!.text='23日';wrong.transcript=wrong.sentences[0].text=wrong.sentences[0].words.map(w=>w.text).join('');
+  const unchanged=correctLessonTranscript(chapter,wrong);assert.ok(unchanged.transcript.includes('23日'));assert.throws(()=>alignLessonSpeech(chapter,unchanged),/日期数字|匹配/);
+});
+
+test('production ASR keeps 5.1 followed by the 22nd distinct using the recorded word timing',()=>{
+  const chapter={id:'official',narration:'官方线：九月一日Fable 5.1，二十二日Opus 5.5，二十八日Sonnet 5.5；首页仍没有Fable 5.5。',visual:{items:[]}} as unknown as LessonChapter;
+  const timed:Array<[string,number,number]>=[['官',.07,.27],['方',.27,.47],['线',.47,.75],['9',1.14,1.36],['月',1.36,1.46],['1',1.46,1.74],['日',1.74,1.91],['fable',1.94,2.47],['5',2.5,2.69],['点',2.69,2.87],['1',2.87,3.14],['2',3.69,3.84],['2',3.84,3.98],['日',3.98,4.29],['opus',4.32,4.91],['5',4.97,5.15],['点',5.15,5.33],['5',5.33,5.59],['2',5.94,6.15],['8',6.15,6.24],['日',6.24,6.54],['sonnet',6.57,7.11],['5',7.14,7.35],['点',7.35,7.49],['5',7.49,7.76],['首',8.1,8.4],['页',8.4,8.74],['仍',8.79,9.06],['没',9.06,9.15],['有',9.15,9.27],['fable',9.27,9.74],['5',9.74,9.91],['点',9.91,10.05],['5',10.05,10.38]];
+  const words=timed.map(([text,start,end])=>({text,start,end})),text=words.map(w=>w.text).join('');
+  const raw:AudioAnalysis={status:'ready',modelId:'test',sourceHash:'test',duration:10.5,transcript:text,sentences:[{id:'s',text,start:.07,end:10.38,complete:true,words}],pauses:[],timing:'model-estimated',warnings:[],createdAt:''};
+  assert.equal(alignLessonSpeech(chapter,correctLessonTranscript(chapter,raw)).similarity,1);
+  const wrong=structuredClone(raw);wrong.sentences[0].words[10].text='4';wrong.transcript=wrong.sentences[0].text=wrong.sentences[0].words.map(w=>w.text).join('');
+  assert.throws(()=>alignLessonSpeech(chapter,correctLessonTranscript(chapter,wrong)),/数字|匹配/);
+});
+
 test('voice audit retries an incomplete response but preserves a real failed judgment and permanent HTTP errors',async()=>{
   const directory=await mkdtemp(path.join(tmpdir(),'qingjian-voice-recovery-'));
   const originalFetch=globalThis.fetch;let calls=0;
