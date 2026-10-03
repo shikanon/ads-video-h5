@@ -5,7 +5,8 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import type { Artifact, MediaItem, Shot } from '../src/types';
 import type { EvaluationCase, EvaluationFixture, EvaluationProgress, EvaluationResult, EvaluationRun } from '../src/evaluationTypes';
-import { initialEvaluationCases, EVALUATION_RUBRIC_VERSION } from './evaluationCases';
+import { initialEvaluationCases, mergeBuiltInEvaluationCases, EVALUATION_RUBRIC_VERSION } from './evaluationCases';
+import { executionDiagnostics } from './toolTrace';
 import { evaluationCaseHash, evaluationSummary, scoreEvaluation } from './evaluationScoring';
 import { probeVideo, detectShots } from './core';
 import type { ModelSnapshot } from './modelContext';
@@ -109,7 +110,7 @@ export function createEvaluations(options: Options) {
         result.status = controller.signal.aborted ? 'cancelled' : 'failed';
         result.error = timedOut ? `本例超过${run.maxCaseSeconds}秒，已停止实际任务。` : redact(error instanceof Error ? error.message : String(error), models);
       } finally {
-        clearTimeout(timer); result.elapsedMs = Date.now() - started; result.finishedAt = new Date().toISOString(); result.progress = undefined; await persist();
+        clearTimeout(timer); result.elapsedMs = Date.now() - started; result.finishedAt = new Date().toISOString(); result.progress = undefined; result.diagnostics=executionDiagnostics(result.workflow||[]); await persist();
       }
     }
     run.status = controller.signal.aborted ? 'cancelled' : 'completed'; run.finishedAt = new Date().toISOString(); controllers.delete(run.id); await persist();
@@ -125,6 +126,7 @@ export function createEvaluations(options: Options) {
         cases = stored.cases; fixtures = stored.fixtures; runs = stored.runs;
       }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('评测数据无法读取，请保留原文件并检查。'); }
+      cases=mergeBuiltInEvaluationCases(cases);
       fixtures = fixtures.map(f => ({ ...f, name: evaluationUploadName(f.name) }));
       for (const run of runs) if (['running','stopping'].includes(run.status)) {
         await options.stop(run.id); run.status = 'interrupted'; run.finishedAt = new Date().toISOString();

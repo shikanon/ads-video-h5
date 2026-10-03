@@ -16,5 +16,20 @@ export function initialEvaluationCases(): EvaluationCase[] {
     define('edit-original-20', 'multi-video', '两段素材的原声剪辑', '素材来源、完整原话、字幕、声音一致性与时长。', ['把上传的多段视频剪成20秒竖屏成片，至少使用两段素材，围绕一个共同主题，保留完整原话和原声，带字幕和轻推近，音量统一，不要新配音和背景音乐。'], expected(20, '9:16', { html: false, minSources: 2, originalOnly: true })),
     define('edit-fine-35', 'multi-video', '口播选句与论证', '精剪必须有源原话、时间码、选择理由及完整句子。', ['对上传的多段口播视频进行精剪，生成35秒竖屏成片，至少使用两段素材，删重复，组织成痛点、观点、论证和结论，保留完整原话和原声，逐句字幕，音量一致，不要新配音。'], expected(35, '9:16', { html: false, minSources: 2, originalOnly: true })),
     define('edit-revise-15', 'multi-video', '修改方案后重新导出', '两轮修改检查时长、画幅和新产物，避免版本更新但文件未变。', ['把上传的多段视频剪成20秒竖屏成片，至少使用两段素材，保留原声和完整句子，加字幕，不要新配音。', '改成15秒横屏，保留字幕与原声，音量统一，重新生成成片。'], expected(15, '16:9', { html: false, minSources: 2, originalOnly: true })),
+    define('news-fable-original', 'hot-news', '空会话实时资讯原始指令', '零附件也须自主查证、设计图解、合成旁白并出片；保留未经证实的状态。', ['制作一个实时新闻资讯视频，视频内容讲述Fable5.5，渲染紧张迫切氛围'], expected(45, '9:16', {requiredWords:['Fable5.5']})),
+    define('news-fable-question', 'hot-news', '问法授权的横屏新闻', '礼貌疑问仍是执行指令；显式横屏优先于新闻默认竖屏。', ['能帮我把Fable5.5最近的消息做成45秒横屏视频吗？要有迫切感。'], expected(45, '16:9', {requiredWords:['Fable5.5']})),
+    define('news-fable-multiline', 'hot-news', '换行与主题前置', '分行指令须进入新闻制作，不能要求先上传源视频。', ['本期主题：Fable5.5\n请制作\n一个45秒实时新闻资讯视频\n画幅9:16；氛围紧张迫切'], expected(45, '9:16', {requiredWords:['Fable5.5']})),
+    define('news-fable-no-assets', 'hot-news', '自行制作画面的资讯视频', '明确无源素材时自行研究并绘制；不能换版本或套用真人重构。', ['别让我先上传图片或视频。我要一条介绍Fable5.5实时进展的45秒竖屏资讯视频，画面你来设计。'], expected(45, '9:16', {requiredWords:['Fable5.5']})),
+    define('news-space-no-fiction', 'hot-news', '航天新闻与示意画面', '更换领域，先查证仍应完整制作；不能伪造发射现场。', ['给我制作一条45秒横屏的近期航天发射新闻短片，先查证，别编造现场画面，用图解表示。'], expected(45, '16:9')),
+    define('knowledge-reconstruct-45', 'knowledge', '从零重构量子计算知识短片', '重构内容不意味着必须有真人视频；保留完整研究及事实检查。', ['重构一条讲量子计算原理的45秒横屏知识短片，用图解解释，不需要真人素材。'], expected(45, '16:9', {requiredWords:['量子']})),
+    define('knowledge-photosynthesis-question', 'knowledge', '科普任务的礼貌问法', '从零开始、儿童受众、简短问法和真实可读图解。', ['可以把光合作用讲清楚，做成一个60秒横屏科普视频吗？给小朋友看，画面你自己做。'], expected(60, '16:9', {requiredWords:['光合']})),
+    define('knowledge-cn-duration', 'knowledge', '中文时长和新主题', '四十五秒必须按45秒执行，不能回到默认三分钟。', ['生成四十五秒横屏教学视频，向零基础观众解释月亮为什么有阴晴圆缺，用图解和字幕。'], expected(45, '16:9', {requiredWords:['月亮']})),
+    define('news-script-to-film', 'hot-news', '先分镜后授权出片', '首轮不应合成音频或导出；第二轮继承主题、横屏和时长。', ['Fable5.5实时资讯短片，45秒横屏，先写分镜，暂时别生成成片。', '现在按这个脚本生成成片，主题和画幅保持不变。'], expected(45, '16:9', {requiredWords:['Fable5.5']})),
   ];
+}
+
+export function mergeBuiltInEvaluationCases(stored:EvaluationCase[]):EvaluationCase[] {
+  const existing=new Set(stored.map(c=>c.id));
+  // Upgrade without replacing edited cases or immutable historical snapshots.
+  return [...stored,...initialEvaluationCases().filter(c=>!existing.has(c.id)).slice(0,Math.max(0,200-stored.length))];
 }

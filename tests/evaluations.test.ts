@@ -24,7 +24,7 @@ function output(): EvaluationOutcome {
 }
 test('seed corpus covers all three capabilities and validates multi-turn regression cases', () => {
   const cases = initialEvaluationCases();
-  assert.equal(cases.length,9);
+  assert.equal(cases.length,18);
   assert.deepEqual([...new Set(cases.map(c => c.category))].sort(),['hot-news','knowledge','multi-video']);
   for (const c of cases) assert.doesNotThrow(() => validateEvaluationCase(c));
   assert(cases.some(c => c.category === 'hot-news' && c.messages.length === 2));
@@ -32,6 +32,17 @@ test('seed corpus covers all three capabilities and validates multi-turn regress
   assert.throws(() => validateEvaluationCase({ ...sample(), expectation: { ...sample().expectation, minSources: 1 } }));
   assert.throws(() => validateEvaluationCase({ ...sample(), messages: [''] }));
   assert.throws(() => validateEvaluationCase({ ...sample(), fixtureIds: ['one','one'] }));
+});
+test('upgrade adds missing regression cases while preserving edits, disabled cases and historical snapshots',async t=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'qingjian-eval-upgrade-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  const old=initialEvaluationCases().slice(0,9);old[0]={...old[0],enabled:false,name:'我的自定义名称',version:7,messages:['保留用户编辑的指令']};
+  const file=path.join(dir,'evaluations/index.json');await mkdir(path.dirname(file),{recursive:true});
+  const history={id:'old-run',name:'old',status:'completed',createdAt:'',maxCaseSeconds:60,snapshot:{revision:null,implementationHash:'old',skillHash:'old',rubricVersion:'old',models:[]},results:[{id:'old-result',case:structuredClone(old[0]),caseHash:'old-hash',repeat:1,fixtures:[],status:'failed',jobIds:[]}]};
+  await writeFile(file,JSON.stringify({version:1,cases:old,fixtures:[],runs:[history]}));
+  const manager=createEvaluations({dataDir:dir,implementation:{revision:null,implementationHash:'code',skillHash:'skill'},models:async()=>models,execute:async()=>output(),stop:async()=>{},artifactFile:()=>undefined});
+  await manager.init();assert.equal(manager.catalog().cases.length,18);assert.deepEqual(manager.catalog().cases[0],old[0]);
+  assert.deepEqual(manager.get('old-run'),history);await manager.init();assert.equal(manager.catalog().cases.length,18);
+  assert.equal(manager.catalog().cases.filter(c=>c.id==='news-fable-original').length,1);
 });
 test('multipart video filenames preserve Chinese, ASCII and genuine Latin-1 names', () => {
   const name='AI图像片段一.mp4';

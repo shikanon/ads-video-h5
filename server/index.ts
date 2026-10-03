@@ -17,7 +17,7 @@ import { mountFrontendRoutes } from './frontendRoutes';
 import { createAuth, userOf, type PublicUser } from './auth';
 import { createOssStorage, type AssetCategory } from './ossStorage';
 import { createEffectStore, type EffectValues } from './htmlEffects';
-import { classify, shouldUpdatePlan, excludesBgm, narrativeRequest, lessonRequest, wantsCurrentResearchOnly, selectedHotVideoRequest } from './intents';
+import { classify, shouldUpdatePlan, excludesBgm, narrativeRequest } from './intents';
 import { createAudioUnderstanding } from './audioUnderstanding';
 import { reviewRender as reviewBaseRender } from './renderReview';
 import { renderReviewSummary } from './reviewResults';
@@ -42,7 +42,7 @@ import { mountAvatarRoutes } from './avatarRoutes';
 import { excludesAvatar, generateAuthorSprite, planAuthorAvatar, usesAvatar } from './avatarWorkflow';
 import { createToolTrace } from './toolTrace';
 import { isActiveJob } from '../src/jobStatus';
-import { needsCreativeRouting, resolveCreativeRequest } from './creativeRequest';
+import { planCreationRoute } from './creativeRequest';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -357,7 +357,16 @@ async function performJob(job: Job): Promise<void> {
     if (reply) reply.musicSearch = result;
     return;
   }
-  if(job.kind==='plan'&&wantsCurrentResearchOnly(prompt)){
+  const creationRoute=(job.kind==='plan'||job.kind==='export')?await planCreationRoute({prompt,history,sourceCount:selectedSources().filter(m=>m.kind!=='audio').length,hasPlan:Boolean(session.plan),lesson:session.lessonDraft||session.plan?.lesson,kind:job.kind},async()=>{
+    const config=await getModelConfig('text',session.modelId);if(!config)throw new Error('文本模型尚未配置。');return config;
+  },basicProgress):undefined;
+  if(creationRoute&&creationRoute.mode!=='editing')job.kind=creationRoute.export?'export':'plan';
+  if(creationRoute?.mode==='conversation'){
+    const config=await getModelConfig('text',session.modelId);if(!config)throw new Error('文本模型尚未配置。');
+    addReply(session,job,await answerWithPi(prompt,config,media,history,async(id,text)=>{updateReply(session,job,text,'commentary',id);await saveState();}));return;
+  }
+  if(creationRoute?.requiresFootage&&!selectedSources().some(m=>m.kind==='video'||m.kind==='image'))throw new Error('本次要求保留原片、真人或原话，但尚未选定源素材。请添加要剪辑的原片；如果要从零制作主题图解，请说明可自行设计画面。');
+  if(creationRoute?.mode==='research'){
     const config=await getModelConfig('text',session.modelId);if(!config)throw new Error('文本模型尚未配置。');
     const result=await researchHotTopics(config,prompt,workflowProgress);
     const directory=path.join(dataDir,'hot-research');await mkdir(directory,{recursive:true});
@@ -366,7 +375,6 @@ async function performJob(job: Job): Promise<void> {
     addReply(session,job,brief.topics.length?`已查证 ${brief.topics.length} 个可制作选题，新闻窗口为近 ${brief.windowHours} 小时。展开选题可看钩子、图解建议与原文依据；指定标题并说“制作热点视频”即可继续。`:'本次没有找到时效与交叉来源同时满足的选题。已保留实际榜单与来源缺口，暂不能据此制作今日热点视频。');
     const reply=session.messages.find(m=>m.role==='assistant'&&m.jobId===job.id);if(reply)reply.research={brief,references:result.references};return;
   }
-  const selectedHotPrompt=selectedHotVideoRequest(prompt,history);
   if(job.kind==='export'&&session.plan?.lesson&&!session.plan.lesson.hotResearch&&!shouldUpdatePlan(prompt,true)){
     const plan=structuredClone(session.plan),result=await renderPlan(plan,media,mediaDir,exportDir);
     const review=await reviewRender(result.file,plan,media,prompt+'，字幕和声音一致性检查');
@@ -377,17 +385,7 @@ async function performJob(job: Job): Promise<void> {
     job.artifactId=result.id;
     addReply(session,job,`教学视频 v${version} 已重新导出：${plan.lesson!.title}，${plan.targetSeconds.toFixed(1)}秒。沿用当前已审查的图解与旁白，${renderReviewSummary(review)}。可预览、下载。`,result.id);return;
   }
-  let lessonPrompt=selectedHotPrompt&&/第\s*(?:\d+|一|二|三)/.test(prompt)?selectedHotPrompt:lessonRequest(prompt,history,Boolean(session.plan?.lesson||session.lessonDraft),session.lessonDraft||session.plan?.lesson)||selectedHotPrompt;
-  const sourceCount=selectedSources().filter(m=>m.kind!=='audio').length;
-  if(!lessonPrompt&&(job.kind==='plan'||job.kind==='export')&&(needsCreativeRouting(prompt,Boolean(session.plan))||job.kind==='export'&&!session.plan&&!sourceCount)){
-    const config=await getModelConfig('text',session.modelId);if(!config)throw new Error('文本模型尚未配置。');
-    const request=await resolveCreativeRequest(config,prompt,history,sourceCount,basicProgress);
-    if(request.mode==='news'||request.mode==='explainer'){
-      lessonPrompt=`${prompt}\n制作路径：围绕用户指定主题${JSON.stringify(request.topic)}制作${request.mode==='news'?'新闻资讯视频':'图解讲解视频'}。自主查证资料、编写脚本、绘制画面、合成旁白；用户指定的风格、时长与画幅优先。`;
-      job.kind=request.export?'export':'plan';
-    }
-    else if(request.mode==='conversation')job.kind='plan';
-  }
+  const lessonPrompt=creationRoute?.lessonPrompt;
   if(lessonPrompt&&(job.kind==='export'||job.kind==='plan')){
     const config=await getModelConfig('text',session.modelId);
     if(!config)throw new Error('文本模型尚未配置。');

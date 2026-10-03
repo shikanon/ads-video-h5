@@ -1,12 +1,23 @@
 import type { AudioAnalysis, Format, LessonChapter, LessonPacing, LessonReport, LessonVisual } from '../src/types';
-import { wantsCurrentResearch } from './intents';
+import { intentText, wantsCurrentResearch } from './intents';
+
+function durationNumber(value:string):number {
+  if(value==='半')return .5;
+  if(/^\d/.test(value))return Number(value);
+  const digits:Record<string,number>={零:0,〇:0,一:1,二:2,两:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
+  let total=0,digit=0;
+  for(const c of value){if(c==='十'||c==='百'){total+=(digit||1)*(c==='十'?10:100);digit=0;}else digit=digits[c];}
+  return total+digit;
+}
 
 export function lessonSettings(prompt:string):{requestedSeconds:number;explicitDuration:boolean;format:Format}{
-  const times=[...prompt.matchAll(/(\d+(?:\.\d+)?)\s*(秒|分钟|minutes?|seconds?)/gi)].filter(match=>!/(?:停顿|间隔|转场|入场|出场|片尾空白)[^，。；\n]{0,10}$/.test(prompt.slice(Math.max(0,match.index!-20),match.index)));
-  const time=times.at(-1);const requestedSeconds=time?Number(time[1])*(/分钟|minute/i.test(time[2])?60:1):wantsCurrentResearch(prompt)?45:/从浅入深|由浅入深|变迁史|evolution|history/i.test(prompt)?240:180;
+  prompt=intentText(prompt);
+  const times=[...prompt.matchAll(/(\d+(?:\.\d+)?|半|[零〇一二两三四五六七八九十百]+)\s*[-–]?\s*(秒|分钟|minutes?\b|seconds?\b|min\b|s\b)/gi)].filter(match=>!/(?:停顿|间隔|转场|入场|出场|片尾空白|transition|pause)[^，。；,;.]{0,10}$/i.test(prompt.slice(Math.max(0,match.index!-24),match.index)));
+  const time=times.at(-1);const requestedSeconds=time?durationNumber(time[1])*(/分钟|minute|min/i.test(time[2])?60:1):wantsCurrentResearch(prompt)?45:/从浅入深|由浅入深|变迁史|evolution|history/i.test(prompt)?240:180;
   if(requestedSeconds<15||requestedSeconds>600)throw new Error('教学视频时长需为15–600秒。');
-  const formats=[...prompt.matchAll(/(16\s*[:：]\s*9|9\s*[:：]\s*16|1\s*[:：]\s*1)/g)];
-  const format=(formats.at(-1)?.[1].replace(/\s/g,'').replace('：',':')||(/竖屏/.test(prompt)||wantsCurrentResearch(prompt)?'9:16':'16:9')) as Format;
+  const formats=[...prompt.matchAll(/16\s*:\s*9|9\s*:\s*16|1\s*:\s*1|横屏|竖屏|方形|landscape|horizontal|vertical|portrait|square/gi)].filter(m=>!/(?:不要|别|不用|not|no)\s*$/i.test(prompt.slice(Math.max(0,m.index!-8),m.index)));
+  const last=formats.at(-1)?.[0].replace(/\s/g,'');
+  const format=(last?(/横屏|landscape|horizontal/i.test(last)?'16:9':/竖屏|vertical|portrait/i.test(last)?'9:16':/方形|square/i.test(last)?'1:1':last):wantsCurrentResearch(prompt)?'9:16':'16:9') as Format;
   return {requestedSeconds,explicitDuration:Boolean(time),format};
 }
 export function lessonPacing(prompt:string):LessonPacing{

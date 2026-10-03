@@ -13,8 +13,31 @@ export function traceValue(value: unknown, secrets: string[]=[], depth=0): unkno
     return text.length>2400?text.slice(0,2400)+'… [truncated]':text;
   }
   if(Array.isArray(value))return value.slice(0,32).map(v=>traceValue(v,secrets,depth+1));
-  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).slice(0,40).map(([k,v])=>[k,/api.?key|authorization|password|secret|token|base64|audio_data|ciphertext/i.test(k)?'[redacted]':traceValue(v,secrets,depth+1)]));
+  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).slice(0,40).map(([k,v])=>[k,/api.?key|authorization|password|secret|token|base64|audio_data|ciphertext|reasoning_content|chain_of_thought|thinking/i.test(k)?'[redacted]':traceValue(v,secrets,depth+1)]));
   return value;
+}
+
+export function executionDiagnostics(events:WorkflowEvent[]) {
+  const completed=events.filter(e=>e.status!=='running');
+  const details=(e:WorkflowEvent):Record<string,any>=>{
+    if(!e.output||typeof e.output!=='object')return {};
+    const value=e.output as Record<string,any>;return value.details&&typeof value.details==='object'?value.details:value;
+  };
+  const failures=completed.flatMap((event,index)=>{
+    if(event.status!=='failed')return [];
+    const detail=event.detail||'工具失败';
+    const kind=/HTTP (?:429|5\d\d)|超时|timeout|fetch failed|网络/i.test(detail)?'provider-unavailable':/参数|校验|格式|主题必须|无效|预算|须为|最多|不能为空/.test(detail)?'validation':/原片|素材|source/.test(detail)?'missing-source':/审查|错读|事实|不一致|证据/.test(detail)?'quality-gate':/取消|中断/.test(detail)?'interrupted':'tool-failure';
+    const recovered=completed.slice(index+1).find(e=>e.status==='succeeded'&&(e.tool===event.tool||event.tool==='write_lesson_script'&&e.tool==='revise_lesson_script'));
+    return [{callId:event.callId,tool:event.tool,kind,detail,recovery:recovered?{callId:recovered.callId,tool:recovered.tool,status:'recovered' as const}:{status:'unresolved' as const}}];
+  });
+  const qualityFeedback=completed.flatMap((event,index)=>{
+    const review=details(event);
+    if(event.status!=='succeeded'||!(review.needsRepair===true||review.status==='needs-review'))return [];
+    const action=completed.slice(index+1).find(e=>e.status==='succeeded'&&/^(?:repair_|revise_)/.test(e.tool));
+    const passed=completed.slice(index+1).find(e=>e.status==='succeeded'&&e.tool===event.tool&&(details(e).needsRepair===false||details(e).status==='passed'));
+    return [{callId:event.callId,tool:event.tool,score:typeof review.score==='number'?review.score:null,findings:review.findings,status:review.reviewUnavailable?'unavailable':passed?'repaired':'unresolved',...(action?{repairTool:action.tool,repairCallId:action.callId}:{})}];
+  });
+  return {toolCalls:completed.length,successfulCalls:completed.filter(e=>e.status==='succeeded').length,failures,recoveredFailures:failures.filter(f=>f.recovery.status==='recovered').length,qualityFeedback};
 }
 
 export function createToolTrace(publish:(events:WorkflowEvent[])=>Promise<void>,secrets:string[]=[],events:WorkflowEvent[]=[]) {

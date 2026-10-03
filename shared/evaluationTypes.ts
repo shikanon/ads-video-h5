@@ -58,6 +58,11 @@ export interface EvaluationResult {
   score?: number;
   checks?: EvaluationCheck[];
   workflow?: WorkflowEvent[];
+  diagnostics?: {
+    toolCalls:number;successfulCalls:number;recoveredFailures:number;
+    failures:Array<{callId?:string;tool:string;kind:string;detail:string;recovery:{status:'recovered'|'unresolved';callId?:string;tool?:string}}>;
+    qualityFeedback?:Array<{callId?:string;tool:string;score:number|null;findings?:unknown;status:string;repairTool?:string;repairCallId?:string}>;
+  };
   artifact?: Omit<Artifact, 'url' | 'downloadUrl' | 'ownerId'> & { sha256: string; bytes: number; actualDuration: number };
   spokenText?: string;
   humanReview?: { score: number; note: string; reviewedAt: string };

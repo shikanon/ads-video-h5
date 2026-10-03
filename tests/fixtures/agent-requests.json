@@ -1,0 +1,832 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "news-original",
+      "family": "news",
+      "prompt": "制作一个实时新闻资讯视频，视频内容讲述Fable5.5，渲染紧张迫切氛围",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "mood": "urgent",
+        "seconds": 45,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "news-polite",
+      "family": "news",
+      "prompt": "麻烦你帮我做一期讲Fable 5.5的资讯短片，氛围紧迫一点。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-question",
+      "family": "news",
+      "prompt": "能帮我把Fable5.5最近的消息做成45秒横屏视频吗？要有迫切感。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "seconds": 45,
+        "format": "16:9",
+        "mood": "urgent"
+      }
+    },
+    {
+      "id": "news-order",
+      "family": "news",
+      "prompt": "Fable5.5是本期主题，紧张一点，用实时新闻的形式出一条视频。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-newlines",
+      "family": "news",
+      "prompt": "请制作\n一个实时新闻资讯视频\n主题：Fable5.5\n氛围：紧张迫切",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-fullwidth",
+      "family": "news",
+      "prompt": "请做一条Ｆａｂｌｅ５．５新闻视频，４５秒，１６：９。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "news-english",
+      "family": "news",
+      "prompt": "Create a breaking news video about Fable 5.5, 45 seconds, landscape, tense and urgent.",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "seconds": 45,
+        "format": "16:9",
+        "mood": "urgent"
+      }
+    },
+    {
+      "id": "news-deliver",
+      "family": "news",
+      "prompt": "Deliver a 45-second vertical video on the latest Fable 5.5 updates.",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "seconds": 45,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "news-implicit",
+      "family": "news",
+      "prompt": "来一条Fable5.5快讯，45秒竖屏，要给人时间紧迫的感觉。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "seconds": 45,
+        "format": "9:16",
+        "mood": "urgent"
+      }
+    },
+    {
+      "id": "news-robot",
+      "family": "news",
+      "prompt": "查一下近三天机器人领域的新消息，挑一件做成60秒横屏资讯视频。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "seconds": 60,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "news-space",
+      "family": "news",
+      "prompt": "给我制作一条关于近期航天发射的新闻短片，先查证，别编造现场画面。",
+      "expected": {
+        "mode": "news",
+        "export": true
+      }
+    },
+    {
+      "id": "news-no-fabrication",
+      "family": "news",
+      "prompt": "制作Fable5.5新闻视频；如果查不到正式发布消息，就说明尚未证实，别换成别的版本。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-no-upload",
+      "family": "no-assets",
+      "prompt": "我没有视频素材，请你自行查证Fable5.5的消息并制作资讯短片。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-no-camera",
+      "family": "no-assets",
+      "prompt": "不需要我拍摄真人视频，帮我做一期Fable5.5的最新消息解读短片。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-no-stock",
+      "family": "no-assets",
+      "prompt": "别让我先上传图片或视频。我要一条介绍Fable5.5实时进展的资讯视频，画面你来设计。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-no-refusal",
+      "family": "no-assets",
+      "prompt": "不要再回复“请先添加视频或图片素材”，直接制作Fable5.5新闻短片。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "lesson-reconstruct",
+      "family": "explainer",
+      "prompt": "重构一条讲量子计算原理的知识短片，用图解解释，不需要真人素材。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "量子计算"
+      }
+    },
+    {
+      "id": "lesson-casual",
+      "family": "explainer",
+      "prompt": "来一条一分钟的垃圾分类科普短片，给小朋友看，画面你自己做。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "seconds": 60
+      }
+    },
+    {
+      "id": "lesson-question",
+      "family": "explainer",
+      "prompt": "可以把光合作用讲清楚，做成一个60秒的科普视频吗？",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "seconds": 60
+      }
+    },
+    {
+      "id": "lesson-topic-first",
+      "family": "explainer",
+      "prompt": "主题是交叉熵为什么惩罚自信的错误预测；用45秒横屏视频讲清楚。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "lesson-product",
+      "family": "explainer",
+      "prompt": "给轻剪做一支产品介绍视频，用动态图表展示从输入指令到完成成片。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "轻剪"
+      }
+    },
+    {
+      "id": "lesson-english",
+      "family": "explainer",
+      "prompt": "Make a 60-second explainer video about photosynthesis for children. No uploaded footage is available.",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "seconds": 60
+      }
+    },
+    {
+      "id": "lesson-design",
+      "family": "explainer",
+      "prompt": "把RAG与微调的区别做成可看的短视频，用对比图，不用现成素材。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "RAG"
+      }
+    },
+    {
+      "id": "lesson-newlines",
+      "family": "explainer",
+      "prompt": "帮我把\n光合作用\n讲成一个60秒教学视频",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "seconds": 60
+      }
+    },
+    {
+      "id": "lesson-no-camera",
+      "family": "no-assets",
+      "prompt": "无需真人出镜，制作一个讲垃圾分类的知识短片。",
+      "expected": {
+        "mode": "explainer",
+        "export": true
+      }
+    },
+    {
+      "id": "script-news",
+      "family": "planning",
+      "prompt": "制作Fable5.5新闻视频，先给脚本，不要导出。",
+      "expected": {
+        "mode": "news",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "script-storyboard",
+      "family": "planning",
+      "prompt": "Fable5.5实时资讯短片，先写分镜，暂时别生成成片。",
+      "expected": {
+        "mode": "news",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "script-inverse",
+      "family": "planning",
+      "prompt": "成片先别做，先给我Fable5.5新闻短片的脚本。",
+      "expected": {
+        "mode": "news",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "script-only",
+      "family": "planning",
+      "prompt": "只写一份Fable5.5资讯视频脚本，方案就好，暂不出片。",
+      "expected": {
+        "mode": "news",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "script-english",
+      "family": "planning",
+      "prompt": "Draft a script for a breaking news video about Fable 5.5. Do not render or export yet.",
+      "expected": {
+        "mode": "news",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "script-lesson",
+      "family": "planning",
+      "prompt": "帮我规划量子计算知识短片，先写脚本和分镜，不用渲染。",
+      "expected": {
+        "mode": "explainer",
+        "export": false,
+        "topic": "量子计算"
+      }
+    },
+    {
+      "id": "script-no-tts",
+      "family": "planning",
+      "prompt": "只整理光合作用教学视频脚本，不要合成旁白和视频。",
+      "expected": {
+        "mode": "explainer",
+        "export": false
+      }
+    },
+    {
+      "id": "research-ai",
+      "family": "research",
+      "prompt": "搜集AI领域近三天热点，给我两个选题，先不要生成视频。",
+      "expected": {
+        "mode": "research",
+        "export": false
+      }
+    },
+    {
+      "id": "research-fable",
+      "family": "research",
+      "prompt": "帮我查证Fable5.5是否已经发布，只列来源，不制作视频。",
+      "expected": {
+        "mode": "research",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "research-english",
+      "family": "research",
+      "prompt": "Research the latest Fable 5.5 reports and list sources only. Do not make a video.",
+      "expected": {
+        "mode": "research",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "advice-how",
+      "family": "conversation",
+      "prompt": "如何制作一个实时新闻资讯视频？请解释流程。",
+      "expected": {
+        "mode": "conversation",
+        "export": false
+      }
+    },
+    {
+      "id": "advice-feasibility",
+      "family": "conversation",
+      "prompt": "制作新闻视频是否一定要真人素材？只讨论可行性。",
+      "expected": {
+        "mode": "conversation",
+        "export": false
+      }
+    },
+    {
+      "id": "advice-quote",
+      "family": "conversation",
+      "prompt": "为什么Agent会对“制作一个Fable5.5新闻视频”回复“请先添加素材”？分析原因。",
+      "expected": {
+        "mode": "conversation",
+        "export": false
+      }
+    },
+    {
+      "id": "advice-english",
+      "family": "conversation",
+      "prompt": "How can I make a news video without footage? Explain the workflow only.",
+      "expected": {
+        "mode": "conversation",
+        "export": false
+      }
+    },
+    {
+      "id": "no-create",
+      "family": "conversation",
+      "prompt": "先不要制作科普视频，我们只聊聊这个想法。",
+      "expected": {
+        "mode": "conversation",
+        "export": false
+      }
+    },
+    {
+      "id": "no-new-video",
+      "family": "conversation",
+      "prompt": "不要生成新视频，解释已有方案就行。",
+      "expected": {
+        "mode": "conversation",
+        "export": false
+      }
+    },
+    {
+      "id": "footage-news",
+      "family": "footage",
+      "prompt": "用上传的真人视频剪一段新闻快讯，不要生成新画面。",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "footage-lesson",
+      "family": "footage",
+      "prompt": "把上传的口播重构成知识短片，只用原话和原声。",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "footage-explicit",
+      "family": "footage",
+      "prompt": "只剪已有视频，不用HTML，导出20秒竖屏成片。",
+      "expected": {
+        "mode": "footage",
+        "export": true,
+        "seconds": 20,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "footage-english",
+      "family": "footage",
+      "prompt": "Edit my uploaded footage into a news video; keep the original audio.",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "footage-missing",
+      "family": "footage",
+      "prompt": "请把这段真人口播精剪成视频，必须保留我说的每句话。",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "news-no-bgm",
+      "family": "style",
+      "prompt": "制作Fable5.5实时新闻视频，紧张迫切，但不要背景音乐。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "mood": "urgent",
+        "bgm": false
+      }
+    },
+    {
+      "id": "news-calm",
+      "family": "style",
+      "prompt": "制作Fable5.5新闻视频，不要紧张，要平静舒缓。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "mood": "neutral",
+        "bgm": false
+      }
+    },
+    {
+      "id": "news-style-last",
+      "family": "style",
+      "prompt": "制作Fable5.5新闻视频，紧张迫切。改成平静叙述，不要配乐。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "mood": "neutral",
+        "bgm": false
+      }
+    },
+    {
+      "id": "news-english-no-bgm",
+      "family": "style",
+      "prompt": "Make a breaking news video about Fable 5.5. Tense mood, without background music.",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "mood": "urgent",
+        "bgm": false
+      }
+    },
+    {
+      "id": "news-short-unit",
+      "family": "settings",
+      "prompt": "制作Fable5.5新闻视频，60s，landscape，转场0.5秒。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "seconds": 60,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "news-revision-order",
+      "family": "settings",
+      "prompt": "制作Fable5.5新闻视频，先45秒竖屏，最终改为30秒横屏。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "seconds": 30,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "news-square",
+      "family": "settings",
+      "prompt": "制作Fable5.5新闻视频，半分钟，1:1方形画幅。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "seconds": 30,
+        "format": "1:1"
+      }
+    },
+    {
+      "id": "lesson-cn-number",
+      "family": "settings",
+      "prompt": "生成光合作用教学视频，四十五秒，横屏。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "context-revise",
+      "family": "context",
+      "prompt": "换成30秒横屏，再来一版。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "seconds": 30,
+        "format": "16:9"
+      },
+      "context": {
+        "title": "Fable5.5核验",
+        "requestedSeconds": 45,
+        "format": "9:16",
+        "hotResearch": {
+          "asOf": "2026-10-03T00:00:00Z",
+          "windowHours": 72
+        },
+        "presentation": {
+          "mood": "urgent",
+          "bgm": true
+        }
+      }
+    },
+    {
+      "id": "context-script",
+      "family": "context",
+      "prompt": "先改短脚本，暂不导出。",
+      "expected": {
+        "mode": "news",
+        "export": false
+      },
+      "context": {
+        "title": "Fable5.5核验",
+        "requestedSeconds": 45,
+        "format": "9:16",
+        "hotResearch": {
+          "asOf": "2026-10-03T00:00:00Z",
+          "windowHours": 72
+        },
+        "presentation": {
+          "mood": "urgent",
+          "bgm": true
+        }
+      }
+    },
+    {
+      "id": "context-question",
+      "family": "context",
+      "prompt": "现在的脚本为什么这样安排？只解释一下。",
+      "expected": {
+        "mode": "conversation",
+        "export": false
+      },
+      "context": {
+        "title": "Fable5.5核验",
+        "requestedSeconds": 45,
+        "format": "9:16",
+        "hotResearch": {
+          "asOf": "2026-10-03T00:00:00Z",
+          "windowHours": 72
+        },
+        "presentation": {
+          "mood": "urgent",
+          "bgm": true
+        }
+      }
+    },
+    {
+      "id": "context-export",
+      "family": "context",
+      "prompt": "生成成片",
+      "expected": {
+        "mode": "news",
+        "export": true
+      },
+      "context": {
+        "title": "Fable5.5核验",
+        "requestedSeconds": 45,
+        "format": "9:16",
+        "hotResearch": {
+          "asOf": "2026-10-03T00:00:00Z",
+          "windowHours": 72
+        },
+        "presentation": {
+          "mood": "urgent",
+          "bgm": true
+        }
+      }
+    },
+    {
+      "id": "context-topic",
+      "family": "context",
+      "prompt": "改讲机器人新闻，生成60秒横屏视频。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "seconds": 60,
+        "format": "16:9"
+      },
+      "context": {
+        "title": "Fable5.5核验",
+        "requestedSeconds": 45,
+        "format": "9:16",
+        "hotResearch": {
+          "asOf": "2026-10-03T00:00:00Z",
+          "windowHours": 72
+        },
+        "presentation": {
+          "mood": "urgent",
+          "bgm": true
+        }
+      }
+    },
+    {
+      "id": "news-not-just-script",
+      "family": "authority",
+      "prompt": "制作Fable5.5新闻视频，不要只给脚本，请直接出片。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-script-then-film",
+      "family": "authority",
+      "prompt": "制作Fable5.5新闻视频，先写脚本，然后渲染成片。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-authorize-last",
+      "family": "authority",
+      "prompt": "先只写Fable5.5新闻视频脚本；现在改为直接生成成片。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-revoke-last",
+      "family": "authority",
+      "prompt": "直接生成Fable5.5新闻视频。等等，先只要分镜，不要导出。",
+      "expected": {
+        "mode": "news",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "script-question",
+      "family": "planning",
+      "prompt": "能不能先给我Fable5.5新闻视频的脚本，暂时不渲染？",
+      "expected": {
+        "mode": "news",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "script-not-yet",
+      "family": "planning",
+      "prompt": "我想制作Fable5.5新闻视频，但成片暂时别做，先完善脚本。",
+      "expected": {
+        "mode": "news",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "lesson-english-complete",
+      "family": "authority",
+      "prompt": "Make an explainer video about photosynthesis. First draft the script, then render the video. Do not stop at the script.",
+      "expected": {
+        "mode": "explainer",
+        "export": true
+      }
+    },
+    {
+      "id": "news-mixed-language",
+      "family": "news",
+      "prompt": "帮我produce一条Fable5.5 breaking news video，45s，horizontal。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5",
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "news-dont-shoot",
+      "family": "no-assets",
+      "prompt": "不用真人素材，并不是不做视频。请制作Fable5.5实时资讯短片。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "lesson-change-subject",
+      "family": "explainer",
+      "prompt": "做一个60秒横屏教学视频，讲为什么月亮有阴晴圆缺。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "seconds": 60,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "lesson-only-data",
+      "family": "explainer",
+      "prompt": "我只有文字要求，没有现成素材；制作一条关于地震避险的知识短片。",
+      "expected": {
+        "mode": "explainer",
+        "export": true
+      }
+    },
+    {
+      "id": "news-measured-portrait",
+      "family": "settings",
+      "prompt": "做一期近期气候新闻视频，90 seconds，portrait，pause 0.5 seconds between scenes。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "seconds": 90,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "news-english-script",
+      "family": "planning",
+      "prompt": "Please create a news video about Fable 5.5, but only the storyboard for now; no export.",
+      "expected": {
+        "mode": "news",
+        "export": false,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "news-conversation-then-action",
+      "family": "authority",
+      "prompt": "先聊聊制作Fable5.5新闻视频的流程。现在不用解释了，直接制作成片。",
+      "expected": {
+        "mode": "news",
+        "export": true,
+        "topic": "Fable5.5"
+      }
+    },
+    {
+      "id": "lesson-no-news",
+      "family": "explainer",
+      "prompt": "制作光合作用科普视频，别加新闻式播报，保持温和。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "mood": "neutral",
+        "bgm": false
+      }
+    }
+  ]
+}
