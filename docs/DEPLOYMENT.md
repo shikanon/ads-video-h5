@@ -1,22 +1,24 @@
 # 轻剪服务端部署
 
-域名 `https://video.shikanon.com/` 由 Nginx 转发到本机 `127.0.0.1:8787`；原 IP 入口 `https://101.47.18.93/qingjian/` 继续可用，IP 的 `/` 仍属于服务器原有服务。域名首页公开展示 Landing，工作区与素材 API 需要轻剪帐号密码登录；管理后台继续需要独立管理员令牌。IP 预览入口可继续使用 Nginx Basic Auth。
+域名 `https://video.shikanon.com/` 由 Nginx 转发到本机 `127.0.0.1:8787`；原 IP 入口 `https://101.47.18.93/qingjian/` 继续可用，IP 的 `/` 仍属于服务器原有服务。域名首页公开展示 Landing，工作区与素材 API 需要轻剪帐号密码登录；管理后台使用独立 `admin` 账号，支持 Authenticator 动态验证码。IP 预览入口可继续使用 Nginx Basic Auth。
 
 ## 目录与服务
 
 - 代码：`/opt/ads-video-h5`
-- 持久数据：`/data/qingjian`（帐号密码哈希与登录会话、管理员令牌、加密模型配置、素材、成片）
+- 持久数据：`/data/qingjian`（用户与管理员密码哈希、登录会话、Authenticator 加密密钥与恢复码哈希、加密模型配置、素材、成片）
 - 对象存储：阿里云 OSS 新加坡地域 `qingjian-shikanon-media-sg-2026`，Bucket 为公开读；素材和产物以帐号 ID 分目录保存，H5 直接从 OSS 加载预览，`/data/qingjian` 保留处理缓存和状态。旧北京私有 Bucket `qingjian-shikanon-media-2026` 暂留作回退。
 - systemd：`qingjian.service`
 - Nginx：`/etc/nginx/sites-enabled/video-posttrain-lab` 中的 `/qingjian/` 路由
 - 域名站点：[`ops/nginx/video.shikanon.com.conf`](../ops/nginx/video.shikanon.com.conf) 安装为 `/etc/nginx/sites-enabled/qingjian-domain`，不改动 IP 站点
 - 域名证书：`/etc/letsencrypt/live/video.shikanon.com/`，由服务器现有 `vpl-cert-renew.timer` 续期并在成功续期后重载 Nginx
 
-服务只监听 loopback，不直接开放 8787。`PUBLIC_BASE_PATH=/qingjian` 为 API 返回的素材与成片链接加前缀，`VITE_BASE_PATH=/qingjian/` 控制构建产物的资源路径。
+服务只监听 loopback，不直接开放 8787。`PUBLIC_BASE_PATH=/qingjian` 为 API 返回的素材与成片链接加前缀，`VITE_BASE_PATH=/qingjian/` 控制构建产物的资源路径。`pnpm build` 分别构建手机 H5 和 `apps/admin/` 管理控制台，再把后台打包到 `dist/admin/`；两者拥有独立入口、资源包和样式。线上后台入口 `/qingjian/admin/`、资源 `/qingjian/admin/assets/` 与 API `/qingjian/api/admin/` 由现有 Nginx 前缀代理继续提供。发布前同时检查 `dist/index.html` 和 `dist/admin/index.html`。
 
 域名 DNS 的 A 记录指向 `101.47.18.93`。HTTP 的 `/.well-known/acme-challenge/` 从 `/var/www/acme` 提供证书验证，其余 HTTP 请求跳转到 HTTPS。域名专用 HTTPS server block 对公众开放 Landing 与帐号入口；根路径只显示轻剪，`/qingjian/` 保持资源和 API 路径。更新 Nginx 前先备份现有配置并执行 `nginx -t`，成功后再 `systemctl reload nginx`；检查证书 SAN、域名根路径、登录状态、受保护 API、原 IP 入口及原有站点。
 
 ## 更新
+
+管理员账号首次升级会生成 `admin-auth.json`、`admin-auth-key` 和一次性 `admin-initial-password`，均为 `0600`；已有 `admin-token` 作为升级初始密码，继续保留用于解密模型配置。旧长期 Bearer 令牌不再访问管理接口。部署管理员在服务器本地读取初始密码，首次通过页面登录并修改，随后自行扫码绑定 Authenticator、保存恢复码。可在首次初始化前通过服务器私有环境变量 `QINGJIAN_ADMIN_PASSWORD` 指定初始密码；已有账号不会被该变量覆盖。不要把初始密码、二维码、恢复码或管理员会话写入部署日志、代码或工单。完整迁移与备份说明见 [ADMIN_AUTH.md](ADMIN_AUTH.md)。
 
 在服务器上确认 Git SHA 后，执行 `git fetch`、切换到目标 SHA、`pnpm install --frozen-lockfile`、`VITE_BASE_PATH=/qingjian/ pnpm build`，再 `systemctl restart qingjian`。更新后检查 `systemctl status qingjian`、`curl http://127.0.0.1:8787/api/health`，并确认未登录的 `/qingjian/api/state` 返回 401。不要把 `/data/qingjian` 放进 Git，也不要在日志里打印 API Key 或临时密码。
 

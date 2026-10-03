@@ -180,7 +180,7 @@ async function downloadVendorAudio(value: unknown): Promise<Buffer> {
   return bytes;
 }
 
-export async function generateImage(prompt: string, config: ModelConfig, reference?: ImageReference): Promise<GeneratedMedia> {
+export async function generateImage(prompt: string, config: ModelConfig, reference?: ImageReference, options?: { size?: string; outputFormat?: 'png' | 'jpeg'; background?: 'transparent' | 'opaque' }): Promise<GeneratedMedia> {
   ensureConfig(config, 'image');
   const url = endpoint(config, IMAGE_URL);
   const cleanPrompt = prompt.trim();
@@ -188,11 +188,12 @@ export async function generateImage(prompt: string, config: ModelConfig, referen
   const body: Record<string, unknown> = {
     model: config.modelId,
     prompt: cleanPrompt,
-    size: '2K',
+    size: options?.size || '2K',
     response_format: 'b64_json',
-    output_format: 'jpeg',
+    output_format: options?.outputFormat || 'jpeg',
     watermark: false,
   };
+  if (options?.background) body.background = options.background;
   if (reference) {
     if (reference.bytes.length > 30 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(reference.mimeType) ||
         imageMime(reference.bytes) !== reference.mimeType) {

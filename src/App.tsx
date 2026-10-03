@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { WorkflowTrace } from './WorkflowTrace';
 import {
   ArrowDownToLine,
@@ -40,11 +40,13 @@ import { MAX_MEDIA_UPLOAD_BYTES } from "./uploadLimits";
 import AssistantReply from "./AssistantReply";
 import HotResearchCard from "./HotResearchCard";
 import { isActiveJob } from './jobStatus';
+const AvatarPanel = lazy(() => import('./AvatarPanel'));
 
 type Page =
   | "chat"
   | "history"
   | "media"
+  | "avatars"
   | "films"
   | "settings"
   | "profile"
@@ -66,6 +68,7 @@ const labels = {
     chat: "对话",
     history: "会话历史",
     media: "素材库",
+    avatars: "作者形象",
     films: "成片库",
     settings: "设置",
     profile: "用户中心",
@@ -110,6 +113,7 @@ const labels = {
     chat: "Chat",
     history: "Conversations",
     media: "Media",
+    avatars: "Author avatar",
     films: "Exports",
     settings: "Settings",
     profile: "Profile",
@@ -154,6 +158,7 @@ const labels = {
 const menuPages: Page[] = [
   "chat",
   "media",
+  "avatars",
   "films",
   "history",
   "profile",
@@ -208,8 +213,8 @@ async function api(url: string, method = "GET", body?: unknown) {
     await fetch(apiPath(url), {
       method,
       headers:
-        body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+        body === undefined || body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
     }),
   );
 }
@@ -247,7 +252,8 @@ function JobCard({
 }) {
   const t = labels[locale];
   const name =
-    job.workflow?.some(e=>e.tool==='discover_hot_topics') && job.kind==='plan' ? (locale==='zh-CN'?'热点选题研究':'Hot topic research')
+    job.kind === 'avatar' ? (locale === 'zh-CN' ? '作者形象动画' : 'Author animation')
+      : job.workflow?.some(e=>e.tool==='discover_hot_topics') && job.kind==='plan' ? (locale==='zh-CN'?'热点选题研究':'Hot topic research')
       : job.kind === "understanding" ? (locale === "zh-CN" ? "原声音频理解" : "Audio understanding")
       : job.kind === "review" ? (locale === "zh-CN" ? "成片审查" : "Render review")
       : job.kind === "music"
@@ -1255,6 +1261,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
             </form>
           </>
         ) : null}
+        {page === 'avatars' && state ? <Suspense fallback={<p className="subpage-content">正在打开作者形象…</p>}><AvatarPanel state={state} pending={pending} error={error} mutate={mutate} openChat={() => nav('chat')} /></Suspense> : null}
         {page === "history" ? (
           <section className="subpage-content">
             <div className="history-intro">
@@ -1850,6 +1857,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                     [
                       <Sparkles size={19} />,
                       <Library size={19} />,
+                      <UserRound size={19} />,
                       <Film size={19} />,
                       <Clock3 size={19} />,
                       <UserRound size={19} />,
@@ -1861,7 +1869,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                 </button>
               ))}
             </div>
-            <a className="admin-link" href={`${import.meta.env.BASE_URL}admin`}>
+            <a className="admin-link" href={import.meta.env.VITE_ADMIN_URL || (import.meta.env.DEV ? 'http://127.0.0.1:5174/' : `${import.meta.env.BASE_URL}admin/`)}>
               {locale === "zh-CN" ? "管理后台" : "Admin console"}
               <ChevronRight size={16} />
             </a>

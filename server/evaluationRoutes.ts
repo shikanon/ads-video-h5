@@ -5,7 +5,7 @@ import { rm } from 'node:fs/promises';
 import { MAX_MEDIA_UPLOAD_BYTES } from '../src/uploadLimits';
 import { EvaluationError, type Evaluations } from './evaluations';
 
-// Mounted inside the existing admin-token middleware; no token-bearing URLs.
+// Mounted inside the admin-session middleware; no token-bearing URLs.
 export function mountEvaluationRoutes(router: Router, evaluations: Evaluations) {
   const upload = multer({ storage: multer.diskStorage({ destination: evaluations.uploadsDir, filename: (_r, _f, done) => done(null, randomUUID()) }), limits: { fileSize: MAX_MEDIA_UPLOAD_BYTES, files: 1 }, fileFilter: (_r, file, done) => file.mimetype.startsWith('video/') ? done(null, true) : done(new EvaluationError('评测素材仅支持视频文件。')) });
   async function respond(response: Response, action: () => unknown | Promise<unknown>, status = 200) {

@@ -78,7 +78,7 @@ export function validatePlan(input: EditPlan, media: MediaItem[], allowImageClip
   if (!formats.includes(input.format)) throw new Error('不支持的成片比例。');
   if (!Array.isArray(input.clips) || input.clips.length < 1 || input.clips.length > 32) throw new Error('请选择 1 到 32 个片段。');
   const clips = input.clips.map((clip) => {
-    const source = media.find((item) => item.id === clip.sourceId && item.kind !== 'audio');
+    const source = media.find((item) => item.id === clip.sourceId && item.kind !== 'audio' && !item.character);
     if (!source) throw new Error('剪辑方案引用了不存在的图片或视频素材。');
     if (source.kind === 'image' && !allowImageClips) throw new Error('图片附件仅作为封面或视觉参考；如需放进视频画面，请在指令中明确说明。');
     if (source.kind === 'image' && attachedImageIds?.size && !attachedImageIds.has(source.id)) throw new Error('请使用当前消息附加的图片作为视频片段。');
@@ -159,6 +159,13 @@ export function getAgent(config: ModelConfig, tools: AgentTool[], systemPrompt: 
   return agent;
 }
 
+export function imageClipsAllowed(prompt:string,media:MediaItem[],previous:EditPlan|null):boolean {
+  if(/不要图片|不使用图片|移除图片|只(?:用|使用)视频/.test(prompt))return false;
+  const explicit=/(?:图片|照片|插图|配图).{0,18}(?:作为片段|作为画面|放进视频|加入视频|做成视频)|(?:用|把|将).{0,18}(?:图片|照片|插图).{0,18}(?:视频片段|视频画面)|(?:image|photo|picture|illustration).{0,24}(?:clip|shot|video)/i.test(prompt);
+  // An approved image clip remains authorized when the user requests a
+  // localized revision or re-export; they need not repeat the original brief.
+  return explicit||Boolean(previous?.clips.some(c=>media.some(m=>m.id===c.sourceId&&m.kind==='image'&&!m.character)));
+}
 export async function createPlanWithPi(prompt: string, config: ModelConfig, media: MediaItem[], history: ChatMessage[], previous: EditPlan | null, attached: MediaItem[] = [], analyzeAudio?: (sourceId: string) => Promise<AudioAnalysis>, progress?: (events:WorkflowEvent[])=>Promise<void>): Promise<EditPlan> {
   const sources = () => media.filter((item) => item.kind !== 'audio').map((item) => ({ id: item.id, name: item.name, kind: item.kind, duration: item.duration || null, shots: item.shots?.map((shot, index) => ({ number: index + 1, start: shot.start, end: shot.end })), audio: item.analysis ? { status: item.analysis.status, sentences: item.analysis.sentences.map(({ words: _words, ...s }) => s), pauses: item.analysis.pauses, timing: item.analysis.timing } : undefined }));
   let proposed: EditPlan | null = null;
@@ -169,7 +176,7 @@ export async function createPlanWithPi(prompt: string, config: ModelConfig, medi
     fineCut: Type.Optional(Type.Boolean()), captions: Type.Optional(Type.Array(timedText)), overlays: Type.Optional(Type.Array(timedText)),
     audio: Type.Optional(Type.Object({ originalVolume: Type.Number(), bgmVolume: Type.Number(), narrationVolume: Type.Number(), normalize: Type.Boolean() })), coverMediaId: Type.Optional(Type.String()),
   });
-  const allowImageClips = /(?:图片|照片|插图|配图).{0,18}(?:作为片段|作为画面|放进视频|加入视频|做成视频)|(?:用|把|将).{0,18}(?:图片|照片|插图).{0,18}(?:视频片段|视频画面)|(?:image|photo|picture|illustration).{0,24}(?:clip|shot|video)/i.test(prompt);
+  const allowImageClips = imageClipsAllowed(prompt,media,previous);
   const attachedImageIds = new Set(attached.filter((item) => item.kind === 'image').map((item) => item.id));
   const fineCut = /精剪|删重复|去重|完整句|选观点|论证|结论|精彩|钩子|talking.head|fine.cut/i.test(prompt);
   const tool: AgentTool<typeof schema> = {

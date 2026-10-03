@@ -37,11 +37,11 @@
 
 音乐接口使用本次浏览器抓到的路由、请求体及常见浏览器头重放，不会复用个人 Cookie 或绕过 Cloudflare。上游拒绝时返回可识别的错误；见 [抓包记录及限制](BGM_SOURCE_RESEARCH.md)。
 
-除健康状态、注册、登录与登录状态查询外，普通 `/api` 接口都要求登录 Cookie。会话、素材、任务、成片及其应用内文件接口按帐号校验归属；跨帐号 ID 返回 404。公开读 OSS 直链是独立访问路径，持有链接的人无需 Cookie 即可读取对象。服务端拒绝来源不符的跨站写请求。管理后台继续使用独立管理员令牌，不使用普通帐号 Cookie。
+除健康状态、注册、登录与登录状态查询外，普通 `/api` 接口都要求登录 Cookie。会话、素材、任务、成片及其应用内文件接口按帐号校验归属；跨帐号 ID 返回 404。公开读 OSS 直链是独立访问路径，持有链接的人无需 Cookie 即可读取对象。服务端拒绝来源不符的跨站写请求。管理后台使用独立 admin 账号与短期 Bearer 会话，支持 Authenticator 双因素验证，不使用普通帐号 Cookie。
 
 需要复用测试浏览器会话时，使用 `scripts/music-browser-client.js` 中的 `window.qingjianMusicBrowser` 方法，并在对应站点原页面上下文运行；`fetch` 由 Chrome 自动附带同源凭据，脚本不读取 Cookie。服务端 `/api/music/*` 与浏览器上下文方法是两条不同传输路径，当前网络仅浏览器会话路径已完成 24bit 的搜索到音频流读取验证。
 
-管理后台 API 使用 `/api/admin` 前缀，凭本地管理员令牌访问。模型配置项包含 `id/name/provider/kind/modelId/baseUrl/enabled/apiKey`，读取时只返回密钥是否已设置与掩码，永不回传完整密钥。
+管理后台是独立前端项目 `apps/admin/`（开发端口 5174，发布路径 `/admin/`），静态入口与手机 H5 分开；API 使用 `/api/admin` 前缀，凭独立管理员登录会话访问，首次改密与 Authenticator 流程见 [管理员认证](ADMIN_AUTH.md)。模型配置项包含 `id/name/provider/kind/modelId/baseUrl/enabled/apiKey`，读取时只返回密钥是否已设置与掩码，永不回传完整密钥。
 
 H5 仅在设置页提供对话模型切换，选项显示模型名称，不在聊天页或消息中展示模型信息。设置页发送 `{defaultModelId, applyToCurrentSession: true}`；服务端按当前帐号的激活会话更新选择并保留历史与方案，排队、执行或停止中的任务会阻止切换。`defaultModelId: null` 表示使用系统默认。省略该标志的请求仍只更新新会话的默认模型。
 
@@ -82,7 +82,7 @@ HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说�
 
 ### Agent 能力评测
 
-以下接口均需 `Authorization: Bearer <admin-token>`，普通登录 Cookie 不能代替管理员令牌。成片与报告也经管理员鉴权；客户端用授权请求读取 Blob，不将令牌放在 URL 中。
+以下接口均需 `Authorization: Bearer <admin-session>`，普通用户 Cookie 不能代替管理员身份。管理会话由独立 admin 账号登录签发；启用 Authenticator 后必须完成动态验证码或恢复码验证，历史 admin-token 不再授予管理权限。登录、首次改密、绑定与恢复码接口见 [管理员认证协议](ADMIN_AUTH.md#api)。成片与报告也经管理员鉴权；客户端用授权请求读取 Blob，不将令牌放在 URL 中。
 
 | 接口 | 输入 | 返回 |
 | --- | --- | --- |
@@ -103,3 +103,27 @@ HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说�
 运行状态为 `running/stopping/completed/cancelled/interrupted`；单例状态为 `queued/running/passed/failed/cancelled/interrupted`。`completed` 表示批次结束，不表示每例通过。单例未生成成片时没有自动分数；有成片但检查未过保留文件及失败检查。汇总的完成率、通过率包含失败与取消的次数，均分只针对有评分的成片。
 
 每轮保留不可变用例、输入哈希及非敏感模型/代码/skill/评分规则快照。模型配置在执行上下文冻结，密钥不进报告。单例默认时限 1800 秒，可指定 60–3600 秒。每轮最多 30 例、每例重复 1–3 次、总计不超过 60 次。停止或重启中断不自动重新执行；历史基线仅比较指令、约束和素材内容一致的用例。参见[评测说明](AGENT_EVALUATIONS.md)。
+
+
+## 作者形象与序列帧
+
+所有接口要求用户登录，返回当前帐号的 `AppState`，其他帐号资产不能引用。
+
+| 接口 | 请求 | 行为 |
+| --- | --- | --- |
+| `POST /api/avatars` | multipart 单文件 `file`、`role=reference`、`name` | 保存 Q 版原图，PNG/JPEG/WebP，最大 20 MB；转为 PNG |
+| `POST /api/avatars` | multipart `file`、`role=sprite`、`columns/rows/frameCount/fps`、`name`、可选 `referenceMediaId` | 导入透明 PNG 网格，按行切分、补透明边界、验证帧差异和稳定性，返回动画资产 |
+| `POST /api/avatars/:id/generate` | `{sessionId}` | `202`，队列实际调用 Seedream 参考图生成 4×2、8 帧透明序列；失败或停止不得标记可用；相同原图的在途请求复用任务 |
+| `POST /api/avatars/active` | `{mediaId: string或null}` | 设定默认动画作者；null 停用；原图和其他帐号动画不能设为默认 |
+
+`MediaItem.character` 将原图（role=reference）和动画（role=sprite）与普通素材区分。动画 `sprite` 含 columns、rows、frameCount、fps、尺寸、整图 SHA256、逐帧 SHA256、透明处理方法与可选模型 ID。支持 1–8 列/行、2–32 有效帧、1–24 fps；不支持 APNG，图片不超过 1600 万像素。网格不能整除时采用 floor 边界逐格切分，不能丢边缘像素。全帧相同、空格、帧数越界、背景不透明或主体位置跳动过大返回 400。上传格式和文件内容均须验证。
+
+`AppSettings.authorAvatarId` 保存默认作者。Job 在接收指令时冻结 `authorAvatarId`，暂停/取消遵循普通队列的真实取消流程。生成任务 kind=avatar，avatarSourceId 指向已上传原图。
+
+`EditPlan.avatars` 为独立作者动画轨道，含 mediaId、assetHash、start/end、fps、layout=corner/sidebar、position=left/right、size、reason。单片目前最多一个作者；尺寸占画幅宽度 14%–30%，默认约 22%。`authorAvatarMode=off` 持久保存当前方案的禁用要求，避免再次导出时重新添加。作者图不能当作剪辑源片段。
+
+编排调用真实 `place_author_avatar` 工具，渲染使用循环 PNG 帧而非静态整图。字幕在作者合成之后烧录，原音轨保留；渲染清单保存作者指纹、逐帧指纹、帧率、周期、尺寸和坐标。审查同时核对执行记录，并从实际 MP4 连续抽取作者区域检查变化，额外对动画首尾的不透明人物区域与预期帧做像素对比，参与整体画面/声音审查。抽帧不是全片逐帧播放的证明，状态动画不能声称实现了口型同步。
+
+作者原图与序列图使用私有本地媒体文件和受登录保护的素材接口，不进入公共 OSS。默认作者切换不改变已生成文件，需重新导出才能更新历史成片。
+
+已渲染作品中的 `Artifact.plan` 是哈希校验的输入，服务重启不得改写其摘要或其他字段。普通知识教学的纯导出指令可沿用当前已验证时间线、HTML 和旁白，仍生成新 MP4、清单与审查记录；改变内容的请求继续走方案更新，热点教学继续走时效查证。

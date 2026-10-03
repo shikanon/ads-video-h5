@@ -1,8 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
-import { ArrowLeft, Check, KeyRound, Plus, Save, ShieldCheck, Trash2, X } from 'lucide-react';
-import type { ModelKind } from './types';
-import EffectAdmin from './EffectAdmin';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { ArrowLeft, Check, Plus, Save, ShieldCheck, Trash2, X } from 'lucide-react';
+import type { ModelKind } from '../../../shared/types';
+import type { AdminAccount, AdminLogin as LoginResult } from '../../../shared/adminAuthTypes';
+import { api as request, ApiError } from './api';
+import AdminLogin from './AdminLogin';
+const EffectAdmin = lazy(() => import('./EffectAdmin'));
 const EvaluationAdmin = lazy(() => import('./EvaluationAdmin'));
+const AccountSecurity = lazy(() => import('./AccountSecurity'));
 
 interface AdminModel {
   id: string;
@@ -28,64 +32,66 @@ interface ModelForm {
 
 const blankForm = (): ModelForm => ({ id: null, name: '', provider: 'ark', kind: 'text', modelId: '', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', enabled: true, apiKey: '' });
 const kindName: Record<ModelKind, string> = { text: '文本对话', image: '图片生成', audio: '口播音频', understanding: '音频理解 / ASR' };
-const tokenKey = 'qingjian-admin-token';
-const apiPath = (url: string) => `${import.meta.env.BASE_URL.replace(/\/$/, '')}${url}`;
-
-async function request<T>(url: string, token: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(apiPath(url), {
-    ...init,
-    headers: { Authorization: `Bearer ${token}`, ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
-  });
-  const data = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(data.error || '请求失败，请重试。');
-  return data;
-}
+const tokenKey = 'qingjian-admin-session';
 
 export default function Admin() {
-  const [tokenInput, setTokenInput] = useState('');
   const [token, setToken] = useState(() => sessionStorage.getItem(tokenKey) || '');
+  const tokenRef = useRef(token);
+  const [account, setAccount] = useState<AdminAccount | null>(null);
+  const [loginNotice, setLoginNotice] = useState('');
   const [models, setModels] = useState<AdminModel[]>([]);
   const [defaultTextModelId, setDefaultTextModelId] = useState<string | null>(null);
   const [form, setForm] = useState<ModelForm>(blankForm);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [tab, setTab] = useState<'models' | 'effects' | 'evaluations'>('models');
+  const [tab, setTab] = useState<'models' | 'effects' | 'evaluations' | 'security'>('models');
 
-  const load = useCallback(async (accessToken: string) => {
-    const data = await request<{ models: AdminModel[]; defaultTextModelId: string | null }>('/api/admin/models', accessToken);
+  const load = useCallback(async (accessToken: string, signal?: AbortSignal) => {
+    const data = await request<{ models: AdminModel[]; defaultTextModelId: string | null }>('/api/admin/models', accessToken, { signal });
     setModels(data.models);
     setDefaultTextModelId(data.defaultTextModelId);
   }, []);
 
+  const clearSession = useCallback(() => {
+    tokenRef.current = ''; sessionStorage.removeItem(tokenKey); setToken(''); setAccount(null); setModels([]); setForm(blankForm()); setError(''); setNotice(''); setTab('models');
+  }, []);
+
+  useEffect(() => {
+    sessionStorage.removeItem('qingjian-admin-token');
+    const expired = (event: Event) => { if ((event as CustomEvent<{ token: string }>).detail?.token !== tokenRef.current) return; clearSession(); setLoginNotice('管理员登录已失效，请重新登录。'); };
+    window.addEventListener('qingjian:admin:unauthorized', expired);
+    return () => window.removeEventListener('qingjian:admin:unauthorized', expired);
+  }, [clearSession]);
+
   useEffect(() => {
     if (!token) return;
-    void load(token).catch((cause: unknown) => {
-      const message = cause instanceof Error ? cause.message : '无法连接管理后台。';
-      setError(message);
-      if (message.includes('令牌')) {
-        sessionStorage.removeItem(tokenKey);
-        setToken('');
-      }
+    let active = true;
+    const controller = new AbortController();
+    void request<{ account: AdminAccount }>('/api/admin/auth/session', token, { signal: controller.signal }).then(async data => {
+      if (!active) return;
+      setAccount(data.account);
+      if (data.account.mustChangePassword) setTab('security');
+      else await load(token, controller.signal);
+    }).catch((cause: unknown) => {
+      if (!active) return;
+      if (cause instanceof ApiError && cause.status === 401) { clearSession(); setLoginNotice(cause.message); }
+      else { setError(cause instanceof Error ? cause.message : '无法连接管理后台。'); }
     });
-  }, [load, token]);
+    return () => { active = false; controller.abort(); };
+  }, [load, token, clearSession]);
 
-  async function signIn(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const value = tokenInput.trim();
-    if (!value) return;
-    setBusy(true);
-    setError('');
-    try {
-      await load(value);
-      sessionStorage.setItem(tokenKey, value);
-      setToken(value);
-      setTokenInput('');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '无法验证令牌。');
-    } finally {
-      setBusy(false);
-    }
+  function loggedIn(result: LoginResult) {
+    tokenRef.current = result.token; sessionStorage.setItem(tokenKey, result.token); setToken(result.token); setAccount(result.account); setError(''); setLoginNotice('');
+    if (result.account.mustChangePassword || result.usedRecoveryCode) setTab('security');
+    if (result.usedRecoveryCode) setNotice('已使用一次性恢复码登录，请检查 Authenticator 绑定状态。');
+  }
+
+  async function signOut() {
+    setBusy(true); setError('');
+    try { await request('/api/admin/auth/logout', token, { method: 'POST' }); clearSession(); setLoginNotice('已退出管理后台。'); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : '退出失败，请重试。'); }
+    finally { setBusy(false); }
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -146,28 +152,19 @@ export default function Admin() {
   return (
     <div className="admin-page">
       <header className="admin-topbar">
-        <a href={import.meta.env.BASE_URL} className="admin-back"><ArrowLeft size={18} /> 返回轻剪</a>
+        <a href={import.meta.env.VITE_WEB_URL} className="admin-back"><ArrowLeft size={18} /> 返回轻剪</a>
         <div className="admin-brand">轻剪<span>.</span> <small>管理后台</small></div>
-        {token ? <button type="button" className="admin-signout" onClick={() => { sessionStorage.removeItem(tokenKey); setToken(''); setModels([]); }}>退出管理</button> : <span />}
+        {token ? <button type="button" className="admin-signout" disabled={busy} onClick={() => void signOut()}>退出管理</button> : <span />}
       </header>
 
       {!token ? (
-        <main className="admin-login">
-          <div className="admin-login-icon"><KeyRound size={28} /></div>
-          <h1>管理后台</h1>
-          <p>在这里维护厂商模型、API Key 和 HTML 视频特效。密钥只保存在服务端。</p>
-          <form onSubmit={(event) => void signIn(event)}>
-            <label htmlFor="admin-token">管理员令牌</label>
-            <input id="admin-token" type="password" autoComplete="off" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} placeholder="输入本地管理员令牌" required />
-            <button type="submit" disabled={busy || !tokenInput.trim()}>{busy ? '验证中…' : '进入管理后台'}</button>
-          </form>
-          <p className="admin-login-help">管理员令牌保存在服务端数据目录的 <code>admin-token</code> 文件中。</p>
-          {error ? <div className="admin-alert" role="alert">{error}</div> : null}
-        </main>
-      ) : (
+        <AdminLogin onLogin={loggedIn} notice={loginNotice} />
+      ) : !account ? <main className="admin-login"><h1>正在验证登录…</h1>{error ? <div className="admin-alert" role="alert">{error}</div> : null}</main> : (
         <main className="admin-layout">
-          <nav className="admin-tabs" aria-label="管理功能"><button type="button" className={tab === 'models' ? 'is-active' : ''} onClick={() => setTab('models')}>模型与密钥</button><button type="button" className={tab === 'effects' ? 'is-active' : ''} onClick={() => setTab('effects')}>HTML 视频特效</button><button type="button" className={tab === 'evaluations' ? 'is-active' : ''} onClick={() => setTab('evaluations')}>Agent 能力评测</button></nav>
-          {tab === 'effects' ? <EffectAdmin token={token} /> : tab === 'evaluations' ? <Suspense fallback={<p>正在加载评测台…</p>}><EvaluationAdmin token={token} models={models}/></Suspense> : <>
+          <nav className="admin-tabs" aria-label="管理功能"><button type="button" disabled={account.mustChangePassword} className={tab === 'models' ? 'is-active' : ''} onClick={() => setTab('models')}>模型与密钥</button><button type="button" disabled={account.mustChangePassword} className={tab === 'effects' ? 'is-active' : ''} onClick={() => setTab('effects')}>HTML 视频特效</button><button type="button" disabled={account.mustChangePassword} className={tab === 'evaluations' ? 'is-active' : ''} onClick={() => setTab('evaluations')}>Agent 能力评测</button><button type="button" className={tab === 'security' ? 'is-active' : ''} onClick={() => setTab('security')}>账号安全</button></nav>
+          {error && tab !== 'models' ? <div className="admin-alert" role="alert">{error}</div> : null}
+          {notice && tab === 'security' ? <div className="admin-notice" role="status"><Check size={16} />{notice}</div> : null}
+          {tab === 'security' ? <Suspense fallback={<p>正在加载账号安全…</p>}><AccountSecurity token={token} account={account} onLogin={loggedIn} /></Suspense> : tab === 'effects' ? <Suspense fallback={<p>正在加载特效库…</p>}><EffectAdmin token={token} /></Suspense> : tab === 'evaluations' ? <Suspense fallback={<p>正在加载评测台…</p>}><EvaluationAdmin token={token} models={models}/></Suspense> : <>
           <div className="admin-heading"><div><h1>模型与密钥</h1><p>配置对话、图片和口播模型。新密钥保存后仅显示配置状态。</p></div><ShieldCheck size={28} /></div>
           {error ? <div className="admin-alert" role="alert">{error}<button onClick={() => setError('')} aria-label="关闭错误"><X size={16} /></button></div> : null}
           {notice ? <div className="admin-notice" role="status"><Check size={16} />{notice}</div> : null}

@@ -2,6 +2,7 @@ import type { EditPlan, MediaItem, TimelineText } from '../src/types';
 import { excludesBgm } from './intents';
 import { createHash } from 'node:crypto';
 import { validateLesson } from './lessonSpec';
+import { validateAvatarTracks } from './avatarAssets';
 
 export function timelineOffsets(plan: EditPlan): number[] {
   let position = 0;
@@ -74,6 +75,7 @@ export function validateTimeline(plan: EditPlan, media: MediaItem[]): EditPlan {
   });
   const candidate = { ...plan, clips };
   const duration = timelineDuration(candidate);
+  candidate.avatars = validateAvatarTracks(plan.avatars, { ...candidate, targetSeconds: duration }, media);
   if(plan.lesson){
     const lesson=validateLesson(plan.lesson,`教学视频 ${plan.lesson.requestedSeconds}秒 ${plan.lesson.format}`,plan.lesson.pacing);
     if(lesson.chapters.length!==clips.length||lesson.format!==plan.format||duration>600.05||!lesson.factReview||lesson.factReview.needsRepair||!lesson.voice?.anchorHash)throw new Error('教学方案的章节、事实审查、画幅或统一声音参考无效。');

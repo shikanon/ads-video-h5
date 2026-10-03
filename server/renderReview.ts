@@ -14,6 +14,9 @@ import { newsFreshAtReview } from './reviewResults';
 import { requestSemanticReview } from './semanticReview';
 import { compactSpeech, lessonPadding } from './lessonSpec';
 import { inspectLessonSpeechGaps, lessonPacingCheck } from './lessonAudio';
+import type { AvatarRenderRecord } from './renderAvatar';
+import { PNG } from 'pngjs';
+import { opaqueFrameDifference, spriteFrames } from './avatarAssets';
 
 export async function reviewRender(file: string, plan: EditPlan, media: MediaItem[], prompt: string): Promise<RenderReview> {
   const checks: RenderReview['checks'] = [];
@@ -23,9 +26,45 @@ export async function reviewRender(file: string, plan: EditPlan, media: MediaIte
   const [width, height] = dimensions(plan);
   let info = ''; try { info = await runFFmpeg(['-hide_banner', '-i', file]); } catch (e) { info = e instanceof Error ? e.message : ''; }
   add('画幅与音轨', new RegExp(`\\b${width}x${height}\\b`).test(info) && probe.hasAudio, `预期${width}×${height}，${probe.hasAudio ? '有' : '无'}音轨`);
-  const manifest = JSON.parse(await readFile(file.replace(/\.mp4$/, '.render.json'), 'utf8')) as { planHash: string; captions: number; overlays: number; motions?: EditPlan['motions']; drawingEngine?: string; bgm?:boolean; narration?:boolean; audioNormalization?:{mode:string} };
+  const manifest = JSON.parse(await readFile(file.replace(/\.mp4$/, '.render.json'), 'utf8')) as { planHash: string; captions: number; overlays: number; motions?: EditPlan['motions']; avatars?:AvatarRenderRecord[]; drawingEngine?: string; bgm?:boolean; narration?:boolean; audioNormalization?:{mode:string} };
   if(excludesBgm(prompt))add('无背景音乐',manifest.bgm===false,'按实际渲染混音输入核对，未启用的音量参数不表示新增音轨');
   add('方案版本', manifest.planHash === planHash(plan), '渲染清单哈希与当前方案比对');
+  if(plan.avatars?.length){
+    add('作者形象资产与透明序列',plan.avatars.every((track,i)=>{
+      const actual=manifest.avatars?.[i],sprite=media.find(m=>m.id===track.mediaId)?.character?.sprite;
+      return Boolean(actual&&sprite&&actual.engine==='png-sequence/ffmpeg'&&actual.mediaId===track.mediaId&&actual.assetHash===track.assetHash&&actual.frameCount===sprite.frameCount&&new Set(actual.frameHashes).size>1&&actual.fps===track.fps&&actual.start===track.start&&actual.end===track.end&&actual.layout===track.layout&&JSON.stringify(actual.frameHashes)===JSON.stringify(sprite.frameHashes));
+    }),'真实帧数、资产哈希、帧率、时间和布局与渲染记录比对');
+    const record=manifest.avatars?.[0];
+    if(record){
+      const dir=path.join(path.dirname(file),`avatar-review-${randomUUID()}`);await mkdir(dir);
+      try{
+        const images:PNG[]=[];
+        const count=Math.min(record.frameCount,8);
+        for(let i=0;i<count;i++){
+          const time=record.start+(i+.4)/record.fps;if(time>=record.end-.03)break;
+          const frame=path.join(dir,`${i}.png`);
+          await runFFmpeg(['-v','error','-y','-ss',String(time),'-i',file,'-frames:v','1','-vf',`crop=${record.width}:${record.height}:${record.x}:${record.y},scale=96:96`,frame],20000);
+          images.push(PNG.sync.read(await readFile(frame)));
+        }
+        const differences=images.slice(1).map(img=>{let sum=0;for(let p=0;p<img.data.length;p++)if(p%4!==3)sum+=Math.abs(img.data[p]-images[0].data[p]);return sum/(img.width*img.height*3);});
+        add('作者形象实际动画变化',differences.some(d=>d>.5),`形象区域连续抽取 ${images.length} 帧，最大像素变化 ${(Math.max(0,...differences)).toFixed(2)}；同时参与语义抽帧审查`);
+        const source=media.find(m=>m.id===record.mediaId),sprite=source?.character?.sprite;
+        if(!source||!sprite)throw new Error('形象资产不存在');
+        const frames=spriteFrames(await readFile(path.join(path.dirname(path.dirname(file)),'media',source.id)),sprite);
+        const coverage:number[]=[];
+        for(const [i,time] of [record.start+.04,record.end-.08].entries()){
+          const actualPath=path.join(dir,`coverage-${i}.png`),raw=path.join(dir,`expected-${i}.png`),expectedPath=path.join(dir,`scaled-${i}.png`);
+          const index=Math.floor(Math.max(0,time-record.start)*record.fps)%frames.length;
+          await writeFile(raw,frames[index]);
+          await runFFmpeg(['-v','error','-y','-ss',String(time),'-i',file,'-frames:v','1','-vf',`crop=${record.width}:${record.height}:${record.x}:${record.y},scale=96:96:flags=lanczos`,actualPath],20000);
+          await runFFmpeg(['-v','error','-y','-i',raw,'-frames:v','1','-vf','scale=96:96:flags=lanczos,format=rgba',expectedPath],20000);
+          coverage.push(opaqueFrameDifference(PNG.sync.read(await readFile(expectedPath)),PNG.sync.read(await readFile(actualPath))));
+        }
+        add('作者形象首尾覆盖',coverage.every(d=>d<35),`与预期原帧的不透明区域对比，片头/片尾平均像素误差 ${coverage.map(d=>d.toFixed(2)).join(' / ')}，阈值35；不是身份认证`);
+      }catch{add('作者形象检查完成度',false,'实际动画换帧或首尾覆盖检查未完成，不能视为通过');}
+      finally{await rm(dir,{recursive:true,force:true});}
+    }
+  }
   if (plan.editorial) add('分镜证据与叙事', plan.clips.every((c,i) => {
     const s=plan.editorial!.scenes.find((s)=>s.id===c.sceneId);const source=media.find((m)=>m.id===c.sourceId)?.analysis;
     return Boolean(s && s.sourceHash===source?.sourceHash && s.reason && s.quote===source?.sentences.filter((v)=>c.sentenceIds?.includes(v.id)).map((v)=>v.text).join('') && plan.editorial!.script.beats[i]?.sceneId===c.sceneId);
@@ -134,7 +173,7 @@ export async function reviewRender(file: string, plan: EditPlan, media: MediaIte
       }
       const result = await requestSemanticReview(config, [{ role: 'system', content: (await loadEditingSkill('qingjian-render-review'))+(plan.lesson?'\n'+await loadEditingSkill('qingjian-teaching-video'):'') }, { role: 'user', content: [
         { type: 'input_audio', input_audio: { data: (await readFile(wav)).toString('base64'), format: 'wav' } }, ...frames,
-        { type: 'text', text: `这是成片的完整音频以及${times.length}张标有时间的抽帧，含各分镜和绘制动画早期/稳定阶段。用户要求：${prompt}。${plan.lesson?.hotResearch?"本片是简短新闻图解，按新闻快讯核验版本、日期、不确定性和播报节奏；不要求课堂式定义、推导或完整编年史。收尾可以用核心结论与行动提醒，不必逐条重复前文全部案例；可选背景与更丰富镜头放入suggestions，真实错读、错数、不可读图解、音乐缺失仍为缺陷。":""}实际混音输入：${JSON.stringify({original:true,bgm:manifest.bgm,narration:manifest.narration})}；只有实际输入为true才表示有该音轨，未启用的音量参数不意味着加了音乐或配音。实际方案：${JSON.stringify(plan)}。真实剪切边界(成片秒)：${JSON.stringify(timelineOffsets(plan).slice(1))}。音频剪切只发生在这些边界附近；位于一个连续源片段内部的字幕短语切换不是硬切。原素材的口误或停顿可单独评价，不能捏造成新增剪切。${plan.lesson?'这是从主题制作的教学视频，全部旁白为同一合成声音。每条实际缺陷必须注明对应章节ID（如ch7）及具体修复要求；全局问题标明global，避免返修漏掉其他章节。仅实际听到的残句、错读、不可读图解或核心概念错误要求返修；额外推导或可选背景建议不能当作错误。检查定义、公式与参数、数值例子、曲线坐标、年代、任务差异、前置概念和应用是否讲清楚；图解应解释概念，不能只重复字幕。所有章节已完整渲染，早期抽帧未出现后续节点不等于最终遗漏。检查教学节奏和朗读英文字母的准确性。':'原声与新增分镜已按mode标记；新增台词是获授权的参考声音合成，不是源录音。审查图形能否解释因果、SOP与知识库而非只重复字幕；示意成果标注示意，不能当作实测。注意合成音色与原音差异。'}所选源原话：${JSON.stringify(expected)}。只据真实音频和这些抽帧评审，无法观察的部分不要编造。评分必须严格：80分表示可发布但有改进空间，90分以上须接近专业成片。不要只罗列优点。保留原声不代表必须保留重录残句，选句中缺少谓语的半句或重复同一观点需要返修。检查标签是否拥挤、孤字换行、仅重复字幕，以及明显的近远景突跳。严审观点、论据、结论，跳句是否导致逻辑断裂，动效标签是否有信息用途、是否遮脸/字幕。输出JSON：{"score":0到100,"findings":["仅实际且需返修的缺陷，注明章节ID"],"suggestions":["非阻塞改进建议"],"needsRepair":true或false}。findings和suggestions须区分：更多历史节点、额外推导、镜头创意等可选扩展放入suggestions，实际错读、漏字、不可读画面或核心概念错误放入findings。needsRepair只用于实际缺陷或低于80分；任何实际缺陷仍必须返修，不得把错误降为建议。细微标点、语气词差异不判错；抽帧不能证明完整观看。字幕按短语分行，单帧不显示下一行不等于遗漏或硬切原音。只有听到原话被截断或实际漏字才能报告。抽帧无法验证完整推镜或每处转场，应记为未验证，不能凭此判失败。不要给未经音频核实的精确词时间码。` },
+        { type: 'text', text: `这是成片的完整音频以及${times.length}张标有时间的抽帧，含各分镜和绘制动画早期/稳定阶段。用户要求：${prompt}。${plan.lesson?.hotResearch?"本片是简短新闻图解，按新闻快讯核验版本、日期、不确定性和播报节奏；不要求课堂式定义、推导或完整编年史。收尾可以用核心结论与行动提醒，不必逐条重复前文全部案例；可选背景与更丰富镜头放入suggestions，真实错读、错数、不可读图解、音乐缺失仍为缺陷。":""}实际混音输入：${JSON.stringify({original:true,bgm:manifest.bgm,narration:manifest.narration})}；只有实际输入为true才表示有该音轨，未启用的音量参数不意味着加了音乐或配音。实际方案：${JSON.stringify(plan)}。${plan.avatars?.length?"作者形象为独立透明序列帧，严查是否显示整张网格、透明背景是否破坏、人物是否遮挡主图解或字幕、身份是否前后稳定；状态动画不需要同步口型。":""}真实剪切边界(成片秒)：${JSON.stringify(timelineOffsets(plan).slice(1))}。音频剪切只发生在这些边界附近；位于一个连续源片段内部的字幕短语切换不是硬切。原素材的口误或停顿可单独评价，不能捏造成新增剪切。${plan.lesson?'这是从主题制作的教学视频，全部旁白为同一合成声音。每条实际缺陷必须注明对应章节ID（如ch7）及具体修复要求；全局问题标明global，避免返修漏掉其他章节。仅实际听到的残句、错读、不可读图解或核心概念错误要求返修；额外推导或可选背景建议不能当作错误。检查定义、公式与参数、数值例子、曲线坐标、年代、任务差异、前置概念和应用是否讲清楚；图解应解释概念，不能只重复字幕。所有章节已完整渲染，早期抽帧未出现后续节点不等于最终遗漏。检查教学节奏和朗读英文字母的准确性。':'原声与新增分镜已按mode标记；新增台词是获授权的参考声音合成，不是源录音。审查图形能否解释因果、SOP与知识库而非只重复字幕；示意成果标注示意，不能当作实测。注意合成音色与原音差异。'}所选源原话：${JSON.stringify(expected)}。只据真实音频和这些抽帧评审，无法观察的部分不要编造。评分必须严格：80分表示可发布但有改进空间，90分以上须接近专业成片。不要只罗列优点。保留原声不代表必须保留重录残句，选句中缺少谓语的半句或重复同一观点需要返修。检查标签是否拥挤、孤字换行、仅重复字幕，以及明显的近远景突跳。严审观点、论据、结论，跳句是否导致逻辑断裂，动效标签是否有信息用途、是否遮脸/字幕。输出JSON：{"score":0到100,"findings":["仅实际且需返修的缺陷，注明章节ID"],"suggestions":["非阻塞改进建议"],"needsRepair":true或false}。findings和suggestions须区分：更多历史节点、额外推导、镜头创意等可选扩展放入suggestions，实际错读、漏字、不可读画面或核心概念错误放入findings。needsRepair只用于实际缺陷或低于80分；任何实际缺陷仍必须返修，不得把错误降为建议。细微标点、语气词差异不判错；抽帧不能证明完整观看。字幕按短语分行，单帧不显示下一行不等于遗漏或硬切原音。只有听到原话被截断或实际漏字才能报告。抽帧无法验证完整推镜或每处转场，应记为未验证，不能凭此判失败。不要给未经音频核实的精确词时间码。` },
       ] }]);
       semantic = { score: result.score, findings: result.findings.slice(0, 10).map((f) => f.slice(0, 500)),suggestions:result.suggestions.slice(0,10).map(f=>f.slice(0,500)) };
       add('成片语义审查', !result.needsRepair && result.score >= 80, result.findings.join('；').slice(0, 1200) || `完整音频和${times.length}张抽帧未发现需返修的问题`);

@@ -1,0 +1,20 @@
+.admin-security-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.admin-security-form { display: grid; gap: 17px; }
+.admin-security-form label { display: grid; gap: 8px; font-size: 13px; color: #595653; font-weight: 650; }
+.admin-security-form input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #e4dfdc; border-radius: 11px; background: #fff; color: #292b34; outline: none; }
+.admin-security-form input:focus { border-color: #ef8f78; box-shadow: 0 0 0 3px rgb(251 115 83 / 12%); }
+.admin-security-help { margin: 0 0 20px; font-size: 13px; color: #817d7b; line-height: 1.75; }
+.admin-security-first { border: 1px solid #f4d4ba; background: #fff4e8; color: #96603a; border-radius: 12px; padding: 15px 18px; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+.admin-security-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.admin-security-secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border: 1px solid #e4dfdc; border-radius: 11px; background: #fff; color: #68615c; font-size: 13px; }
+.admin-security-danger { color: #b34937; border-color: #eed0c9; }
+.admin-totp-qr { display: flex; justify-content: center; margin: 10px 0 20px; }
+.admin-totp-qr img { max-width: 100%; height: auto; border-radius: 12px; }
+.admin-totp-manual { font-size: 12px; color: #817d7b; margin: 0 0 22px; }
+.admin-totp-manual summary { cursor: pointer; padding: 8px 0; }
+.admin-totp-manual code { display: block; overflow-wrap: anywhere; padding: 12px; background: #f6f0ec; color: #514139; border-radius: 8px; user-select: all; }
+.admin-recovery { margin-top: 20px; }
+.admin-recovery .admin-panel-heading button { display: inline-flex; align-items: center; gap: 7px; }
+.admin-recovery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 20px 0; }
+.admin-recovery-grid code { padding: 13px 8px; border: 1px solid #ece5de; border-radius: 9px; background: #fcf8f3; color: #635148; text-align: center; font-size: 13px; user-select: all; }
+@media (max-width: 760px) { .admin-security-columns { grid-template-columns: minmax(0, 1fr); } .admin-recovery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

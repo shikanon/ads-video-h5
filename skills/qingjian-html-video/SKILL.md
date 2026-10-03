@@ -18,14 +18,14 @@ description: Create, preview, edit, and render short branded HTML motion videos 
 ## 工作方式
 
 1. 明确要传达的一句话、画幅、照片或视频素材，以及入场、停留、收束的节奏。默认使用竖屏 1080×1920、6 秒。
-2. 优先复用后台已有模板（阳光开场、照片推镜、故事收束）。需要新风格时，在 `/admin` 的「HTML 视频特效」中复制模板，修改 HTML、默认文案和时间轴，再预览。
+2. 优先复用后台已有模板（阳光开场、照片推镜、故事收束）。在 `/admin/` 的「HTML 视频特效」中复制模板、调整默认文案与素材，再直接观看动画预览。需要新的 HTML 结构和时间轴时，通过可信管理员 API 或本机模板文件维护；后台页面不展示源码编辑器。
 3. 元素要有可寻址的 `id`、`data-start`、`data-duration`、`data-track-index`。根节点使用 `data-composition-id="main"`；GSAP 时间轴暂停创建并注册到 `window.__timelines["main"]`。保留 `<!--QJ_RUNTIME-->` 和 `<!--QJ_DATA-->` 插槽。
 4. 按已安装的 [Motion Design](../motion-design/SKILL.md) 先确定情绪、动效风格、主信息与次层，再使用 `QJMotion` 组件编排画面：`textRise`、`cardPop`、`lineDraw`、`imageDrift`、`splitWipe`、`fadeOut`，以及 `staggerReveal`、`cardSettle`、`focusPulse`、`ambientFloat`、`connectorFlow`、`barGrow`、`radialBurst`。入口从 0.1–0.3 秒开始；文字要留足阅读时间，结尾动作快于入场。参数和示例见 [组件参考](references/components.md)。
 5. 用后台预览检查安全区、字数、文字与图片对比度，再渲染 MP4。用 FFprobe 核对画幅、帧率、时长，并抽取中间帧检查视觉。生成后由对话或后台下载。
 
 ## 命令行快速制作
 
-仓库安装依赖后，可使用本技能自带脚本调用后台渲染接口。管理员令牌从 `QINGJIAN_ADMIN_TOKEN` 或 git 忽略的 `data/admin-token` 读取，绝不放进命令参数或提交仓库。
+仓库安装依赖后，可使用本技能自带脚本调用后台渲染接口。先按 [管理员认证协议](../../docs/ADMIN_AUTH.md#api) 使用 admin 账号完成密码与已启用的 Authenticator 验证，将成功响应的短期会话 token 私下保存为 `0600` 文件，使用 `QINGJIAN_ADMIN_SESSION_FILE` 指定文件路径（默认 git 忽略的 `data/admin-session`），或通过私有环境变量 `QINGJIAN_ADMIN_SESSION` 提供。会话有效期 8 小时，过期、退出或身份变更后须重新登录；绝不把会话放进命令参数或提交仓库。旧 `QINGJIAN_ADMIN_TOKEN` / `data/admin-token` 只用于模型密钥加密，不能绕过双因素登录。服务端内置的视频生产工具直接使用同进程的特效存储，不要求普通用户取得管理员身份。
 
 ```bash
 node skills/qingjian-html-video/scripts/render.mjs --list

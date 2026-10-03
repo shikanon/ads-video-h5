@@ -171,6 +171,7 @@ export function createEffectStore(dataDir: string, oss?: ReturnType<typeof creat
   const listAssets = () => [...assets].reverse();
   const publicAssetUrl = (asset: EffectAsset, fallback: string) => oss?.publicUrl('admin-effects', 'media', asset.id) || fallback;
   async function compile(effect: HtmlEffect, input?: Partial<EffectValues>, preview = false, assetUrl?: string, sourceKind?: 'image' | 'video', externalRuntime = false): Promise<string> {
+    checkEffect(effect);
     const gsap = externalRuntime ? '' : await readFile(gsapPath, 'utf8');
     const values = normalizeValues(input, effect.defaults);
     if (values.assetId) {

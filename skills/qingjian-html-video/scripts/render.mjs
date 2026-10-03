@@ -9,8 +9,9 @@ const listOnly = args.includes('--list');
 const server = (option('--server') || 'http://127.0.0.1:8787').replace(/\/$/, '');
 if (!/^https:\/\//.test(server) && !/^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(server)) throw new Error('远程服务必须使用 HTTPS。');
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const token = process.env.QINGJIAN_ADMIN_TOKEN || (await readFile(path.join(repo, 'data', 'admin-token'), 'utf8').catch(() => '')).trim();
-if (!token) throw new Error('缺少管理员令牌。请设置 QINGJIAN_ADMIN_TOKEN 或本地 data/admin-token。');
+const sessionFile = process.env.QINGJIAN_ADMIN_SESSION_FILE || path.join(process.env.QINGJIAN_DATA_DIR || path.join(repo, 'data'), 'admin-session');
+const token = (process.env.QINGJIAN_ADMIN_SESSION || await readFile(sessionFile, 'utf8').catch(() => '')).trim();
+if (!token) throw new Error('缺少管理员登录会话。请完成账号与 Authenticator 验证后设置 QINGJIAN_ADMIN_SESSION 或 QINGJIAN_ADMIN_SESSION_FILE；旧 admin-token 不再用于登录。');
 async function api(endpoint, init = {}) {
   const response = await fetch(`${server}${endpoint}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}) } });
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `HTTP ${response.status}`); }

@@ -6,6 +6,7 @@ import type { EditPlan, MediaItem, TimelineText } from '../src/types';
 import { runFFmpeg, probeVideo } from './core';
 import { timelineDuration, validateTimeline } from './timeline';
 import { renderDrawings } from './motionDrawing';
+import { renderAvatar } from './renderAvatar';
 import { lessonDimensions } from './lessonSpec';
 import { measureLoudness, parseLoudness, twoPassLoudnorm, voicedSpread, SOUND_LIMITS, type LoudnessMeasurement } from './audioQuality';
 
@@ -123,6 +124,8 @@ export async function renderTimeline(inputPlan: EditPlan, media: MediaItem[], me
       // Force libvpx to decode WebM's alpha plane; the native decoder discards it.
       await runFFmpeg(['-v','error','-y','-i',merged,'-c:v','libvpx-vp9','-i',drawings,'-filter_complex_threads','1','-filter_complex','[0:v][1:v]overlay=shortest=1:format=auto[v]','-map','[v]','-map','0:a','-c:v','libx264','-threads','2','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','copy',composed]);
     }
+    const avatarRender = await renderAvatar(composed, plan, media, mediaDir, tempDir, width, height);
+    composed = avatarRender.file;
     const inputs = ['-i', composed, ...(bgmFile ? ['-stream_loop', '-1', '-i', bgmFile] : []), ...(narrationFile ? ['-i', narrationFile] : [])];
     const audio = plan.audio!;
     const tracks = [`[0:a]volume=${audio.originalVolume}[original]`]; const labels = ['[original]'];
@@ -140,7 +143,7 @@ export async function renderTimeline(inputPlan: EditPlan, media: MediaItem[], me
     if (hasText) await writeFile(assFile, createAss(plan));
     const fontsDir = process.env.QINGJIAN_FONTS_DIR || (existsSync('/System/Library/Fonts') ? '/System/Library/Fonts' : '/usr/share/fonts');
     await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', ...inputs, '-filter_complex_threads', '1', '-filter_complex', tracks.join(';'), '-map', '0:v:0', '-map', '[a]', ...(hasText ? ['-vf', `ass=filename='${filterPath(assFile)}':fontsdir='${filterPath(fontsDir)}'`, '-c:v', 'libx264', '-threads', '2', '-preset', 'veryfast', '-crf', '23'] : ['-c:v', 'copy']), '-t', String(plan.targetSeconds), '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', output]);
-    await writeFile(path.join(exportDir, `${id}.render.json`), JSON.stringify({ planHash: planHash(inputPlan), width, height, duration: plan.targetSeconds, captions: plan.captions?.length || 0, overlays: plan.overlays?.length || 0, motions: plan.motions || [], drawingEngine: drawings ? 'GSAP/HyperFrames' : null, audioNormalization:audio.normalize?{mode:'segment-two-pass+mix-two-pass',targetLufs:SOUND_LIMITS.targetLufs,targetTruePeakDb:SOUND_LIMITS.truePeakDb,segments:segmentMeasurements,mix:mixMeasurement,mixFilter:mixNormalize}:undefined, narration: Boolean(narrationFile), generatedNarration: plan.reconstruction?.beats.filter(b=>b.mode==='generated').map(b=>({beatId:b.id,mediaId:b.mediaId,audioHash:b.audioHash,referenceHash:plan.reconstruction?.voiceReference?.audioHash})), htmlScenes: plan.reconstruction?.beats.filter(b=>b.visual==='html').map(b=>({beatId:b.id,mediaId:b.mediaId,htmlHash:b.htmlHash})), bgm: Boolean(bgmFile) }, null, 2));
+    await writeFile(path.join(exportDir, `${id}.render.json`), JSON.stringify({ planHash: planHash(inputPlan), width, height, duration: plan.targetSeconds, captions: plan.captions?.length || 0, overlays: plan.overlays?.length || 0, motions: plan.motions || [], drawingEngine: drawings ? 'GSAP/HyperFrames' : null, audioNormalization:audio.normalize?{mode:'segment-two-pass+mix-two-pass',targetLufs:SOUND_LIMITS.targetLufs,targetTruePeakDb:SOUND_LIMITS.truePeakDb,segments:segmentMeasurements,mix:mixMeasurement,mixFilter:mixNormalize}:undefined, narration: Boolean(narrationFile), generatedNarration: plan.reconstruction?.beats.filter(b=>b.mode==='generated').map(b=>({beatId:b.id,mediaId:b.mediaId,audioHash:b.audioHash,referenceHash:plan.reconstruction?.voiceReference?.audioHash})), avatars: avatarRender.records, htmlScenes: plan.reconstruction?.beats.filter(b=>b.visual==='html').map(b=>({beatId:b.id,mediaId:b.mediaId,htmlHash:b.htmlHash})), bgm: Boolean(bgmFile) }, null, 2));
     return { id, file: output };
   } catch (error) { await rm(output, { force: true }); throw error; }
   finally { await rm(tempDir, { recursive: true, force: true }); }

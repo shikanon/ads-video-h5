@@ -58,6 +58,7 @@ chown -R "$build_user:$build_user" "$build_dir"
 runuser -u "$build_user" -- env -i PATH="$PATH" HOME="$cache/home" XDG_CACHE_HOME="$cache/home/.cache" \
   bash -c 'cd "$1" && pnpm install --frozen-lockfile && VITE_BASE_PATH=/qingjian/ pnpm build' _ "$build_dir"
 test -f "$build_dir/dist/index.html"
+test -f "$build_dir/dist/admin/index.html"
 # The oneshot unit has UMask=0077. Allow the separate runtime user to traverse
 # pnpm's virtual store and read the built assets after the directory swap.
 chmod -R a+rX "$build_dir/node_modules" "$build_dir/dist"
@@ -76,14 +77,15 @@ systemctl restart qingjian
 healthy=0
 for _ in $(seq 1 30); do
   if curl --fail --silent --output /dev/null http://127.0.0.1:8787/api/health \
-    && curl --fail --silent --output /dev/null http://127.0.0.1:8787/qingjian/; then
+    && curl --fail --silent --output /dev/null http://127.0.0.1:8787/qingjian/ \
+    && curl --fail --silent http://127.0.0.1:8787/admin/ | grep -q '管理控制台'; then
     healthy=1
     break
   fi
   sleep 1
 done
 if (( healthy != 1 )); then
-  echo 'New release did not pass local API and H5 checks.' >&2
+  echo 'New release did not pass local API, H5 and admin checks.' >&2
   exit 1
 fi
 switched=0

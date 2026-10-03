@@ -6,7 +6,6 @@ import { rm } from 'node:fs/promises';
 import {
   deleteModel,
   getDefaultTextModelId,
-  isAdminToken,
   listAdminModels,
   setDefaultTextModelId,
   upsertModel,
@@ -16,6 +15,8 @@ import type { createEffectStore, EffectValues, HtmlEffect } from './htmlEffects'
 import { MAX_MEDIA_UPLOAD_BYTES } from '../src/uploadLimits';
 import { mountEvaluationRoutes } from './evaluationRoutes';
 import type { Evaluations } from './evaluations';
+import { effectPreview } from './effectPreview';
+import type { AdminAuth } from './adminAuth';
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : '操作失败，请重试。';
@@ -42,7 +43,7 @@ function parseModel(body: unknown, id?: string): Partial<ModelConfig> & Pick<Mod
   };
 }
 
-export function mountAdminRoutes(app: Express, effects: ReturnType<typeof createEffectStore>, publicBase = '', evaluations?: Evaluations): void {
+export function mountAdminRoutes(app: Express, effects: ReturnType<typeof createEffectStore>, adminAuth: AdminAuth, publicBase = '', evaluations?: Evaluations): void {
   const router = Router();
   const assetUpload = multer({ storage: multer.diskStorage({ destination: effects.uploadsDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: MAX_MEDIA_UPLOAD_BYTES, files: 1 } });
   const previewAssetUrl = (request: Request, values?: Partial<EffectValues>) => {
@@ -52,18 +53,7 @@ export function mountAdminRoutes(app: Express, effects: ReturnType<typeof create
     const fallback = `${request.protocol}://${request.get('host')}${publicBase}/api/effects/assets/${asset.id}`;
     return effects.publicAssetUrl(asset, fallback);
   };
-  router.use(async (request: Request, response: Response, next) => {
-    try {
-      const token = /^Bearer (.+)$/i.exec(request.header('authorization') || '')?.[1] || '';
-      if (!token || !(await isAdminToken(token))) {
-        response.status(401).json({ error: '管理员令牌无效。' });
-        return;
-      }
-      next();
-    } catch (error) {
-      response.status(500).json({ error: message(error) });
-    }
-  });
+  router.use(adminAuth.requireAdmin);
 
   if (evaluations) mountEvaluationRoutes(router, evaluations);
 
@@ -130,7 +120,7 @@ export function mountAdminRoutes(app: Express, effects: ReturnType<typeof create
   });
   router.get('/effects/renders', (_request, response) => response.json({ renders: effects.listRenders().map((render) => ({ id: render.id, effectId: render.effectId, status: render.status, createdAt: render.createdAt, error: render.error, downloadUrl: render.status === 'succeeded' ? `/api/admin/effects/renders/${render.id}/download` : undefined })) }));
   router.post('/effects/preview-draft', async (request, response) => {
-    try { response.json({ html: await effects.compile(request.body?.effect as HtmlEffect, request.body?.values as Partial<EffectValues>, true, previewAssetUrl(request, request.body?.values)) }); }
+    try { const effect = request.body?.effect as HtmlEffect; response.json(effectPreview(await effects.compile(effect, request.body?.values as Partial<EffectValues>, true, previewAssetUrl(request, request.body?.values)), effect.duration)); }
     catch (error) { response.status(400).json({ error: message(error) }); }
   });
   router.post('/effects', async (request, response) => {
@@ -149,7 +139,7 @@ export function mountAdminRoutes(app: Express, effects: ReturnType<typeof create
     try {
       const effect = effects.get(request.params.id);
       if (!effect) return response.status(404).json({ error: '特效不存在。' });
-      response.json({ html: await effects.compile(effect, request.body?.values as Partial<EffectValues>, true, previewAssetUrl(request, request.body?.values)) });
+      response.json(effectPreview(await effects.compile(effect, request.body?.values as Partial<EffectValues>, true, previewAssetUrl(request, request.body?.values)), effect.duration));
     } catch (error) { response.status(400).json({ error: message(error) }); }
   });
   router.post('/effects/:id/render', async (request, response) => {

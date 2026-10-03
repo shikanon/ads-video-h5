@@ -5,15 +5,16 @@ import type { LessonReport } from '../src/types';
 export function reviewFindings(value:unknown):string[]{
   if(!Array.isArray(value))throw new Error('审查问题须为数组。');
   return value.map(v=>{
-    if(typeof v==='string')return v;
+    if(typeof v==='string'){if(!v.trim())throw new Error('审查问题缺少可读的修正要求。');return v;}
     if(!v||typeof v!=='object'||Array.isArray(v))throw new Error('审查问题缺少可读的修正要求。');
     const item=v as Record<string,unknown>;
-    const issue=item.finding||item.issue||item.problem||item.error||item.message||item.detail||item.requirement||item.description||item.content||item.text||item.suggestion;
-    const repair=item.repair||item.fix||(item.finding||item.issue||item.problem?item.requirement:undefined)||(item.suggestion!==issue?item.suggestion:undefined);
+    const issue=item.finding||item.issue||item.problem||item.error||item.message||item.detail||item.requirement||item.description||item.content||item.text||item.suggestion||item['问题']||item['本版错误原句']||item['建议']||item['修复要求']||item['修正要求'];
+    const repair=item.repair||item.fix||item['修复要求']||item['修正要求']||(item.finding||item.issue||item.problem?item.requirement:undefined)||(item.suggestion!==issue?item.suggestion:undefined);
     if(typeof issue!=='string'||!issue.trim()||repair!==undefined&&typeof repair!=='string')throw new Error('审查问题缺少可读的修正要求。');
-    const id=item.chapterId||item.chapter||item.id;
-    const evidence=typeof item.evidence==='string'?item.evidence.trim():'';
-    return `${typeof id==='string'?id+'：':''}${issue}${evidence?' 依据：'+evidence:''}${repair?' 修正：'+repair:''}`;
+    const id=item.chapterId||item.chapter||item.id||item['章节ID']||item['章节']||item['分镜ID'];
+    const rawEvidence=item.evidence||item['证据'];
+    const evidence=typeof rawEvidence==='string'?rawEvidence.trim():'';
+    return `${typeof id==='string'?id+'：':''}${issue}${evidence?' 依据：'+evidence:''}${repair&&repair!==issue?' 修正：'+repair:''}`;
   });
 }
 

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { BarChart3, Check, Download, Film, Play, Plus, Settings2, Square, Upload, X } from 'lucide-react';
-import type { EvaluationCase, EvaluationCategory, EvaluationFixture, EvaluationResult, EvaluationRun, EvaluationRunSummary } from './evaluationTypes';
-import { WorkflowTrace } from './WorkflowTrace';
-import { MAX_MEDIA_UPLOAD_BYTES } from './uploadLimits';
+import type { EvaluationCase, EvaluationCategory, EvaluationFixture, EvaluationResult, EvaluationRun, EvaluationRunSummary } from '../../../shared/evaluationTypes';
+import { WorkflowTrace } from '../../../shared/WorkflowTrace';
+import { MAX_MEDIA_UPLOAD_BYTES } from '../../../shared/uploadLimits';
 import './evaluations.css';
+import { apiPath } from './api';
 
 const categoryNames: Record<EvaluationCategory, string> = { 'hot-news': '热点新闻', knowledge: '知识科普', 'multi-video': '多素材剪辑' };
-const apiPath = (url: string) => `${import.meta.env.BASE_URL.replace(/\/$/, '')}${url}`;
 async function api<T>(url: string, token: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiPath(`/api/admin/evaluations${url}`), { ...init, headers: { Authorization: `Bearer ${token}`, ...(init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}) } });
   const body = await response.json() as T & { error?: string };

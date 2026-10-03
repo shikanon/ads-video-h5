@@ -376,3 +376,12 @@ test('framework parameter rejections are visible even when the tool body never e
   listener({type:'tool_execution_end',toolCallId:'sdk-rejected',toolName:'write_lesson_script',isError:true,result:{content:[{type:'text',text:'Schema invalid credential-value'}]}});
   await drain();assert.equal(trace.events[0].status,'failed');assert.equal(trace.events[0].callId,'sdk-rejected');assert.ok(!trace.events[0].detail?.includes('credential-value'));
 });
+
+
+test('Chinese fact-review issue objects retain evidence and correction and cannot silently pass',()=>{
+  const result=validateLessonFactReview({score:92,needsRepair:false,findings:[{'章节ID':'ch3','本版错误原句':'误差一定下降','证据':'步长过大可能震荡','修复要求':'限定合适的学习率'}],suggestions:[{'章节ID':'ch1','建议':'增加坡度比喻'}]});
+  assert.equal(result.needsRepair,true);
+  assert.deepEqual(result.findings,['ch3：误差一定下降 依据：步长过大可能震荡 修正：限定合适的学习率']);
+  assert.deepEqual(result.suggestions,['ch1：增加坡度比喻']);
+  assert.throws(()=>validateLessonFactReview({score:90,needsRepair:false,findings:['']}),/缺少/);
+});

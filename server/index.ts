@@ -6,18 +6,20 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AppSettings, AppState, Artifact, ChatMessage, Job, JobKind, MediaItem, Session } from '../src/types';
-import { answerWithPi, createImagePromptWithPi, createMusicQueryWithPi, createNarrationWithPi, createPlanWithPi, detectImage, detectShots, probeAudio, probeVideo, renderPlan, runFFmpeg } from './core';
+import { answerWithPi, createImagePromptWithPi, createMusicQueryWithPi, createNarrationWithPi, createPlanWithPi, detectImage, detectShots, probeAudio, probeVideo, renderPlan as renderBasePlan, runFFmpeg } from './core';
 import { writePresetBgm } from './bgm';
 import { download24bitAudio, downloadPixabayAudio, getPixabayTrackDetail, MusicSourceError, musicSearchLinks, pixabayAudioUrl, search24bitMusic, searchPixabayMusic } from './music';
 import { getDefaultTextModelId, getModelConfig, listPublicModels } from './modelRegistry';
 import { generateAudio, generateImage, ProviderError } from './providers';
 import { mountAdminRoutes } from './adminRoutes';
+import { createAdminAuth } from './adminAuth';
+import { mountFrontendRoutes } from './frontendRoutes';
 import { createAuth, userOf, type PublicUser } from './auth';
 import { createOssStorage, type AssetCategory } from './ossStorage';
 import { createEffectStore, type EffectValues } from './htmlEffects';
 import { classify, shouldUpdatePlan, excludesBgm, narrativeRequest, lessonRequest, wantsCurrentResearchOnly, selectedHotVideoRequest } from './intents';
 import { createAudioUnderstanding } from './audioUnderstanding';
-import { reviewRender } from './renderReview';
+import { reviewRender as reviewBaseRender } from './renderReview';
 import { recordVoiceRejection, reportsVoiceMismatch } from './audioQuality';
 import { planHash, recoverPublishedPlan } from './renderTimeline';
 import { runEditorialWorkflow } from './editorialWorkflow';
@@ -35,6 +37,9 @@ import { createJobRunner, restoreInterruptedJobs } from './jobRunner';
 import { createEvaluations, evaluationFileHash, evaluationImplementation, EvaluationError } from './evaluations';
 import { privateEvaluationStorage, isEvaluationOwner } from './evaluationIsolation';
 import { withModelSnapshot, type ModelSnapshot } from './modelContext';
+import { mountAvatarRoutes } from './avatarRoutes';
+import { excludesAvatar, generateAuthorSprite, planAuthorAvatar, usesAvatar } from './avatarWorkflow';
+import { createToolTrace } from './toolTrace';
 import { isActiveJob } from '../src/jobStatus';
 import { needsCreativeRouting, resolveCreativeRequest } from './creativeRequest';
 
@@ -131,7 +136,7 @@ const extFor = (mime: string) => mime === 'image/jpeg' ? 'jpg' : mime === 'image
 async function publicState(user: PublicUser): Promise<AppState> {
   const [models, profile] = await Promise.all([listPublicModels(), profileOf(user)]);
   const textConfig = await getModelConfig('text', getSession(profile.activeSessionId, user.id)?.modelId);
-  return { activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.coverUrl ? { coverUrl: assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
+  return { activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.coverUrl ? { coverUrl: assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
 }
 
 function addReply(session: Session, job: Job, text: string, artifactId?: string) {
@@ -194,11 +199,58 @@ async function performJob(job: Job): Promise<void> {
   const selectedSources = () => sessionSources(prompt,media,attached,session.plan,history);
   const workflowProgress = async (events:NonNullable<Job['workflow']>) => {
     throwIfJobCancelled();
-    job.workflow=structuredClone(events);recordWorkflowReply(session,job,events);
+    job.workflow=structuredClone([...(job.workflow||[]).filter(e=>!events.some(v=>v.callId&&v.callId===e.callId)),...events]);recordWorkflowReply(session,job,events);
     job.stage=[...events].reverse().find(e=>e.status==='running')?.stage||events.at(-1)?.stage;
     job.progress=Math.max(job.progress||0,Math.min(88,10+events.filter(e=>e.status==='succeeded').length*2));await saveState();
   };
-  const basicProgress = (events:NonNullable<Job['workflow']>) => workflowProgress([...(job.workflow||[]).filter(e=>!events.some(v=>v.callId===e.callId)),...events]);
+  const basicProgress = workflowProgress;
+  if(job.kind==='avatar') {
+    const source=media.find(m=>m.id===job.avatarSourceId&&m.character?.role==='reference');
+    if(!source)throw new Error('形象原图不存在。');
+    const imageConfig=await getModelConfig('image');if(!imageConfig)throw new Error('图片模型尚未配置。');
+    const compiled=await generateAuthorSprite(await readFile(path.join(mediaDir,source.id)),imageConfig,basicProgress);
+    throwIfJobCancelled();const id=randomUUID(),file=path.join(mediaDir,id);
+    try{await writeFile(file,compiled.bytes,{mode:0o600});throwIfJobCancelled();}
+    catch(error){await rm(file,{force:true});throw error;}
+    state.media.push({id,ownerId:job.ownerId,name:source.name+' · 动画',mimeType:'image/png',kind:'image',url:`/api/media/${id}`,createdAt:now(),origin:'generated',character:{role:'sprite',referenceMediaId:source.id,sprite:compiled.sprite}});
+    addReply(session,job,`「${source.name}」的 8 帧透明动画已生成并保存到作者形象，默认 6 fps 循环。设为默认作者后，后续视频会使用这个动画。`);
+    await saveState();return;
+  }
+  let avatarPlacement:NonNullable<Session['plan']>['avatars']|undefined;
+  let avatarPlanned=false;
+  const avatarModeAtStart=session.plan?.authorAvatarMode;
+  const avatarTrace=createToolTrace(basicProgress);
+  if(job.kind==='plan'&&session.plan&&(excludesAvatar(prompt)||usesAvatar(prompt))){
+    const next=structuredClone(session.plan);
+    const selected=attached.find(m=>m.character?.role==='sprite')||media.find(m=>m.id===job.authorAvatarId&&m.character?.role==='sprite');
+    if(usesAvatar(prompt)&&!selected)throw new Error('请先在作者形象中设定默认动画。');
+    const config=await getModelConfig('text',session.modelId);if(!config)throw new Error('作者形象编排需要文本模型。');
+    await planAuthorAvatar(next,selected,media,prompt,config,basicProgress);
+    next.version=(session.plan.version||0)+1;session.plan=next;
+    addReply(session,job,excludesAvatar(prompt)?'已从当前方案移除作者形象，发送“生成成片”可导出。':'已在当前方案加入作者动画，发送“生成成片”可导出。');await saveState();return;
+  }
+  const reviewRender:typeof reviewBaseRender=(file,next,items,request)=>next.avatars?.length
+    ?avatarTrace.run('review_author_video','检查作者动画、画面与声音',{planHash:planHash(next)},()=>reviewBaseRender(file,next,items,request))
+    :reviewBaseRender(file,next,items,request);
+  const renderPlan:typeof renderBasePlan=async(next,items,dir,out,narration,bgm)=>{
+    if(job.kind!=='review'){
+      next.authorAvatarMode ??= avatarModeAtStart;
+      const selected=attached.find(m=>m.character?.role==='sprite')||media.find(m=>m.id===job.authorAvatarId&&m.character?.role==='sprite');
+      if(usesAvatar(prompt)&&!selected)throw new Error('请先在作者形象中设定默认动画。');
+      if(!avatarPlanned){
+        const config=selected&&await getModelConfig('text',session.modelId);
+        if(selected&&!config)throw new Error('作者形象编排需要文本模型。');
+        if(config)await planAuthorAvatar(next,selected,media,prompt,config,basicProgress);
+        else next.avatars=[];
+        avatarPlacement=next.avatars;avatarPlanned=true;
+      }
+      next.avatars=avatarPlacement?.map(t=>({...t,end:next.targetSeconds}))||[];
+      await saveState();
+    }
+    return next.avatars?.length
+      ?avatarTrace.run('render_author_video','渲染作者动画与主视频',{planHash:planHash(next),avatars:next.avatars},()=>renderBasePlan(next,items,dir,out,narration,bgm))
+      :renderBasePlan(next,items,dir,out,narration,bgm);
+  };
   const prepareSpeech = async () => {
     if (/字幕|精剪|重复|去重|完整句|观点|口播|原声|论证|结论|精彩|钩子|subtitle|caption|fine.cut/i.test(prompt)) {
       for (const item of selectedSources().filter((m) => m.kind === 'video')) await analyzeAudio(item.id);
@@ -236,7 +288,7 @@ async function performJob(job: Job): Promise<void> {
     if (!effect) throw new Error('特效库暂无可用模板，请联系管理员启用。');
     const title = /(?:标题|文案)[：:]?\s*[“「\"]([^”」\"]{1,60})[”」\"]/.exec(prompt)?.[1] || /[“「\"]([^”」\"]{1,60})[”」\"]/.exec(prompt)?.[1];
     const subtitle = /(?:副标题|说明)[：:]?\s*[“「\"]([^”」\"]{1,120})[”」\"]/.exec(prompt)?.[1];
-    const visual = attached.find((item) => item.kind === 'image' || item.kind === 'video');
+    const visual = attached.find((item) => !item.character && (item.kind === 'image' || item.kind === 'video'));
     const values: Partial<EffectValues> = { ...(title ? { title } : {}), ...(subtitle ? { subtitle } : {}) };
     updateReply(session,job,`已选择「${effect.name}」，正在制作 HTML 动效画面。`,'commentary','effect-design');await saveState();
     if (visual) await oss?.ensure(job.ownerId!, 'media', visual.id, path.join(mediaDir, visual.id));
@@ -248,21 +300,31 @@ async function performJob(job: Job): Promise<void> {
     }
     if (render.status !== 'succeeded' || !render.file) throw new Error(render.error || '特效渲染失败。');
     updateReply(session,job,'HTML 动效已渲染，正在保存视频和预览文件。','commentary','effect-save');await saveState();
-    const id = randomUUID(); const mediaId = randomUUID();
-    const destination = path.join(exportDir, `${id}.mp4`);
+    let id: string = randomUUID(); const mediaId = randomUUID();
     const mediaFile = path.join(mediaDir, mediaId);
+    const raw:MediaItem={id:mediaId,ownerId:job.ownerId,name:effect.name+' · HTML 画面',mimeType:'video/mp4',kind:'video',duration:effect.duration,url:`/api/media/${mediaId}`,createdAt:now(),origin:'generated'};
+    const effectPlan:NonNullable<Session['plan']>={format:effect.width===effect.height?'1:1':effect.width>effect.height?'16:9':'9:16',targetSeconds:effect.duration,summary:effect.name,clips:[{sourceId:mediaId,start:0,end:effect.duration}]};
+    let destination=path.join(exportDir,`${id}.mp4`),effectReview:Artifact['review'];
+    const withAuthor=Boolean(job.authorAvatarId||attached.some(m=>m.character?.role==='sprite'));
     try {
-      await copyFile(render.file, destination); await copyFile(render.file, mediaFile);
+      await copyFile(render.file,mediaFile);
+      if(withAuthor){
+        const available=[...media,raw],result=await renderPlan(effectPlan,available,mediaDir,exportDir);
+        id=result.id;destination=result.file;
+        effectReview=await reviewRender(destination,effectPlan,available,prompt);
+        session.plan=effectPlan;
+      }else await copyFile(render.file,destination);
       await oss?.put(job.ownerId!, 'exports', id, destination, 'video/mp4');
       await oss?.put(job.ownerId!, 'media', mediaId, mediaFile, 'video/mp4');
+      throwIfJobCancelled();
     } catch (error) {
       await Promise.all([rm(destination, { force: true }), rm(mediaFile, { force: true })]);
       if (oss) await Promise.allSettled([oss.remove(job.ownerId!, 'exports', id), oss.remove(job.ownerId!, 'media', mediaId)]);
       throw error;
     }
     const version = state.artifacts.filter((item) => item.sessionId === session.id && item.kind === 'video').length + 1;
-    state.artifacts.push({ id, ownerId: job.ownerId, sessionId: session.id, messageId: message.id, kind: 'video', name: `${effect.name}-v${version}.mp4`, url: `/api/artifacts/${id}`, downloadUrl: `/api/download/${id}`, createdAt: now(), version, duration: effect.duration, format: effect.width === effect.height ? '1:1' : effect.width > effect.height ? '16:9' : '9:16', mediaId });
-    state.media.push({ id: mediaId, ownerId: job.ownerId, name: `${effect.name}-v${version}.mp4`, mimeType: 'video/mp4', kind: 'video', duration: effect.duration, url: `/api/media/${mediaId}`, createdAt: now(), origin: 'generated' });
+    state.artifacts.push({ id, ownerId: job.ownerId, sessionId: session.id, messageId: message.id, kind: 'video', name: `${effect.name}-v${version}.mp4`, url: `/api/artifacts/${id}`, downloadUrl: `/api/download/${id}`, createdAt: now(), version, duration: effect.duration, format:effectPlan.format, mediaId,...(withAuthor?{plan:structuredClone(effectPlan),planHash:planHash(effectPlan),review:effectReview,workflow:structuredClone(job.workflow)}:{}) });
+    state.media.push(raw);
     job.artifactId = id;
     addReply(session, job, `已用「${effect.name}」生成 ${effect.duration} 秒 HTML 动效视频，可预览、下载，也已加入素材库用于后续剪辑。`, id);
     return;
@@ -304,6 +366,16 @@ async function performJob(job: Job): Promise<void> {
     const reply=session.messages.find(m=>m.role==='assistant'&&m.jobId===job.id);if(reply)reply.research={brief,references:result.references};return;
   }
   const selectedHotPrompt=selectedHotVideoRequest(prompt,history);
+  if(job.kind==='export'&&session.plan?.lesson&&!session.plan.lesson.hotResearch&&!shouldUpdatePlan(prompt,true)){
+    const plan=structuredClone(session.plan),result=await renderPlan(plan,media,mediaDir,exportDir);
+    const review=await reviewRender(result.file,plan,media,prompt+'，字幕和声音一致性检查');
+    await oss?.put(job.ownerId!,'exports',result.id,result.file,'video/mp4');
+    session.plan=plan;
+    const version=state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1;
+    state.artifacts.push({id:result.id,ownerId:job.ownerId,sessionId:session.id,messageId:message.id,kind:'video',name:`轻剪教学视频-v${version}.mp4`,url:`/api/artifacts/${result.id}`,downloadUrl:`/api/download/${result.id}`,createdAt:now(),version,duration:plan.targetSeconds,format:plan.format,plan:structuredClone(plan),workflow:structuredClone(job.workflow||[]),review,planHash:planHash(plan),hasNarration:true,hasBgm:false});
+    job.artifactId=result.id;
+    addReply(session,job,`教学视频 v${version} 已重新导出：${plan.lesson!.title}，${plan.targetSeconds.toFixed(1)}秒。沿用当前已审查的图解与旁白，审查${review.score}/100，${review.status==='passed'?'本次检查通过':'仍需复核'}。可预览、下载。`,result.id);return;
+  }
   let lessonPrompt=selectedHotPrompt&&/第\s*(?:\d+|一|二|三)/.test(prompt)?selectedHotPrompt:lessonRequest(prompt,history,Boolean(session.plan?.lesson||session.lessonDraft),session.lessonDraft||session.plan?.lesson)||selectedHotPrompt;
   const sourceCount=selectedSources().filter(m=>m.kind!=='audio').length;
   if(!lessonPrompt&&(job.kind==='plan'||job.kind==='export')&&(needsCreativeRouting(prompt,Boolean(session.plan))||job.kind==='export'&&!session.plan&&!sourceCount)){
@@ -330,7 +402,7 @@ async function performJob(job: Job): Promise<void> {
     const plan=workflow.plan!,result=workflow.rendered!,review=workflow.review!;
     await oss?.put(job.ownerId!,'exports',result.id,result.file,'video/mp4');
     const version=state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1;
-    state.artifacts.push({id:result.id,ownerId:job.ownerId,sessionId:session.id,messageId:message.id,kind:'video',name:`轻剪${plan.lesson?.hotResearch?'新闻资讯':'教学'}视频-v${version}.mp4`,url:`/api/artifacts/${result.id}`,downloadUrl:`/api/download/${result.id}`,createdAt:now(),version,duration:plan.targetSeconds,format:plan.format,plan:structuredClone(plan),workflow:structuredClone(workflow.events),review,planHash:planHash(plan),hasNarration:true,hasBgm:Boolean(plan.lesson?.presentation?.bgm)});
+    state.artifacts.push({id:result.id,ownerId:job.ownerId,sessionId:session.id,messageId:message.id,kind:'video',name:`轻剪${plan.lesson?.hotResearch?'新闻资讯':'教学'}视频-v${version}.mp4`,url:`/api/artifacts/${result.id}`,downloadUrl:`/api/download/${result.id}`,createdAt:now(),version,duration:plan.targetSeconds,format:plan.format,plan:structuredClone(plan),workflow:structuredClone(job.workflow||workflow.events),review,planHash:planHash(plan),hasNarration:true,hasBgm:Boolean(plan.lesson?.presentation?.bgm)});
     job.artifactId=result.id;
     addReply(session,job,`${plan.lesson?.hotResearch?'新闻资讯视频':'教学视频'} v${version} 已生成：${plan.lesson!.title}，${plan.clips.length}章，${plan.targetSeconds.toFixed(1)}秒。${plan.lesson?.hotResearch?'已核验近期报道，完成新闻图解、播报旁白'+(plan.lesson.presentation?.bgm?'与氛围配乐':''):'采用图解画面与统一旁白'}，审查${review.score}/100，${review.status==='passed'?'本次检查通过':'仍需复核'}。可预览、下载，并展开${plan.lesson?.hotResearch?'新闻':'教学'}脚本和制作记录查看依据。`,result.id);return;
   }
@@ -385,7 +457,7 @@ async function performJob(job: Job): Promise<void> {
     if (!config) throw new Error('文本模型尚未配置。');
     const sources = selectedSources().filter((m) => m.kind === 'video');
     if (!sources.length) throw new Error('精剪需要视频素材。');
-    return { prompt, config, sources, media, decorate: withCover, previous: session.plan, preserveSelection: Boolean(session.plan?.editorial && /保留当前(?:的)?(?:四段)?(?:分镜|片段)|只(?:修改|修复|调整)字幕/.test(prompt) && !/重新选句|更换|替换|改选/.test(prompt)), transcribe: analyzeAudio, verifySelection: (scenes: Parameters<typeof verifySceneQuotes>[0]) => verifySceneQuotes(scenes,sources,path.join(dataDir,'sentence-audit')), inspect: async (scene: Parameters<typeof inspectScene>[0]) => { await oss?.ensure(job.ownerId!, 'media', scene.sourceId, path.join(mediaDir, scene.sourceId)); return inspectScene(scene, mediaDir, path.join(dataDir, 'scene-understanding')); }, persist: async (plan: NonNullable<Session['plan']>) => { session.plan = plan; await saveState(); }, progress: async (events: NonNullable<Job['workflow']>) => { job.workflow = structuredClone(events); recordWorkflowReply(session,job,events); job.stage = events.at(-1)?.stage; job.progress = Math.min(88, 10 + events.filter((e) => e.status === 'succeeded').length * 6); await saveState(); } };
+    return { prompt, config, sources, media, decorate: withCover, previous: session.plan, preserveSelection: Boolean(session.plan?.editorial && /保留当前(?:的)?(?:四段)?(?:分镜|片段)|只(?:修改|修复|调整)字幕/.test(prompt) && !/重新选句|更换|替换|改选/.test(prompt)), transcribe: analyzeAudio, verifySelection: (scenes: Parameters<typeof verifySceneQuotes>[0]) => verifySceneQuotes(scenes,sources,path.join(dataDir,'sentence-audit')), inspect: async (scene: Parameters<typeof inspectScene>[0]) => { await oss?.ensure(job.ownerId!, 'media', scene.sourceId, path.join(mediaDir, scene.sourceId)); return inspectScene(scene, mediaDir, path.join(dataDir, 'scene-understanding')); }, persist: async (plan: NonNullable<Session['plan']>) => { session.plan = plan; await saveState(); }, progress: basicProgress };
   };
   const narrativeOptions = async (exportVideo: boolean, bgmFile?: string): Promise<Parameters<typeof runNarrativeWorkflow>[0]> => {
     const config = await getModelConfig('text', session.modelId);
@@ -401,7 +473,7 @@ async function performJob(job: Job): Promise<void> {
       transcribe: analyzeAudio, verifySelection: scenes => verifySceneQuotes(scenes,sources,path.join(dataDir,'sentence-audit')),
       register: async item => { throwIfJobCancelled();await oss?.put(job.ownerId!, 'media', item.id, path.join(mediaDir,item.id),item.mimeType);throwIfJobCancelled();state.media.push(item);await saveState(); },
       persist: async next => {throwIfJobCancelled();session.plan=next;await saveState();},
-      progress: async events => {job.workflow=structuredClone(events);recordWorkflowReply(session,job,events);job.stage=events.at(-1)?.stage;job.progress=Math.min(88,10+events.filter(e=>e.status==='succeeded').length*6);await saveState();},
+      progress: basicProgress,
       render: next => renderPlan(next,media,mediaDir,exportDir,undefined,bgmFile),review: (file,next) => reviewRender(file,next,media,reconstructionPrompt+'，同步字幕') };
   };
   if (job.kind === 'export') {
@@ -567,7 +639,7 @@ async function processQueue() {
           const message = error instanceof Error ? error.message : '处理失败';
           job.error = error instanceof ProviderError
             ? `${error.message}（${error.code}${error.status ? ` / HTTP ${error.status}` : ''}）`
-            : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件|音频理解|语义分句|字幕|分句|特效|重构工作流未完成|教学工作流未完成|教学研究|教学视频|热点研究/.test(message)
+            : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件|音频理解|语义分句|字幕|分句|特效|重构工作流未完成|教学工作流未完成|教学研究|教学视频|热点研究|形象|动画/.test(message)
               ? message : '生成失败，请检查模型配置、素材格式或网络后重试。';
           const session = getSession(job.sessionId);
           if (session) addReply(session, job, `本次处理未完成：${job.error}`);
@@ -585,6 +657,9 @@ function enqueueAgentMessage(session: Session, text: string, attachmentIds: stri
   const createdAt = now();
   const message: ChatMessage = { id: randomUUID(), role: 'user', text, createdAt, attachmentIds };
   const job: Job = { id: randomUUID(), ownerId: session.ownerId, sessionId: session.id, messageId: message.id, kind: classify(text), status: 'queued', createdAt, updatedAt: createdAt, progress: 0 };
+  // Freeze the selected asset when the request is accepted, so a UI switch
+  // during a long render cannot change this job's author identity.
+  job.authorAvatarId=state.profiles[session.ownerId!]?.settings.authorAvatarId||null;
   message.jobId = job.id;
   session.messages.push(message);
   if (session.title === '新对话' || session.title === '新会话') session.title = text.slice(0, 24);
@@ -650,7 +725,10 @@ await evaluations.init();
 const app = express();
 app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
-mountAdminRoutes(app, effects, publicBase, evaluations);
+const adminAuth = createAdminAuth(dataDir);
+await adminAuth.load();
+adminAuth.mount(app);
+mountAdminRoutes(app, effects, adminAuth, publicBase, evaluations);
 app.get('/api/effects', (_request, response) => response.json({ effects: effects.list().filter((item) => item.enabled).map(({ id, name, description, duration, width, height }) => ({ id, name, description, duration, width, height })) }));
 app.get('/api/effects/assets/:id', async (request, response) => {
   const asset = effects.getAsset(request.params.id);
@@ -661,6 +739,17 @@ app.get('/api/effects/assets/:id', async (request, response) => {
 const auth = createAuth(dataDir, publicBase);
 await auth.load();
 auth.mount(app);
+mountAvatarRoutes(app,{
+  media:()=>state.media,mediaDir,tmpDir,save:saveState,publicState,
+  settings:async user=>(await profileOf(user)).settings,session:getSession,
+  generate(session,source){
+    const busy=state.jobs.find(j=>j.ownerId===session.ownerId&&j.kind==='avatar'&&j.avatarSourceId===source.id&&['queued','running','stopping'].includes(j.status));
+    if(busy)return;
+    const timestamp=now(),message:ChatMessage={id:randomUUID(),role:'user',text:`为「${source.name}」生成透明作者动画`,createdAt:timestamp,attachmentIds:[source.id]};
+    const job:Job={id:randomUUID(),ownerId:session.ownerId,sessionId:session.id,messageId:message.id,kind:'avatar',avatarSourceId:source.id,status:'queued',createdAt:timestamp,updatedAt:timestamp,progress:0};
+    message.jobId=job.id;session.messages.push(message);state.jobs.push(job);session.updatedAt=timestamp;
+  },process:()=>void processQueue(),
+});
 const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: MAX_MEDIA_UPLOAD_BYTES, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
 function musicErrorResponse(response: Response, error: unknown) {
   if (error instanceof MusicSourceError) {
@@ -799,6 +888,8 @@ app.delete('/api/media/:id', async (request, response) => {
   const item = state.media.find((media) => media.id === request.params.id && owned(media, user.id));
   if (!item) return response.status(404).json({ error: '素材不存在。' });
   state.media = state.media.filter((media) => media.id !== item.id);
+  const profile=await profileOf(user);
+  if(profile.settings.authorAvatarId===item.id)profile.settings.authorAvatarId=null;
   for (const session of state.sessions) if (owned(session, user.id) && (session.plan?.clips.some((clip) => clip.sourceId === item.id) || session.plan?.coverMediaId === item.id)) session.plan = null;
   for (const artifact of state.artifacts) if (owned(artifact, user.id) && artifact.mediaId === item.id) artifact.mediaId = undefined;
   await saveState(); await rm(path.join(mediaDir, item.id), { force: true }); await audioUnderstanding.remove(item.id);
@@ -886,8 +977,7 @@ app.patch('/api/settings', async (request, response) => {
   if ('chatBackground' in body) profile.settings.chatBackground = body.chatBackground!;
   await saveState(); response.json(await publicState(user));
 });
-app.use(((error, _request, response, _next) => { if (error instanceof multer.MulterError) { response.status(400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? '单个文件不能超过 100 MB，请先压缩。' : '一次最多上传 6 个文件。' }); return; } response.status(500).json({ error: '处理请求时出错，请重试。' }); }) satisfies ErrorRequestHandler);
-app.use(express.static(path.join(root, 'dist')));
-app.get('/{*path}', (_request, response) => response.sendFile(path.join(root, 'dist', 'index.html')));
+app.use(((error, request, response, _next) => { if (error instanceof multer.MulterError) { response.status(400).json({ error: request.path.startsWith('/api/avatars') ? (error.code === 'LIMIT_FILE_SIZE' ? '形象图片不能超过 20 MB。' : '每次只能上传一张形象图片。') : error.code === 'LIMIT_FILE_SIZE' ? '单个文件不能超过 100 MB，请先压缩。' : '一次最多上传 6 个文件。' }); return; } response.status(500).json({ error: '处理请求时出错，请重试。' }); }) satisfies ErrorRequestHandler);
+mountFrontendRoutes(app, path.join(root, 'dist'), publicBase);
 app.listen(port, '127.0.0.1', () => console.log(`轻剪 API listening on http://127.0.0.1:${port}`));
 void processQueue();
