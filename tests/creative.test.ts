@@ -180,6 +180,25 @@ test('production ASR keeps 5.1 followed by the 22nd distinct using the recorded 
   assert.throws(()=>alignLessonSpeech(chapter,correctLessonTranscript(chapter,wrong)),/数字|匹配/);
 });
 
+test('complete heard clauses separate a model version and date during fast speech without inserting words',()=>{
+  const chapter={id:'official',narration:'官方记录：九月一日Fable 5.1，九月二十二日Opus 5.5，九月二十八日Sonnet 5.5，Fable 5.5未列入。',visual:{items:[]}} as unknown as LessonChapter;
+  const audio=(text:string):AudioAnalysis=>({status:'ready',modelId:'test',sourceHash:'test',duration:20,transcript:text,sentences:[{id:'s',text,start:0,end:20,complete:true,words:[...text].map((text,i)=>({text,start:i*.1,end:(i+1)*.1}))}],pauses:[],timing:'model-estimated',warnings:[],createdAt:''});
+  const text='官方记录九月一日Fable五点一九月二十二日Opus五点五九月二十八日Sonnet五点五Fable五点五未列入';
+  const valid=audio(text),before=structuredClone(valid);assert.equal(alignLessonSpeech(chapter,valid).similarity,1);assert.deepEqual(valid,before);
+  assert.throws(()=>alignLessonSpeech(chapter,audio(text.replace('五点一九月','五点一九九月'))),/数字|匹配/,'an extra fractional digit cannot be hidden at a verified boundary');
+  assert.throws(()=>alignLessonSpeech(chapter,audio(text.replace('二十二日','二十三日'))),/日期数字|匹配|数字/);
+  assert.throws(()=>alignLessonSpeech(chapter,audio(text.replace('二十二日','二十二'))),/日期数字|匹配|数字/,'matching clauses never restore a missing spoken unit');
+});
+
+test('model version digits retain trailing zeros and distinguish 5.10 from 5.1',()=>{
+  assert.equal(compactSpeech('Fable 5.0'),compactSpeech('Fable五点零'));
+  assert.equal(compactSpeech('Fable 5.10'),compactSpeech('Fable五点一零'));
+  const chapter={id:'version',narration:'Fable 5.10仍需核查，等待官方公告。',visual:{items:[]}} as unknown as LessonChapter;
+  const audio=(text:string):AudioAnalysis=>({status:'ready',modelId:'test',sourceHash:'test',duration:10,transcript:text,sentences:[{id:'s',text,start:0,end:10,complete:true,words:[...text].map((text,i)=>({text,start:i*.1,end:(i+1)*.1}))}],pauses:[],timing:'model-estimated',warnings:[],createdAt:''});
+  assert.equal(alignLessonSpeech(chapter,audio('Fable五点一零仍需核查，等待官方公告。')).similarity,1);
+  assert.throws(()=>alignLessonSpeech(chapter,audio('Fable五点一仍需核查，等待官方公告。')),/数字|匹配/);
+});
+
 test('voice audit retries an incomplete response but preserves a real failed judgment and permanent HTTP errors',async()=>{
   const directory=await mkdtemp(path.join(tmpdir(),'qingjian-voice-recovery-'));
   const originalFetch=globalThis.fetch;let calls=0;
@@ -225,7 +244,8 @@ test('real news diagrams keep four information points readable and pass contrast
   try{
     await copyFile(path.join(process.cwd(),'node_modules/gsap/dist/gsap.min.js'),path.join(directory,'gsap.min.js'));
     const chapter:LessonChapter={id:'news',title:'消息核验',role:'hook',goal:'分清证据与传闻',prerequisites:[],narration:'先核对来源，再看测试，最后等待确认。',reason:'说明证据',referenceIds:[],claims:[],visual:{kind:'concept',takeaway:'分清证据与传闻',items:[{label:'第一步',detail:'关闭联网搜索',cue:'核对来源',illustration:'steps'},{label:'手柄演示',detail:'控制器轮廓示意',cue:'看测试',illustration:'controller'},{label:'画风对照',detail:'区分不同绘画风格',cue:'测试',illustration:'gallery'},{label:'官方页面',detail:'核对版本与发布日期',cue:'等待确认',illustration:'announcement'}]}};
-    for(const mood of ['urgent','neutral'] as const){
+    for(const mood of ['urgent','neutral'] as const)for(const kind of ['concept','timeline'] as const){
+      chapter.visual.kind=kind;
       await writeFile(path.join(directory,'index.html'),lessonSceneHtml(chapter,0,3,4,'9:16',{mood,bgm:false},true));
       await checkHtmlProject(directory,{fullCheck:true});
     }

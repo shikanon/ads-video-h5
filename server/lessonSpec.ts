@@ -134,7 +134,7 @@ export function lessonSpeechLexicon(chapter:LessonChapter,prompt:string):string{
 export function compactSpeech(text:string,normalizeNumbers=true):string{
   const digits:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9'};
   const spoken=spokenLessonText(text).toLowerCase().replace(/\b(?:delta|gamma|tau|beta|sigma|theta)\b/g,v=>({delta:'德尔塔',gamma:'伽马',tau:'陶',beta:'贝塔',sigma:'西格玛',theta:'西塔'}[v]!));
-  const numbers=normalizeNumbers?spoken.replace(/[\d零〇一二两三四五六七八九十百千万亿]+点[\d零〇一二三四五六七八九]+/g,v=>String(speechNumberValue(v))).replace(/[零〇一二三四五六七八九]+(?=[a-z])/g,v=>[...v].map(c=>digits[c]).join('')):spoken;
+  const numbers=normalizeNumbers?spoken.replace(/[\d零〇一二两三四五六七八九十百千万亿]+点[\d零〇一二三四五六七八九]+/g,speechDecimalText).replace(/[零〇一二三四五六七八九]+(?=[a-z])/g,v=>[...v].map(c=>digits[c]).join('')):spoken;
   return numbers.replace(/[零〇一二三四五六七八九]{3,}/g,v=>[...v].map(c=>digits[c]).join('')).replace(/[\s\p{P}\p{S}]/gu,'');
 }
 function spokenYears(text:string):string[]{
@@ -142,7 +142,12 @@ function spokenYears(text:string):string[]{
   return [...text.replace(/\s/g,'').matchAll(/(\d{4}|[零〇一二三四五六七八九]{4})年/g)].map(m=>/^\d/.test(m[1])?m[1]:[...m[1]].map(c=>digits[c]).join(''));
 }
 function spokenDecimals(text:string):string[]{
-  return [...text.replace(/\s/g,'').matchAll(/\d+\.\d+|[\d零〇一二两三四五六七八九十百千万亿]+点[\d零〇一二三四五六七八九]+/g)].map(m=>String(speechNumberValue(m[0])));
+  return [...text.replace(/\s/g,'').matchAll(/\d+\.\d+|[\d零〇一二两三四五六七八九十百千万亿]+点[\d零〇一二三四五六七八九]+/g)].map(m=>speechDecimalText(m[0]));
+}
+function speechDecimalText(text:string):string{
+  const digits:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9'};
+  const [integer,fraction]=text.split(/[.点]/);
+  return String(speechNumberValue(integer))+'.'+[...fraction].map(c=>digits[c]??c).join('');
 }
 function spokenDates(text:string){
   return [...text.replace(/\s/g,'').matchAll(/([\d零〇一二两三四五六七八九十百千万亿]+)([年月日号])/g)].map(m=>({unit:m[2],value:speechNumberValue(m[1])}));
@@ -206,6 +211,7 @@ export function correctLessonTranscript(chapter:LessonChapter,analysis:AudioAnal
 }
 function heardNumberBoundaries(analysis:AudioAnalysis):Set<number>{
   const words=analysis.sentences.flatMap(s=>s.words);
+  if(analysis.captionBoundarySource==='matched-clauses')return new Set((analysis.captionBreaks||[]).map(i=>i+1));
   const boundaries=new Set<number>();
   // A pause before an independently named date/quantity separates "五点一，
   // 二十二日". A pause between fractional digits does not truncate a version.
@@ -246,7 +252,7 @@ function lessonSpeechCharacters(analysis:AudioAnalysis){
   }
   return [...result,...raw.slice(position)].filter(c=>c.char!=='\0');
 }
-export function lessonCaptionAnalysis(chapter:LessonChapter,analysis:AudioAnalysis):AudioAnalysis{
+export function lessonCaptionAnalysis(chapter:LessonChapter,analysis:AudioAnalysis,onMatch?:(start:number,end:number,heard:string)=>void):AudioAnalysis{
   // Match literal clauses first, then equivalent numeric spellings in a
   // bounded heard span. Normalizing the entire ASR could join numbers across
   // a verified clause boundary ("损失零；零点五"). Never change heard words.
@@ -264,7 +270,7 @@ export function lessonCaptionAnalysis(chapter:LessonChapter,analysis:AudioAnalys
     }
     if(start<0)continue;
     if(start>0&&chars[start-1].owner!==chars[start].owner)breaks.push(chars[start-1].owner);
-    position=start+length;breaks.push(chars[position-1].owner);
+    position=start+length;breaks.push(chars[position-1].owner);onMatch?.(start,position,heard);
   }
   if(!breaks.length)return analysis;
   return {...analysis,captionBreaks:[...new Set(breaks)],captionBoundarySource:'matched-clauses',warnings:[...analysis.warnings,'字幕标点边界由已验证脚本的完整匹配短句映射到真实ASR字词；未替换原话或补齐缺失语音。']};
@@ -275,7 +281,14 @@ export function alignLessonSpeech(chapter:LessonChapter,analysis:AudioAnalysis):
   for(const marker of heardText.match(/(?:\[|【)(?:听不清|无法辨认|无法识别|inaudible|unintelligible)(?:\]|】)/gi)||[])if(!chapter.narration.toLowerCase().includes(marker.toLowerCase()))throw new Error(`章节${chapter.id}实际转写含无法辨认的占位${marker}，不能视为匹配，需要独立复听或重录。`);
   const expected=[...compactSpeech(chapter.narration)];
   if(expected.length>=6&&!compactSpeech(analysis.transcript).endsWith(expected.slice(-4).join('')))throw new Error(`章节${chapter.id}末尾台词匹配不完整或出现额外尾词，需要独立复听或重录，不能放行漏字字幕。`);
-  const heard=lessonSpeechCharacters(analysis);
+  const covered=new Set<number>();let literalHeard='';
+  const captioned=lessonCaptionAnalysis(chapter,analysis,(start,end,text)=>{literalHeard=text;for(let k=start;k<end;k++)covered.add(k);});
+  // Only complete matches covering every heard numeral may provide clause
+  // boundaries. Extra fractional digits remain uncovered and must fail the
+  // numeric checks; no expected word is ever inserted into the ASR.
+  const completeNumbers=literalHeard.length>0&&[...literalHeard].every((char,k)=>!/[\d零〇一二两三四五六七八九十百千万亿点]/.test(char)||covered.has(k));
+  const numericAnalysis=completeNumbers?captioned:{...analysis,captionBreaks:undefined,captionBoundarySource:undefined};
+  const heard=lessonSpeechCharacters(numericAnalysis);
   if(expected.length>1000||heard.length>1500)throw new Error('单章音频超出对齐范围。');
   const rows=Array.from({length:expected.length+1},()=>new Uint16Array(heard.length+1));
   for(let i=0;i<=expected.length;i++)rows[i][0]=i;for(let j=0;j<=heard.length;j++)rows[0][j]=j;
@@ -283,9 +296,9 @@ export function alignLessonSpeech(chapter:LessonChapter,analysis:AudioAnalysis):
   const similarity=1-rows[expected.length][heard.length]/Math.max(1,expected.length,heard.length);
   if(similarity<.86)throw new Error(`章节${chapter.id}实际旁白与脚本匹配${(similarity*100).toFixed(1)}%，低于86%；需要重新合成，不能用期望台词冒充实际音频。`);
   if(JSON.stringify(spokenYears(chapter.narration))!==JSON.stringify(spokenYears(analysis.transcript)))throw new Error(`章节${chapter.id}实际读出的年份与脚本不同，不能发布。`);
-  const decimals=spokenDecimals(chapter.narration),heardDecimals=spokenDecimals(heardNumberText(analysis));
+  const decimals=spokenDecimals(chapter.narration),heardDecimals=spokenDecimals(heardNumberText(numericAnalysis));
   if(JSON.stringify(decimals)!==JSON.stringify(heardDecimals))throw new Error(`章节${chapter.id}实际读出的小数数字${heardDecimals.join('、')}与脚本${decimals.join('、')}不同，需要重录。`);
-  if(JSON.stringify(spokenDates(chapter.narration))!==JSON.stringify(spokenDates(heardNumberText(analysis))))throw new Error(`章节${chapter.id}日期数字或年月日单位与脚本不同，需要独立复听或重录。`);
+  if(JSON.stringify(spokenDates(chapter.narration))!==JSON.stringify(spokenDates(heardNumberText(numericAnalysis))))throw new Error(`章节${chapter.id}日期数字或年月日单位与脚本不同，需要独立复听或重录。`);
   if(JSON.stringify(namedSpeechNumbers(chapter.narration))!==JSON.stringify(namedSpeechNumbers(analysis.transcript)))throw new Error(`章节${chapter.id}实际读出的残差、误差、伽马或阈值数字与脚本不同，需要核验或重录。`);
   if(JSON.stringify(speechQuantities(chapter.narration))!==JSON.stringify(speechQuantities(analysis.transcript)))throw new Error(`章节${chapter.id}金额、百分比、数量数字或单位与脚本不一致，需要独立复听或重录，不能以整章匹配率放行。`);
   for(const term of ['相似度','概率变化']){
