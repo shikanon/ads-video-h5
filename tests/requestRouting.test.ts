@@ -8,7 +8,7 @@ import { inferCreationRoute,planCreationRoute,resolveCreativeRequest,requestedMo
 import { checkRequestContract,requestEvaluationContext,type RequestEvaluationCase } from '../server/requestEvaluations';
 import { createToolTrace,executionDiagnostics,traceValue } from '../server/toolTrace';
 import { runLessonWorkflow } from '../server/lessonWorkflow';
-import { answerWithPi } from '../server/core';
+import { answerWithPi,answerForSessionWithPi } from '../server/core';
 import { sessionSources } from '../server/sourceSelection';
 import { ARK_BASE_URL,TEXT_MODEL_PRESETS } from '../shared/textModels';
 import type { LessonChapter,MediaItem,WorkflowEvent } from '../src/types';
@@ -22,6 +22,30 @@ function reply(name:string,args:unknown,model=config().modelId) {
 const {cases}=JSON.parse(await readFile(new URL('./fixtures/agent-requests.json',import.meta.url),'utf8')) as {cases:RequestEvaluationCase[]};
 
 for(let index=0;index<3;index++) {
+  test(`${TEXT_MODEL_PRESETS[index].modelId}: conversation replies only receive selected session media`,async()=>{
+    const original=globalThis.fetch;
+    const video={id:'selected',kind:'video',duration:20,name:'CURRENT-ATTACHMENT.mp4',mimeType:'video/mp4',origin:'upload'} as MediaItem;
+    const old={id:'old-generated-frame',kind:'image',name:'UNSELECTED-OLD-LESSON-FRAME.png',mimeType:'image/png',origin:'generated'} as MediaItem;
+    const contexts=[
+      {plan:null,attached:[],history:[],includesVideo:false},
+      {plan:null,attached:[video],history:[],includesVideo:true},
+      {plan:{clips:[{sourceId:video.id,start:0,end:20}]} as any,attached:[],history:[],includesVideo:true},
+      {plan:null,attached:[],history:[{id:'prior',role:'user' as const,text:'帮我查看这段素材',attachmentIds:[video.id],createdAt:''}],includesVideo:true},
+    ];
+    try {
+      for(const c of contexts){let requests=0;
+        globalThis.fetch=async(_url,init)=>{
+          requests++;const input=JSON.stringify(JSON.parse(String(init?.body)).messages);
+          assert.doesNotMatch(input,/UNSELECTED-OLD-LESSON-FRAME/);
+          assert.equal(input.includes('CURRENT-ATTACHMENT.mp4'),c.includesVideo);
+          if(!c.includesVideo)assert.match(input,/当前会话选定素材：\[\]/);
+          return reply('reply',{sections:[],summary:'请告诉我视频主题和目标。'},config(index).modelId);
+        };
+        assert.equal(await answerForSessionWithPi({prompt:'生成成片',config:config(index),media:[video,old],...c}),'请告诉我视频主题和目标。');
+        assert.equal(requests,1);
+      }
+    }finally{globalThis.fetch=original;}
+  });
   test(`${TEXT_MODEL_PRESETS[index].modelId}: a submitted answer finishes without another model request`,async()=>{
     const original=globalThis.fetch;let requests=0;const published:string[]=[];
     globalThis.fetch=async(_url,init)=>{

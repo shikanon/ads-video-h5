@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AppSettings, AppState, Artifact, ChatMessage, Job, JobKind, MediaItem, Session } from '../src/types';
-import { answerWithPi, createImagePromptWithPi, createMusicQueryWithPi, createNarrationWithPi, createPlanWithPi, detectImage, detectShots, probeAudio, probeVideo, renderPlan as renderBasePlan, runFFmpeg } from './core';
+import { answerForSessionWithPi, createImagePromptWithPi, createMusicQueryWithPi, createNarrationWithPi, createPlanWithPi, detectImage, detectShots, probeAudio, probeVideo, renderPlan as renderBasePlan, runFFmpeg } from './core';
 import { writePresetBgm } from './bgm';
 import { download24bitAudio, downloadPixabayAudio, getPixabayTrackDetail, MusicSourceError, musicSearchLinks, pixabayAudioUrl, search24bitMusic, searchPixabayMusic } from './music';
 import { getDefaultTextModelId, getModelConfig, listPublicModels } from './modelRegistry';
@@ -363,7 +363,7 @@ async function performJob(job: Job): Promise<void> {
   if(creationRoute&&creationRoute.mode!=='editing')job.kind=creationRoute.export?'export':'plan';
   if(creationRoute?.mode==='conversation'){
     const config=await getModelConfig('text',session.modelId);if(!config)throw new Error('文本模型尚未配置。');
-    addReply(session,job,await answerWithPi(prompt,config,media,history,async(id,text)=>{updateReply(session,job,text,'commentary',id);await saveState();}));return;
+    addReply(session,job,await answerForSessionWithPi({prompt,config,media,history,plan:session.plan,attached,onSection:async(id,text)=>{updateReply(session,job,text,'commentary',id);await saveState();}}));return;
   }
   if(creationRoute?.requiresFootage&&!selectedSources().some(m=>m.kind==='video'||m.kind==='image'))throw new Error('本次要求保留原片、真人或原话，但尚未选定源素材。请添加要剪辑的原片；如果要从零制作主题图解，请说明可自行设计画面。');
   if(creationRoute?.mode==='research'){
@@ -600,7 +600,7 @@ async function performJob(job: Job): Promise<void> {
       session.plan = { ...plan, version: (session.plan?.version || 0) + 1 };
     }
     addReply(session, job, `${plan.summary} 已整理 ${plan.clips.length} 个片段，合计约 ${plan.targetSeconds} 秒。${bgmIntent ? '已加入背景音乐。' : ''}继续告诉我怎么调整，或发送“生成成片”。`);
-  } else addReply(session, job, await answerWithPi(prompt, textConfig, media, history, async (id,text) => {updateReply(session,job,text,'commentary',id);await saveState();}));
+  } else addReply(session, job, await answerForSessionWithPi({prompt,config:textConfig,media,history,plan:session.plan,attached,onSection:async(id,text)=>{updateReply(session,job,text,'commentary',id);await saveState();}}));
 }
 let processing = false;
 async function processQueue() {
