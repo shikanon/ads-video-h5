@@ -277,8 +277,10 @@ export async function answerWithPi(prompt: string, config: ModelConfig, media: M
   const tool: AgentTool<typeof schema> = {
     name: 'reply', label: '回复用户', description: '回复用户的问题或澄清需求。', parameters: schema,
     execute: async (_id, args) => {
+      const summary = args.summary.trim().replace(/^(?:总结|小结|Summary)[：:]\s*/i,'').slice(0, 2000);
+      if (!summary) throw new Error('回复内容为空，请在 summary 中给出独立完整的答复。');
       for(const [index,text] of args.sections.entries())if(text.trim())await onSection?.(`answer-${index}`,text.trim());
-      reply = args.summary.trim().replace(/^(?:总结|小结|Summary)[：:]\s*/i,'').slice(0, 2000);
+      reply = summary;
       return { content: [{ type: 'text', text: '已准备回复。' }], details: { characters: reply.length } };
     },
   };
@@ -296,7 +298,11 @@ export async function answerWithPi(prompt: string, config: ModelConfig, media: M
     // Publish only user-facing reply fields, never model thinking or tool args.
     for(const [index,text] of sections.entries())if(typeof text==='string'&&text.trim())await onSection(`answer-${index}`,text);
   });
-  await agent.prompt(prompt);
+  let turns=0;
+  agent.finishTurn=()=>({action:reply||++turns>=3?'end':'continue'});
+  const timer=setTimeout(()=>agent.abort(),60_000);
+  try { await agent.prompt(prompt); }
+  finally { clearTimeout(timer); }
   if (!reply) throw new Error('暂时无法回复，请重试。');
   return reply;
 }

@@ -8,6 +8,7 @@ import { inferCreationRoute,planCreationRoute,resolveCreativeRequest,requestedMo
 import { checkRequestContract,requestEvaluationContext,type RequestEvaluationCase } from '../server/requestEvaluations';
 import { createToolTrace,executionDiagnostics,traceValue } from '../server/toolTrace';
 import { runLessonWorkflow } from '../server/lessonWorkflow';
+import { answerWithPi } from '../server/core';
 import { sessionSources } from '../server/sourceSelection';
 import { ARK_BASE_URL,TEXT_MODEL_PRESETS } from '../shared/textModels';
 import type { LessonChapter,MediaItem,WorkflowEvent } from '../src/types';
@@ -19,6 +20,41 @@ function reply(name:string,args:unknown,model=config().modelId) {
   return new Response(chunks.map(c=>`data: ${JSON.stringify({id:'test',object:'chat.completion.chunk',created:1,model,choices:[{index:0,...c}]})}\n\n`).join('')+'data: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});
 }
 const {cases}=JSON.parse(await readFile(new URL('./fixtures/agent-requests.json',import.meta.url),'utf8')) as {cases:RequestEvaluationCase[]};
+
+for(let index=0;index<3;index++) {
+  test(`${TEXT_MODEL_PRESETS[index].modelId}: a submitted answer finishes without another model request`,async()=>{
+    const original=globalThis.fetch;let requests=0;const published:string[]=[];
+    globalThis.fetch=async(_url,init)=>{
+      requests++;
+      assert.equal(requests,1,'a completed reply must not start a second forced tool turn');
+      const body=JSON.parse(String(init?.body));assert.equal(body.tool_choice,'required');
+      assert.equal(body.thinking.type,index===2?'enabled':'disabled');
+      return reply('reply',{sections:['没有上传素材也可以创作主题视频。'],summary:'总结：可以制作，请告诉我主题。'},config(index).modelId);
+    };
+    try {
+      const result=await answerWithPi('没有素材能做科普视频吗？只解释。',config(index),[],[],async(_id,text)=>{published.push(text);});
+      assert.equal(result,'可以制作，请告诉我主题。');assert.equal(requests,1);
+      assert.ok(published.includes('没有上传素材也可以创作主题视频。'));
+    }finally{globalThis.fetch=original;}
+  });
+  test(`${TEXT_MODEL_PRESETS[index].modelId}: an empty reply is repaired using tool feedback`,async()=>{
+    const original=globalThis.fetch;let requests=0;
+    globalThis.fetch=async(_url,init)=>{
+      requests++;
+      if(requests===2)assert.match(JSON.stringify(JSON.parse(String(init?.body)).messages),/回复内容为空/);
+      return reply('reply',{sections:[],summary:requests===1?'  ':'请告诉我视频主题。'},config(index).modelId);
+    };
+    try{assert.equal(await answerWithPi('生成成片',config(index),[],[]),'请告诉我视频主题。');assert.equal(requests,2);}
+    finally{globalThis.fetch=original;}
+  });
+}
+
+test('repeated invalid replies stop after three model requests',async()=>{
+  const original=globalThis.fetch;let requests=0;
+  globalThis.fetch=async()=>{requests++;return reply('reply',{sections:[],summary:''});};
+  try{await assert.rejects(()=>answerWithPi('生成成片',config(),[],[]),/暂时无法回复/);assert.equal(requests,3);}
+  finally{globalThis.fetch=original;}
+});
 
 for(const c of cases)test(`request contract: ${c.id}`,async()=>{
   const original=globalThis.fetch,events:WorkflowEvent[]=[];
