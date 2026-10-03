@@ -35,6 +35,7 @@ import { createJobRunner, restoreInterruptedJobs } from './jobRunner';
 import { createEvaluations, evaluationFileHash, evaluationImplementation, EvaluationError } from './evaluations';
 import { privateEvaluationStorage, isEvaluationOwner } from './evaluationIsolation';
 import { withModelSnapshot, type ModelSnapshot } from './modelContext';
+import { isActiveJob } from '../src/jobStatus';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -125,7 +126,8 @@ const shortName = (name: string) => path.basename(name).replace(/[\u0000-\u001f/
 const extFor = (mime: string) => mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : mime === 'image/png' ? 'png' : mime === 'audio/mpeg' ? 'mp3' : mime === 'audio/wav' || mime === 'audio/x-wav' ? 'wav' : mime === 'audio/ogg' ? 'ogg' : 'bin';
 
 async function publicState(user: PublicUser): Promise<AppState> {
-  const [models, textConfig, profile] = await Promise.all([listPublicModels(), getModelConfig('text'), profileOf(user)]);
+  const [models, profile] = await Promise.all([listPublicModels(), profileOf(user)]);
+  const textConfig = await getModelConfig('text', getSession(profile.activeSessionId, user.id)?.modelId);
   return { activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.coverUrl ? { coverUrl: assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
 }
 
@@ -529,10 +531,16 @@ async function processQueue() {
       if(activeSession)updateReply(activeSession,job,'收到请求，正在整理素材和制作要求。','commentary','start');
       await saveState();
       try {
-        await jobRunner.run(job, () => {
-          const models = evaluationJobModels.get(job.id);
+        await jobRunner.run(job, async () => {
+          let models = evaluationJobModels.get(job.id);
           if (isEvaluationOwner(job.ownerId) && !models) throw new EvaluationError('评测模型快照已中断，请重新运行评测。');
-          return models ? withModelSnapshot(models, () => performJob(job)) : performJob(job);
+          if (!models) {
+            const [text, image, audio, understanding] = await Promise.all([getModelConfig('text', activeSession?.modelId), getModelConfig('image'), getModelConfig('audio'), getModelConfig('understanding')]);
+            models = { text, image, audio, understanding };
+          }
+          job.textModel = models.text ? { id: models.text.id, name: models.text.name, modelId: models.text.modelId } : undefined;
+          await saveState();
+          return withModelSnapshot(models, () => performJob(job));
         });
         job.status = 'succeeded'; job.progress = 100;
       }
@@ -681,6 +689,18 @@ app.post('/api/music/24bit/download', async (request, response) => {
 app.get('/api/state', async (request, response) => response.json(await publicState(userOf(request))));
 app.post('/api/sessions', async (request, response) => { const user = userOf(request); const profile = await profileOf(user); const session = { ...newSession(profile.settings.defaultModelId), ownerId: user.id }; state.sessions.unshift(session); profile.activeSessionId = session.id; await saveState(); response.json(await publicState(user)); });
 app.post('/api/sessions/:id/activate', async (request, response) => { const user = userOf(request); if (!getSession(request.params.id, user.id)) return response.status(404).json({ error: '对话不存在。' }); (await profileOf(user)).activeSessionId = request.params.id; await saveState(); response.json(await publicState(user)); });
+app.patch('/api/sessions/:id/model', async (request, response) => {
+  const user = userOf(request);
+  const session = getSession(request.params.id, user.id);
+  if (!session) return response.status(404).json({ error: '对话不存在。' });
+  const id = request.body?.modelId;
+  if (typeof id !== 'string' || !id || !(await getModelConfig('text', id))) return response.status(400).json({ error: '请选择已启用且配置了密钥的文本模型。' });
+  if (state.jobs.some(job => job.sessionId === session.id && isActiveJob(job))) return response.status(409).json({ error: '请等当前任务完成或停止后再切换模型。' });
+  session.modelId = id;
+  session.updatedAt = now();
+  await saveState();
+  response.json(await publicState(user));
+});
 app.post('/api/chat', async (request, response) => {
   const user = userOf(request);
   const session = getSession(String(request.body?.sessionId || ''), user.id);

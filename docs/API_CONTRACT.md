@@ -16,6 +16,7 @@
 | `GET /api/state` | 无 | `AppState`，包含当前会话、素材、任务和成片 |
 | `POST /api/sessions` | `{}` | `AppState`，创建并激活新对话 |
 | `POST /api/sessions/:id/activate` | `{}` | `AppState`，切换历史会话 |
+| `PATCH /api/sessions/:id/model` | `{modelId}`（模型配置条目的 `id`） | `AppState`，仅切换当前帐号该会话的文本模型，保留历史；不可用模型返回 `400`，会话有排队、执行或停止中的任务返回 `409` |
 | `POST /api/chat` | `{sessionId, message, attachmentIds?}` | `AppState`，先持久化用户消息与异步任务，不等待耗时生成 |
 | `POST /api/media` | `multipart/form-data`，字段 `files` | `AppState`，支持视频、图片和 MP3/WAV/OGG 音频；视频自动检测最多 8 段分镜 |
 | `DELETE /api/media/:id` | 无 | `AppState`，删除素材前由前端提示关联影响 |
@@ -41,6 +42,9 @@
 需要复用测试浏览器会话时，使用 `scripts/music-browser-client.js` 中的 `window.qingjianMusicBrowser` 方法，并在对应站点原页面上下文运行；`fetch` 由 Chrome 自动附带同源凭据，脚本不读取 Cookie。服务端 `/api/music/*` 与浏览器上下文方法是两条不同传输路径，当前网络仅浏览器会话路径已完成 24bit 的搜索到音频流读取验证。
 
 管理后台 API 使用 `/api/admin` 前缀，凭本地管理员令牌访问。模型配置项包含 `id/name/provider/kind/modelId/baseUrl/enabled/apiKey`，读取时只返回密钥是否已设置与掩码，永不回传完整密钥。
+
+预置文本模型包含 `doubao-seed-2-1-pro-260915`、`deepseek-v4-pro-ga-260813`、`glm-5-3-flash-260828`。旧注册表只补齐一次，保留已有条目、禁用状态、默认选择和之后的删除操作；新增条目的密钥引用仅在服务端解析，限定同厂商、同服务地址的文本模型。任务开始时冻结各用途的模型配置，`Job.textModel` 保存实际文本模型的 `{id,name,modelId}`，不含密钥或服务地址。已执行的任务记录不随之后的会话模型切换而改变。
+
 HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说明](HTML_EFFECTS.md)；普通对话输入特效指令后仍走 `/api/chat` 异步任务，返回视频产物与素材。
 
 原声音频理解任务为 `understanding`，成片重审为 `review`。`MediaItem.analysis` 包含源内容哈希、模型、逐字稿、完整/残句、字词起止秒、低音量停顿及字幕语义分行索引；`timing=model-estimated`。`EditPlan` 可表达 `fineCut`、片段 `sentenceIds/purpose/zoom/volume/transition`、`captions/overlays` 及 `audio` 的三路音量和响度归一化。语义字幕分行只返回字词索引，文字与时间仍从源字词映射。

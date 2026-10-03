@@ -100,20 +100,25 @@ export function validatePlan(input: EditPlan, media: MediaItem[], allowImageClip
 function textModel(config: ModelConfig) {
   const models = createModels();
   const provider = `qingjian-${config.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const ark = new URL(config.baseUrl).hostname === 'ark.cn-beijing.volces.com';
+  const thinkingRequired = config.modelId === 'glm-5-3-flash-260828';
+  const extendedTextModel = thinkingRequired || config.modelId === 'deepseek-v4-pro-ga-260813';
   const model: Model<'openai-completions'> = {
     id: config.modelId,
     name: config.name,
     api: 'openai-completions',
     provider,
     baseUrl: config.baseUrl.replace(/\/$/, ''),
-    reasoning: false,
+    reasoning: thinkingRequired,
     input: ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     // September Seed 2.1: official Coding Plan limits, also checked against
     // the actual Chat endpoint. Output ceilings and context are distinct.
-    contextWindow: /^doubao-seed-2-1-(pro|lite)-260915$/.test(config.modelId) ? 1024000 : 32000,
-    maxTokens: config.modelId === 'doubao-seed-2-1-pro-260915' ? 262144 : config.modelId === 'doubao-seed-2-1-lite-260915' ? 256000 : 4096,
-    ...(new URL(config.baseUrl).hostname === 'ark.cn-beijing.volces.com' ? { compat: { maxTokensField: 'max_tokens' as const } } : {}),
+    contextWindow: /^doubao-seed-2-1-(pro|lite)-260915$/.test(config.modelId) ? 1024000 : extendedTextModel ? 1000000 : 32000,
+    // Keep room for multi-step tool plans and GLM's mandatory reasoning.
+    // 32K is our per-response budget for the new models, not their maximum.
+    maxTokens: config.modelId === 'doubao-seed-2-1-pro-260915' ? 262144 : config.modelId === 'doubao-seed-2-1-lite-260915' ? 256000 : extendedTextModel ? 32768 : 4096,
+    ...(ark ? { compat: { maxTokensField: 'max_tokens' as const, supportsStore: false, supportsDeveloperRole: false, thinkingFormat: 'zai' as const, requiresReasoningContentOnAssistantMessages: thinkingRequired } } : {}),
   };
   models.setProvider(createProvider({
     id: provider,
@@ -128,18 +133,20 @@ function textModel(config: ModelConfig) {
 
 export function getAgent(config: ModelConfig, tools: AgentTool[], systemPrompt: string, requireTools = false) {
   const { models, model } = textModel(config);
+  const ark = new URL(config.baseUrl).hostname === 'ark.cn-beijing.volces.com';
+  const thinkingRequired = config.modelId === 'glm-5-3-flash-260828';
   const signal = currentJobSignal();
   const agent = new Agent({
-    initialState: { systemPrompt, model, tools: tools.map(tool => ({ ...tool, execute: async (...args: Parameters<AgentTool['execute']>) => {
+    initialState: { systemPrompt, model, thinkingLevel: thinkingRequired ? 'low' : 'off', tools: tools.map(tool => ({ ...tool, execute: async (...args: Parameters<AgentTool['execute']>) => {
       throwIfJobCancelled(signal);
       const result = await tool.execute(...args);
       throwIfJobCancelled(signal);
       return result;
     } })) },
     streamFn: models.streamSimple.bind(models),
-    // Ark enables thinking by default; this registry explicitly declares its
-    // tool-planning model non-reasoning. Keep that contract in the wire payload.
-    onPayload: (payload) => payload && typeof payload === 'object' ? { ...payload, ...(new URL(config.baseUrl).hostname === 'ark.cn-beijing.volces.com' ? { thinking: { type: 'disabled' } } : {}), ...(requireTools ? { tool_choice: 'required' } : {}) } : undefined,
+    // GLM 5.3 Flash only supports thinking=enabled. Pi replays its reasoning
+    // with tool results; answerWithPi publishes only the reply tool's fields.
+    onPayload: (payload) => payload && typeof payload === 'object' ? { ...payload, ...(ark ? { thinking: { type: thinkingRequired ? 'enabled' : 'disabled' } } : {}), ...(requireTools ? { tool_choice: 'required' } : {}) } : undefined,
     toolExecution: 'sequential',
   });
   const prompt = agent.prompt.bind(agent);

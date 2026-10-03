@@ -238,6 +238,7 @@ export interface Artifact {
 }
 
 export interface Job {
+  textModel?: { id: string; name: string; modelId: string };
   stopRequestedAt?: string;
   cancelledAt?: string;
   workflow?: WorkflowEvent[];

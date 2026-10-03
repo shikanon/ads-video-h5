@@ -4,12 +4,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ModelKind, PublicModel } from '../src/types';
 import { frozenModel } from './modelContext';
+import { ARK_BASE_URL as arkBaseUrl, TEXT_MODEL_PRESETS } from '../shared/textModels';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
 const registryFile = path.join(dataDir, 'provider-models.json');
 const tokenFile = path.join(dataDir, 'admin-token');
-const arkBaseUrl = 'https://ark.cn-beijing.volces.com/api/v3';
 
 export interface ModelConfig {
   id: string;
@@ -24,12 +24,14 @@ export interface ModelConfig {
 
 interface StoredModel extends Omit<ModelConfig, 'apiKey'> {
   apiKeyCiphertext?: string;
+  apiKeySourceId?: string;
 }
 
 interface RegistryData {
   version: 1;
   defaultTextModelId: string | null;
   models: StoredModel[];
+  textModelPresetsVersion?: 1;
 }
 
 export type AdminModel = Omit<ModelConfig, 'apiKey'> & { hasApiKey: boolean };
@@ -37,8 +39,9 @@ export type AdminModel = Omit<ModelConfig, 'apiKey'> & { hasApiKey: boolean };
 const initialRegistry = (): RegistryData => ({
   version: 1,
   defaultTextModelId: 'ark-text',
+  textModelPresetsVersion: 1,
   models: [
-    { id: 'ark-text', name: '豆包 Seed 2.1 Pro', provider: 'ark', kind: 'text', modelId: 'doubao-seed-2-1-pro-260915', baseUrl: arkBaseUrl, enabled: true },
+    ...TEXT_MODEL_PRESETS.map((preset): StoredModel => ({ ...preset, provider: 'ark', kind: 'text', baseUrl: arkBaseUrl, enabled: true, ...(preset.id !== 'ark-text' ? { apiKeySourceId: 'ark-text' } : {}) })),
     { id: 'ark-understanding', name: 'Seed 2.1 Lite 音频理解', provider: 'ark', kind: 'understanding', modelId: 'doubao-seed-2-1-lite-260915', baseUrl: arkBaseUrl, enabled: true },
     { id: 'ark-image', name: '豆包 Seedream 5.0 Flash', provider: 'ark', kind: 'image', modelId: 'doubao-seedream-5-0-flash-260915', baseUrl: arkBaseUrl, enabled: true },
     { id: 'volc-audio', name: 'Seed Audio 1.0', provider: 'volcengine-voice', kind: 'audio', modelId: 'seed-audio-1.0', baseUrl: 'https://openspeech.bytedance.com/api/v3/tts/create', enabled: true },
@@ -96,11 +99,23 @@ async function loadRegistry(): Promise<RegistryData> {
     try {
       const loaded = JSON.parse(await readFile(registryFile, 'utf8')) as RegistryData;
       if (loaded.version !== 1 || !Array.isArray(loaded.models)) throw new Error('模型配置文件格式无效。');
+      let changed = false;
       if (!loaded.models.some((model) => model.kind === 'understanding')) {
         const credentials = loaded.models.find((model) => model.provider === 'ark' && model.baseUrl.replace(/\/$/, '') === arkBaseUrl && model.enabled && model.apiKeyCiphertext);
         loaded.models.push({ ...initialRegistry().models.find((model) => model.kind === 'understanding')!, apiKeyCiphertext: credentials?.apiKeyCiphertext });
-        await persist(loaded);
+        changed = true;
       }
+      if (loaded.textModelPresetsVersion !== 1) {
+        const candidates = loaded.models.filter(model => model.kind === 'text' && model.provider === 'ark' && model.baseUrl.replace(/\/$/, '') === arkBaseUrl);
+        const source = candidates.find(model => model.id === loaded.defaultTextModelId) || candidates.find(model => model.apiKeyCiphertext) || candidates[0];
+        for (const preset of TEXT_MODEL_PRESETS) {
+          if (loaded.models.some(model => model.kind === 'text' && model.modelId === preset.modelId)) continue;
+          loaded.models.push({ ...preset, id: loaded.models.some(model => model.id === preset.id) ? randomUUID() : preset.id, provider: 'ark', kind: 'text', baseUrl: arkBaseUrl, enabled: true, ...(source ? { apiKeySourceId: source.id } : {}) });
+        }
+        loaded.textModelPresetsVersion = 1;
+        changed = true;
+      }
+      if (changed) await persist(loaded);
       return loaded;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -143,12 +158,23 @@ export function adminTokenLocation(): string {
 
 export async function listAdminModels(): Promise<AdminModel[]> {
   const data = await loadRegistry();
-  return data.models.map(({ apiKeyCiphertext, ...model }) => ({ ...model, hasApiKey: Boolean(apiKeyCiphertext) }));
+  return data.models.map((item) => {
+    const { apiKeyCiphertext: _key, apiKeySourceId: _source, ...model } = item;
+    return { ...model, hasApiKey: Boolean(modelKey(item, data)) };
+  });
+}
+
+function modelKey(model: StoredModel, data: RegistryData): string | undefined {
+  if (model.apiKeyCiphertext) return model.apiKeyCiphertext;
+  const source = data.models.find(item => item.id === model.apiKeySourceId);
+  // Inherited Ark credentials stay on the server and follow key rotation.
+  if (model.kind === 'text' && source?.kind === 'text' && model.provider === source.provider && model.baseUrl.replace(/\/$/, '') === source.baseUrl.replace(/\/$/, '')) return source.apiKeyCiphertext;
+  return undefined;
 }
 
 export async function listPublicModels(): Promise<PublicModel[]> {
   const data = await loadRegistry();
-  return data.models.filter((item) => item.enabled && item.apiKeyCiphertext).map(({ id, name, provider, modelId, kind, enabled }) => ({ id, name, provider, modelId, kind, enabled }));
+  return data.models.filter((item) => item.enabled && modelKey(item, data)).map(({ id, name, provider, modelId, kind, enabled }) => ({ id, name, provider, modelId, kind, enabled }));
 }
 
 export async function getModelConfig(kind: ModelKind, preferredId?: string | null): Promise<ModelConfig | null> {
@@ -156,9 +182,10 @@ export async function getModelConfig(kind: ModelKind, preferredId?: string | nul
   if (pinned !== undefined) return pinned;
   const data = await loadRegistry();
   const id = preferredId || (kind === 'text' ? data.defaultTextModelId : null);
-  const model = id ? data.models.find((item) => item.id === id && item.kind === kind) : data.models.find((item) => item.kind === kind && item.enabled && item.apiKeyCiphertext);
-  if (!model?.enabled || !model.apiKeyCiphertext) return null;
-  const { apiKeyCiphertext, ...publicFields } = model;
+  const model = id ? data.models.find((item) => item.id === id && item.kind === kind) : data.models.find((item) => item.kind === kind && item.enabled && modelKey(item, data));
+  const apiKeyCiphertext = model && modelKey(model, data);
+  if (!model?.enabled || !apiKeyCiphertext) return null;
+  const { apiKeyCiphertext: _key, apiKeySourceId: _source, ...publicFields } = model;
   return { ...publicFields, apiKey: decrypt(apiKeyCiphertext, await getAdminToken()) };
 }
 
@@ -168,7 +195,7 @@ export async function getDefaultTextModelId(): Promise<string | null> {
 
 export async function setDefaultTextModelId(id: string | null): Promise<void> {
   await mutate((data) => {
-    if (id !== null && !data.models.some((model) => model.id === id && model.kind === 'text' && model.enabled && model.apiKeyCiphertext)) {
+    if (id !== null && !data.models.some((model) => model.id === id && model.kind === 'text' && model.enabled && modelKey(model, data))) {
       throw new Error('请选择已启用且配置了密钥的文本模型。');
     }
     data.defaultTextModelId = id;
@@ -188,13 +215,14 @@ export async function upsertModel(input: Partial<ModelConfig> & Pick<ModelConfig
       baseUrl: input.baseUrl.trim(),
       enabled: input.enabled,
       apiKeyCiphertext: input.apiKey?.trim() ? encrypt(input.apiKey.trim(), token) : existing?.apiKeyCiphertext,
+      apiKeySourceId: input.apiKey?.trim() ? undefined : existing?.apiKeySourceId,
     };
     if (!item.name || !item.provider || !item.modelId || !['text', 'image', 'audio', 'understanding'].includes(item.kind)) throw new Error('请填写有效的模型名称、厂商、用途与模型 ID。');
     if (item.kind === 'understanding' && item.modelId !== 'doubao-seed-2-1-lite-260915') throw new Error('音频理解请使用已验证的 doubao-seed-2-1-lite-260915。');
     if (item.baseUrl && !/^https:\/\//.test(item.baseUrl)) throw new Error('服务地址必须使用 HTTPS。');
     if (existing) data.models[data.models.indexOf(existing)] = item;
     else data.models.push(item);
-    return { id, name: item.name, provider: item.provider, kind: item.kind, modelId: item.modelId, baseUrl: item.baseUrl, enabled: item.enabled, hasApiKey: Boolean(item.apiKeyCiphertext) };
+    return { id, name: item.name, provider: item.provider, kind: item.kind, modelId: item.modelId, baseUrl: item.baseUrl, enabled: item.enabled, hasApiKey: Boolean(modelKey(item, data)) };
   });
 }
 

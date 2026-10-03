@@ -39,6 +39,7 @@ import type {
 import { MAX_MEDIA_UPLOAD_BYTES } from "./uploadLimits";
 import AssistantReply from "./AssistantReply";
 import HotResearchCard from "./HotResearchCard";
+import { isActiveJob } from './jobStatus';
 
 type Page =
   | "chat"
@@ -92,6 +93,10 @@ const labels = {
     images: "图片",
     audios: "音频",
     model: "默认对话模型",
+    chatModel: "当前对话模型",
+    modelLocked: "任务完成或停止后可切换模型",
+    modelNextMessage: "切换后从下一条消息开始使用，保留当前对话",
+    modelUnavailable: "当前模型不可用，请选择模型",
     language: "界面语言",
     background: "对话背景",
     default: "默认背景",
@@ -135,6 +140,10 @@ const labels = {
     images: "Images",
     audios: "Audio",
     model: "Default chat model",
+    chatModel: "Current chat model",
+    modelLocked: "Switch after the task finishes or stops",
+    modelNextMessage: "Use the selected model for the next message, keeping this conversation",
+    modelUnavailable: "Current model unavailable — choose a model",
     language: "Language",
     background: "Chat background",
     default: "Default",
@@ -535,6 +544,7 @@ function Message({
         </span>
       ) : null}
       <div className="message-main">
+        {message.role === 'user' && job?.textModel ? <div className="message-model" title={job.textModel.modelId}><span>{job.textModel.name}</span><code>{job.textModel.modelId}</code></div> : null}
         {message.role==='assistant' ? <AssistantReply message={message} job={job} locale={locale}/> : message.text ? (
           <div className="message-bubble">{message.text}</div>
         ) : null}
@@ -678,6 +688,10 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   const locale: Locale = state?.settings.language || "zh-CN";
   const t = labels[locale];
   const session = state?.sessions.find((s) => s.id === state.activeSessionId);
+  const activeSessionJobs = state?.jobs.filter(job => job.sessionId === session?.id && isActiveJob(job)) || [];
+  const sessionRunning = activeSessionJobs.length > 0;
+  const textModels = state?.models.filter(model => model.kind === 'text' && model.enabled) || [];
+  const selectedTextModel = textModels.find(model => model.id === session?.modelId);
   const sessions = state?.sessions.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) || [];
   const sessionTitle = (item: Session) =>
     item.title === "新对话" || item.title === "新会话" ? t.newChat : item.title;
@@ -987,6 +1001,17 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
         ) : null}
         {page === "chat" ? (
           <>
+            {state && session ? <div className="conversation-model" title={sessionRunning ? t.modelLocked : t.modelNextMessage}>
+              <label htmlFor="conversation-model">{t.chatModel}</label>
+              <div className="conversation-model-choice">
+                <select id="conversation-model" value={session.modelId || ''} disabled={pending || sessionRunning || !textModels.length} onChange={event => void mutate(`/api/sessions/${encodeURIComponent(session.id)}/model`, 'PATCH', { modelId: event.target.value })}>
+                  {!selectedTextModel ? <option value={session.modelId || ''} disabled>{session.modelId ? t.modelUnavailable : locale === 'zh-CN' ? '跟随默认模型' : 'Default model'}</option> : null}
+                  {textModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+                </select>
+                <ChevronDown size={14} aria-hidden="true" />
+              </div>
+              <small>{sessionRunning ? t.modelLocked : selectedTextModel?.modelId || t.modelNextMessage}</small>
+            </div> : null}
             <div
               className="chat-scroll"
               ref={chatScroll}
@@ -1468,11 +1493,9 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                 <option value="">
                   {locale === "zh-CN" ? "自动选择" : "Auto select"}
                 </option>
-                {state?.models
-                  .filter((m) => m.kind === "text" && m.enabled)
-                  .map((m) => (
+                {textModels.map((m) => (
                     <option value={m.id} key={m.id}>
-                      {m.name} · {m.provider}
+                      {m.name} · {m.modelId}
                     </option>
                   ))}
               </select>
