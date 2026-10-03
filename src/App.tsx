@@ -624,6 +624,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   );
   const drafts = useRef<Record<string, { prompt: string; attachments: string[] }>>({});
   const stateRef = useRef<AppState | null>(null);
+  const jobPollInFlight = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const pickerKind = useRef<MediaFilter>("all");
   const pickerSource = useRef<"chat" | "library">("chat");
@@ -656,15 +657,19 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
     )
       return;
     const timer = window.setInterval(async () => {
+      if (jobPollInFlight.current) return;
       const job = stateRef.current?.jobs.find(
         (j) => j.status === "queued" || j.status === "running",
       );
       if (!job) return;
+      jobPollInFlight.current = true;
       try {
         const response = await fetch(apiPath(`/api/jobs/${job.id}`));
         if (response.ok) await refresh();
       } catch {
         /* next poll */
+      } finally {
+        jobPollInFlight.current = false;
       }
     }, 2200);
     return () => window.clearInterval(timer);
