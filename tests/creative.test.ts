@@ -15,10 +15,44 @@ import { inspectVoice } from '../server/audioQuality';
 import { runFFmpeg } from '../server/core';
 import { checkHtmlProject } from '../server/narrativeScenes';
 import { researchHotTopics } from '../server/hotResearch';
+import { requestSemanticReview } from '../server/semanticReview';
+import { reviewNeedsContentRepair, newsFreshAtReview } from '../server/reviewResults';
 import { ARK_BASE_URL, TEXT_MODEL_PRESETS } from '../shared/textModels';
 import type { AudioAnalysis, LessonChapter, EditPlan, MediaItem } from '../src/types';
 
 const prompt='制作一个实时新闻资讯视频，视频内容讲述Fable5.5，渲染紧张迫切氛围';
+
+test('unfinished review retains the film while actual defects still require repair',()=>{
+  const base={status:'needs-review',checks:[{name:'成片语义审查',passed:false}]};
+  assert.equal(reviewNeedsContentRepair(base),false);
+  assert.equal(reviewNeedsContentRepair({...base,semantic:{score:75,findings:[]}}),true);
+  assert.equal(reviewNeedsContentRepair({...base,semantic:{score:90,findings:['ch1：实际错读版本']}}),true);
+  assert.equal(reviewNeedsContentRepair({...base,checks:[...base.checks,{name:'段落音色一致性',passed:false}]}),true);
+  assert.equal(reviewNeedsContentRepair({...base,checks:[...base.checks,{name:'声音审听完成度',passed:false}]}),false);
+});
+
+test('semantic request retries incomplete output but never retries a real rejection or forbidden access',async()=>{
+  const original=globalThis.fetch;let calls=0;
+  const messages=[{role:'user',content:[{type:'input_audio',input_audio:{data:'actual-audio',format:'wav'}},{type:'image_url',image_url:{url:'actual-frame'}}]}];
+  const response=(value:unknown)=>new Response(JSON.stringify({choices:[{message:{content:typeof value==='string'?value:JSON.stringify(value)}}]}));
+  try {
+    globalThis.fetch=async(_url,options)=>{calls++;const body=JSON.parse(String(options?.body));assert.deepEqual(body.messages,messages);assert.equal(body.thinking.type,'disabled');return response(calls===1?'':{score:85,needsRepair:false,findings:[],suggestions:[]});};
+    assert.equal((await requestSemanticReview(config(),messages)).score,85);assert.equal(calls,2);
+    calls=0;globalThis.fetch=async()=>{calls++;return response({score:70,needsRepair:true,findings:['ch2实际错读'],suggestions:[]});};
+    assert.equal((await requestSemanticReview(config(),messages)).needsRepair,true);assert.equal(calls,1);
+    calls=0;globalThis.fetch=async()=>{calls++;return new Response('',{status:403});};
+    await assert.rejects(()=>requestSemanticReview(config(),messages),/HTTP 403/);assert.equal(calls,1);
+  }finally{globalThis.fetch=original;}
+});
+
+test('dated news review uses actual publication window rather than creation cache age',()=>{
+  const now=Date.parse('2026-10-03T12:00:00Z');
+  const report={hotResearch:{asOf:new Date(now-3600000).toISOString(),windowHours:72},references:[{verification:'news-page',freshness:'fresh',publishedAt:new Date(now-48*3600000).toISOString()}]} as any;
+  assert.equal(newsFreshAtReview(report,now),true);
+  report.references[0].publishedAt=new Date(now-73*3600000).toISOString();assert.equal(newsFreshAtReview(report,now),false);
+  report.references[0].publishedAt=new Date(now+3600000).toISOString();assert.equal(newsFreshAtReview(report,now),false);
+  report.references[0].publishedAt='';assert.equal(newsFreshAtReview(report,now),false);
+});
 const config=(index=0)=>({...TEXT_MODEL_PRESETS[index],provider:'ark' as const,kind:'text' as const,baseUrl:ARK_BASE_URL,apiKey:'test-private-key',enabled:true});
 function reply(name:string,args:unknown,model=config().modelId){
   const chunks=[{delta:{role:'assistant'},finish_reason:null},{delta:{tool_calls:[{index:0,id:'call-1',type:'function',function:{name,arguments:JSON.stringify(args)}}]},finish_reason:null},{delta:{},finish_reason:'tool_calls'}];

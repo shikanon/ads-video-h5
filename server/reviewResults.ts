@@ -1,3 +1,5 @@
+import type { LessonReport } from '../src/types';
+
 // Providers sometimes return richer issue objects despite the string-array
 // example. Preserve the concrete correction without relaxing pass criteria.
 export function reviewFindings(value:unknown):string[]{
@@ -19,4 +21,21 @@ export function validateSemanticReview(value:any):{score:number;needsRepair:bool
   if(!Number.isFinite(value?.score)||value.score<0||value.score>100||typeof value.needsRepair!=='boolean')throw new Error('审查输出格式无效');
   const findings=reviewFindings(value.findings),suggestions=reviewFindings(value.suggestions??[]);
   return {score:value.score,needsRepair:value.needsRepair||findings.length>0||value.score<80,findings,suggestions};
+}
+
+export function reviewNeedsContentRepair(review:{status:string;checks:Array<{name:string;passed:boolean}>;semantic?:{score:number;findings:string[]}}):boolean {
+  if(review.status==='passed')return false;
+  const incomplete=new Set(['成片语义审查','声音审听完成度','声音实测完成度']);
+  return Boolean(review.semantic&&(review.semantic.score<80||review.semantic.findings.length))||review.checks.some(c=>!c.passed&&(!incomplete.has(c.name)||c.name==='成片语义审查'&&Boolean(review.semantic)));
+}
+
+export function newsFreshAtReview(report:LessonReport,now=Date.now()):boolean {
+  const news=report.hotResearch;if(!news)return false;
+  const asOf=Date.parse(news.asOf),window=news.windowHours*3600000;
+  // The 30-minute cache controls research reuse during creation. Reviewing an
+  // existing dated film must instead verify publication dates in its news window.
+  return Number.isFinite(asOf)&&window>0&&asOf<=now+300000&&now-asOf<=window&&report.references.some(ref=>{
+    const published=Date.parse(ref.publishedAt||'');
+    return ref.verification==='news-page'&&ref.freshness==='fresh'&&Number.isFinite(published)&&published<=now+300000&&now-published<=window;
+  });
 }

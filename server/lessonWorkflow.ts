@@ -19,6 +19,7 @@ import { verifyLessonResearch, lessonResearchSummary } from './lessonResearch';
 import { reviewFindings } from './reviewResults';
 import { mapLimited } from './taskPool';
 import { inspectLessonSpeechGaps, lessonTempo, lessonVoiceStyle, lessonPacingCheck, prepareLessonSpeech, tightenNewsSpeechSilence } from './lessonAudio';
+import { reviewNeedsContentRepair } from './reviewResults';
 import { cachedLessonResearch } from './lessonResearchCache';
 import { currentResearchExpired, researchHotTopics } from './hotResearch';
 import { wantsCurrentResearch } from './intents';
@@ -259,7 +260,7 @@ export async function runLessonWorkflow(o:Options){
   add('review_lesson',current?'检查新闻成片与声音':'审查教学成片与声音','检查实际完整音频、各章抽帧、图解与旁白一致、字幕、概念递进、音色与音量。',Type.Object({}),async()=>{
     if(!plan||!rendered)throw new Error('先渲染教学成片。');review=await o.review(rendered.file,plan);
     if(!best||review.score>best.review.score||review.score===best.review.score&&review.checks.filter(c=>!c.passed).length<best.review.checks.filter(c=>!c.passed).length)best={plan:structuredClone(plan),rendered:{...rendered},review:structuredClone(review)};
-    phase=review.status==='needs-review'&&renders<2?'repair':'done';feedback=review.checks.filter(c=>!c.passed).map(c=>`${c.name}：${c.detail}`).join('\n')+'\n'+(review.semantic?.findings.join('\n')||'');return {score:review.score,status:review.status,findings:feedback,nextTool:phase==='repair'?'repair_lesson':'complete'};
+    phase=review.status==='needs-review'&&renders<2&&reviewNeedsContentRepair(review)?'repair':'done';feedback=review.checks.filter(c=>!c.passed).map(c=>`${c.name}：${c.detail}`).join('\n')+'\n'+(review.semantic?.findings.join('\n')||'');return {score:review.score,status:review.status,findings:feedback,reviewUnavailable:!reviewNeedsContentRepair(review)&&review.status==='needs-review',nextTool:phase==='repair'?'repair_lesson':'complete'};
   });
   add('repair_lesson',current?'修复新闻成片':'返修教学脚本或声音','根据实际审查修复一次，重新生成受影响画面和声音，再审查真实新文件。',Type.Object({changes:Type.String()}),async a=>{
     if(renders!==1||!review||!report)throw new Error('只有首版审查后可自动返修一次。');
