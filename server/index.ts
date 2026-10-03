@@ -20,6 +20,7 @@ import { createEffectStore, type EffectValues } from './htmlEffects';
 import { classify, shouldUpdatePlan, excludesBgm, narrativeRequest, lessonRequest, wantsCurrentResearchOnly, selectedHotVideoRequest } from './intents';
 import { createAudioUnderstanding } from './audioUnderstanding';
 import { reviewRender as reviewBaseRender } from './renderReview';
+import { renderReviewSummary } from './reviewResults';
 import { recordVoiceRejection, reportsVoiceMismatch } from './audioQuality';
 import { planHash, recoverPublishedPlan } from './renderTimeline';
 import { runEditorialWorkflow } from './editorialWorkflow';
@@ -279,7 +280,7 @@ async function performJob(job: Job): Promise<void> {
     artifact.review = await reviewRender(file, artifact.plan, media, originalRequest+'\n本次补充审查：'+prompt);
     const issues=artifact.review.checks.filter(c=>!c.passed);
     if(issues.length)updateReply(session,job,issues.map(c=>`${c.name}：${c.detail}`).join('\n\n'),'commentary','review-details');
-    addReply(session, job, `成片审查 ${artifact.review.score}/100，${artifact.review.status === 'passed' ? '本次检查通过' : `有 ${issues.length} 项需要复核`}。详细问题见处理过程与作品审查。`, artifact.id); return;
+    addReply(session, job, `${renderReviewSummary(artifact.review)}。成片可继续预览、下载，详细结果见处理过程与作品审查。`, artifact.id); return;
   }
 
   if (job.kind === 'effect') {
@@ -374,7 +375,7 @@ async function performJob(job: Job): Promise<void> {
     const version=state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1;
     state.artifacts.push({id:result.id,ownerId:job.ownerId,sessionId:session.id,messageId:message.id,kind:'video',name:`轻剪教学视频-v${version}.mp4`,url:`/api/artifacts/${result.id}`,downloadUrl:`/api/download/${result.id}`,createdAt:now(),version,duration:plan.targetSeconds,format:plan.format,plan:structuredClone(plan),workflow:structuredClone(job.workflow||[]),review,planHash:planHash(plan),hasNarration:true,hasBgm:false});
     job.artifactId=result.id;
-    addReply(session,job,`教学视频 v${version} 已重新导出：${plan.lesson!.title}，${plan.targetSeconds.toFixed(1)}秒。沿用当前已审查的图解与旁白，审查${review.score}/100，${review.status==='passed'?'本次检查通过':'仍需复核'}。可预览、下载。`,result.id);return;
+    addReply(session,job,`教学视频 v${version} 已重新导出：${plan.lesson!.title}，${plan.targetSeconds.toFixed(1)}秒。沿用当前已审查的图解与旁白，${renderReviewSummary(review)}。可预览、下载。`,result.id);return;
   }
   let lessonPrompt=selectedHotPrompt&&/第\s*(?:\d+|一|二|三)/.test(prompt)?selectedHotPrompt:lessonRequest(prompt,history,Boolean(session.plan?.lesson||session.lessonDraft),session.lessonDraft||session.plan?.lesson)||selectedHotPrompt;
   const sourceCount=selectedSources().filter(m=>m.kind!=='audio').length;
@@ -404,7 +405,7 @@ async function performJob(job: Job): Promise<void> {
     const version=state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1;
     state.artifacts.push({id:result.id,ownerId:job.ownerId,sessionId:session.id,messageId:message.id,kind:'video',name:`轻剪${plan.lesson?.hotResearch?'新闻资讯':'教学'}视频-v${version}.mp4`,url:`/api/artifacts/${result.id}`,downloadUrl:`/api/download/${result.id}`,createdAt:now(),version,duration:plan.targetSeconds,format:plan.format,plan:structuredClone(plan),workflow:structuredClone(job.workflow||workflow.events),review,planHash:planHash(plan),hasNarration:true,hasBgm:Boolean(plan.lesson?.presentation?.bgm)});
     job.artifactId=result.id;
-    addReply(session,job,`${plan.lesson?.hotResearch?'新闻资讯视频':'教学视频'} v${version} 已生成：${plan.lesson!.title}，${plan.clips.length}章，${plan.targetSeconds.toFixed(1)}秒。${plan.lesson?.hotResearch?'已核验近期报道，完成新闻图解、播报旁白'+(plan.lesson.presentation?.bgm?'与氛围配乐':''):'采用图解画面与统一旁白'}，审查${review.score}/100，${review.status==='passed'?'本次检查通过':'仍需复核'}。可预览、下载，并展开${plan.lesson?.hotResearch?'新闻':'教学'}脚本和制作记录查看依据。`,result.id);return;
+    addReply(session,job,`${plan.lesson?.hotResearch?'新闻资讯视频':'教学视频'} v${version} 已生成：${plan.lesson!.title}，${plan.clips.length}章，${plan.targetSeconds.toFixed(1)}秒。${plan.lesson?.hotResearch?'已核验近期报道，完成新闻图解、播报旁白'+(plan.lesson.presentation?.bgm?'与氛围配乐':''):'采用图解画面与统一旁白'}，${renderReviewSummary(review)}。可预览、下载，并展开${plan.lesson?.hotResearch?'新闻':'教学'}脚本和制作记录查看依据。`,result.id);return;
   }
   const coverIntent = /(?:用|把|将|设置|设为|作为|指定|采用|use|set|make).{0,24}(?:封面|cover|thumbnail|poster)|(?:封面|cover|thumbnail|poster).{0,24}(?:设为|作为|使用|用作|as|for)/i.test(prompt);
   const removeCover = /(?:不要|移除|去掉|取消|remove|without|clear).{0,12}(?:封面|cover|thumbnail|poster)/i.test(prompt);
@@ -555,7 +556,7 @@ async function performJob(job: Job): Promise<void> {
     const version = state.artifacts.filter((item) => item.sessionId === session.id && item.kind === 'video').length + 1;
     const artifact: Artifact = { id, ownerId: job.ownerId, sessionId: session.id, messageId: message.id, kind: 'video', name: `轻剪成片-v${version}.mp4`, url: `/api/artifacts/${id}`, downloadUrl: `/api/download/${id}`, createdAt: now(), version, duration: plan.targetSeconds, format: plan.format, plan: structuredClone(plan), workflow: job.workflow ? structuredClone(job.workflow) : undefined, review, planHash: planHash(plan), hasNarration: Boolean(narrationFile || plan.reconstruction?.beats.some(b=>b.mode==='generated')), hasBgm: Boolean(bgmFile), ...(cover ? { coverUrl: `/api/artifacts/${id}/cover`, coverMimeType: cover.mimeType } : {}) };
     state.artifacts.push(artifact); job.artifactId = id;
-    addReply(session, job, `成片 v${version} 已生成，审查 ${review.score}/100，${review.status === 'passed' ? '本次检查通过' : '仍需复核'}，可以预览并下载。${narrationFile ? '已合入口播音频。' : ''}${bgmFile ? '已合入背景音乐。' : ''}`, id);
+    addReply(session, job, `成片 v${version} 已生成，${renderReviewSummary(review)}，可以预览并下载。${narrationFile ? '已合入口播音频。' : ''}${bgmFile ? '已合入背景音乐。' : ''}`, id);
     return;
   }
   const textConfig = await getModelConfig('text', session.modelId);

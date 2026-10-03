@@ -497,7 +497,7 @@ function ArtifactCard({
       </details> : null}
       {artifact.plan?.lesson&&artifact.review?.status==='needs-review'&&repair?<button type="button" className="ghost-button" onClick={repair}>{locale==='zh-CN'?'修复并重新审查':'Repair and review again'}</button>:null}
       {artifact.review ? <details className="render-review">
-        <summary>{locale === "zh-CN" ? "成片审查" : "Review"} · {artifact.review.score}/100 · {artifact.review.status === 'passed' ? (locale === "zh-CN" ? '检查通过' : 'Passed') : (locale === "zh-CN" ? '需要复核' : 'Needs review')}</summary>
+        <summary>{locale === "zh-CN" ? "成片审查" : "Review"} · {artifact.review.score===0&&!artifact.review.semantic?(locale==='zh-CN'?'审查未完成':'Review incomplete'):`${artifact.review.score}/100`} · {artifact.review.status === 'passed' ? (locale === "zh-CN" ? '检查通过' : 'Passed') : (locale === "zh-CN" ? '需要复核' : 'Needs review')}</summary>
         {artifact.review.audio ? <section className="sound-review" aria-label={locale === 'zh-CN' ? '声音检查' : 'Sound checks'}>
           <strong>{locale === 'zh-CN' ? '声音检查' : 'Sound checks'}</strong>
           <p>{locale === 'zh-CN' ? '段间响度极差' : 'Segment loudness spread'}：{artifact.review.audio.segmentSpreadLu ?? '—'} LU</p>

@@ -1,4 +1,8 @@
-import type { LessonReport } from '../src/types';
+import type { LessonReport, RenderReview } from '../src/types';
+
+export function renderReviewSummary(review:RenderReview):string {
+  return review.score===0&&!review.semantic?'自动审查暂未完成，待复核':`审查${review.score}/100，${review.status==='passed'?'本次检查通过':'仍需复核'}`;
+}
 
 // Providers sometimes return richer issue objects despite the string-array
 // example. Preserve the concrete correction without relaxing pass criteria.
