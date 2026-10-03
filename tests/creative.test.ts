@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { classify, lessonRequest } from '../server/intents';
 import { needsCreativeRouting, resolveCreativeRequest } from '../server/creativeRequest';
-import { lessonSettings, lessonPacing, compactSpeech, alignLessonSpeech, lessonSpeechLexicon, correctLessonTranscript, lessonCaptionAnalysis } from '../server/lessonSpec';
+import { lessonSettings, lessonPacing, compactSpeech, alignLessonSpeech, lessonSpeechLexicon, correctLessonTranscript, lessonCaptionAnalysis, lessonScriptBudget, assertLessonScriptBudget } from '../server/lessonSpec';
 import { captionsFromTranscript } from '../server/timeline';
 import { lessonPresentation } from '../server/lessonPresentation';
 import { lessonVoiceStyle, lessonTempo, tightenNewsSpeechSilence, inspectLessonSpeechGaps } from '../server/lessonAudio';
@@ -23,6 +23,18 @@ import { ARK_BASE_URL, TEXT_MODEL_PRESETS } from '../shared/textModels';
 import type { AudioAnalysis, LessonChapter, EditPlan, MediaItem } from '../src/types';
 
 const prompt='制作一个实时新闻资讯视频，视频内容讲述Fable5.5，渲染紧张迫切氛围';
+
+test('short news allocates measured per-chapter budgets before writing instead of gradual global retries',()=>{
+  const pacing=lessonPacing(prompt),budget=lessonScriptBudget(45,pacing,5);
+  assert.equal(budget.totalCharacters,202);assert.equal(budget.perChapterMaximum,46);
+  const chapters=Array.from({length:5},(_,i)=>({id:'ch'+i,narration:'核验消息。'.repeat(10)} as LessonChapter));
+  assert.doesNotThrow(()=>assertLessonScriptBudget(chapters,budget));
+  chapters[2].narration='Fable 5.5待确认，'.repeat(5);
+  assert.throws(()=>assertLessonScriptBudget(chapters,budget),/ch2：50字，须删减至少4字/);
+  assert.throws(()=>assertLessonScriptBudget(chapters.slice(1),budget),/5章/);
+  assert.equal(lessonScriptBudget(45,pacing,3).perChapterTarget,68);
+  assert.throws(()=>lessonScriptBudget(45,pacing,NaN),/预算/);
+});
 
 test('published snapshots recover punctuation only with exact recorded hash proof',()=>{
   const original={summary:'新闻图解',targetSeconds:45,clips:[],format:'9:16'} as EditPlan,hash=planHash(original);

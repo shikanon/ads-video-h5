@@ -31,6 +31,16 @@ export function validateLessonPacing(value:LessonPacing):LessonPacing{
 }
 export const lessonPadding=(chapters:number,pacing:LessonPacing):number=>chapters*(pacing.leadSeconds+pacing.tailSeconds)-Math.max(0,chapters-1)*pacing.transitionSeconds;
 export const lessonNarrationBudget=(seconds:number,pacing:LessonPacing,chapters=seconds<=60?4:9):number=>Math.round((seconds-lessonPadding(chapters,pacing))*pacing.targetCharactersPerSecond);
+export function lessonScriptBudget(seconds:number,pacing:LessonPacing,chapters:number){
+  if(!Number.isInteger(chapters)||chapters<3||chapters>24)throw new Error('旁白预算需要3–24章。');
+  const totalCharacters=lessonNarrationBudget(seconds,pacing,chapters);
+  return {chapters,totalCharacters,perChapterTarget:Math.round(totalCharacters/chapters),perChapterMaximum:Math.ceil(totalCharacters/chapters*1.12)};
+}
+export function assertLessonScriptBudget(chapters:LessonChapter[],budget:ReturnType<typeof lessonScriptBudget>){
+  if(chapters.length!==budget.chapters)throw new Error(`已分配${budget.chapters}章的旁白预算，须提交相同章数。`);
+  const excess=chapters.flatMap(c=>{const count=compactSpeech(c.narration).length;return count>budget.perChapterMaximum?[`${c.id}：${count}字，须删减至少${count-budget.perChapterMaximum}字，目标${budget.perChapterTarget}字`]:[];});
+  if(excess.length)throw new Error(`旁白分章预算超限：${excess.join('；')}。英文名称、数字均逐字符计数，不能把Fable 5.5算成一个字；保留核心信息并同步更新图解cue。`);
+}
 export const lessonDimensions=(format:Format):[number,number]=>format==='16:9'?[1280,720]:format==='9:16'?[720,1280]:[960,960];
 export function lessonRepairTargets(report:LessonReport,feedback:string):string[]{
   const ids=report.chapters.filter(c=>new RegExp(`(^|[^\\w-])${c.id}(?=$|[^\\w-])`).test(feedback)).map(c=>c.id);
@@ -82,7 +92,10 @@ export function validateLesson(report:LessonReport,prompt:string,plannedPacing?:
   const errors:string[]=[];
   const characters=report.chapters.reduce((n,c)=>n+compactSpeech(c.narration).length,0);
   const estimate=characters/pacing.targetCharactersPerSecond+lessonPadding(report.chapters.length,pacing);
-  if(estimate-settings.requestedSeconds>Math.max(8,settings.requestedSeconds*.12)||settings.requestedSeconds-estimate>Math.max(pacing.mode==='brisk'?4:8,settings.requestedSeconds*(pacing.mode==='brisk'?.15:.28)))errors.push(`总旁白估计${estimate.toFixed(1)}秒，目标${settings.requestedSeconds}秒；规划语速每秒${pacing.targetCharactersPerSecond}字（不含标点），总字数应约${lessonNarrationBudget(settings.requestedSeconds,pacing,report.chapters.length)}，当前${characters}。一次调整所有章节完整旁白；过短时补充有依据的信息，不能把语速放慢或用静止画面凑时长。`);
+  if(estimate-settings.requestedSeconds>Math.max(8,settings.requestedSeconds*.12)||settings.requestedSeconds-estimate>Math.max(pacing.mode==='brisk'?4:8,settings.requestedSeconds*(pacing.mode==='brisk'?.15:.28))){
+    const budget=lessonScriptBudget(settings.requestedSeconds,pacing,report.chapters.length),delta=characters-budget.totalCharacters;
+    errors.push(`总旁白估计${estimate.toFixed(1)}秒，目标${settings.requestedSeconds}秒；规划语速每秒${pacing.targetCharactersPerSecond}字（不含标点），总字数应约${budget.totalCharacters}，当前${characters}。本次须${delta>0?'删减':'补充'}约${Math.abs(delta)}字，各章建议约${budget.perChapterTarget}字；实际字数：${report.chapters.map(c=>`${c.id}=${compactSpeech(c.narration).length}`).join('、')}。英文名称、数字逐字符计数。一次调整所有章节完整旁白及图解cue；不能通过放慢语速或空白凑时长。`);
+  }
   if(/损失函数/.test(prompt)&&/从浅入深|由浅入深|变迁|历史/.test(prompt)){
     const kinds=new Set(report.chapters.map(c=>c.visual.kind));
     if(!['formula','curve','timeline'].every(k=>kinds.has(k as LessonVisual['kind'])))errors.push('损失函数教学须包含公式、真实函数曲线与历史节点图解。');

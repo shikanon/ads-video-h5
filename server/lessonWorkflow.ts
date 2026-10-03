@@ -9,7 +9,7 @@ import { getModelConfig, type ModelConfig } from './modelRegistry';
 import { getAgent, probeAudio, runFFmpeg, validatePlan } from './core';
 import { researchGaps } from './narrativeResearch';
 import { hashBytes } from './narrativeScenes';
-import { alignLessonSpeech, compactSpeech, lessonSettings, lessonPacing, lessonPadding, lessonNarrationBudget, validateLesson, spokenLessonText, lessonSpeechLexicon, correctLessonTranscript, lessonCaptionAnalysis, applyLessonChapterRepairs, lessonRepairTargets } from './lessonSpec';
+import { alignLessonSpeech, compactSpeech, lessonSettings, lessonPacing, lessonPadding, lessonNarrationBudget, lessonScriptBudget, assertLessonScriptBudget, validateLesson, spokenLessonText, lessonSpeechLexicon, correctLessonTranscript, lessonCaptionAnalysis, applyLessonChapterRepairs, lessonRepairTargets } from './lessonSpec';
 import { produceLessonScene, NEWS_ILLUSTRATIONS } from './lessonScenes';
 import { loadEditingSkill, loadMotionDesignContext } from './skills';
 import { captionsFromTranscript } from './timeline';
@@ -65,6 +65,7 @@ export async function runLessonWorkflow(o:Options){
   let research:Awaited<ReturnType<typeof researchGaps>>|undefined;
   let report:LessonReport|undefined;let phase='research',feedback='',repairRequirements='';let attempts=0,failures=0,renders=0,turns=0,voiceRevision=0;
   let researchRounds=0,pacingRetakes=0;let chapterVoiceRevisions:Record<string,number>={};
+  let scriptBudget:ReturnType<typeof lessonScriptBudget>|undefined;
   const gapRetakes=new Set<string>();
   let plan:EditPlan|undefined,rendered:{id:string;file:string}|undefined,review:RenderReview|undefined;
   let speech=new Map<string,{file:string;analysis:AudioAnalysis}>();
@@ -72,11 +73,13 @@ export async function runLessonWorkflow(o:Options){
   try{const saved=JSON.parse(await readFile(path.join(work,'checkpoint.json'),'utf8'));if(saved.fingerprint===fingerprint){for(const key of saved.gapRetakes||[])gapRetakes.add(key);research=saved.research;voiceRevision=saved.voiceRevision||0;chapterVoiceRevisions=saved.chapterVoiceRevisions||{};feedback=saved.feedback||'';repairRequirements=saved.repairRequirements||'';researchRounds=saved.researchRounds||(research?1:0);
     if(saved.report){try{const draft=saved.report;if(!draft.explicitDuration)draft.requestedSeconds=settings.requestedSeconds;report=draft;report=validateLesson({...draft,presentation},o.prompt);phase=report.factReview?(report.factReview.needsRepair?'script':o.export?'narration':'done'):'fact-review';}catch(error){phase='script';feedback=error instanceof Error?error.message:'检查点脚本需重新校验';}}
     else if(research)phase='script';
-    if(['research','script','fact-review'].includes(saved.phase)&&research)phase=saved.phase;
+    if(saved.scriptBudget)scriptBudget=lessonScriptBudget(settings.requestedSeconds,pacing,saved.scriptBudget.chapters);
+    if(['research','budget','script','fact-review'].includes(saved.phase)&&research)phase=saved.phase;
   }}catch{}
-  if(current&&research&&currentResearchExpired(research)){research=undefined;report=undefined;phase='research';feedback='热点研究已过期，重新读取当前来源。';}
+  if(current&&settings.requestedSeconds<=60&&research&&!report&&!scriptBudget)phase='budget';
+  if(current&&research&&currentResearchExpired(research)){research=undefined;report=undefined;scriptBudget=undefined;phase='research';feedback='热点研究已过期，重新读取当前来源。';}
   if(report?.factReview?.needsRepair&&(!feedback||feedback.includes('超过6次')))feedback=report.factReview.findings.join('；');
-  const persistCheckpoint=async()=>writeFile(path.join(work,'checkpoint.json'),JSON.stringify({fingerprint,phase,research,report,voiceRevision,chapterVoiceRevisions,feedback,repairRequirements,researchRounds,renders,gapRetakes:[...gapRetakes]}),{mode:0o600});
+  const persistCheckpoint=async()=>writeFile(path.join(work,'checkpoint.json'),JSON.stringify({fingerprint,phase,research,report,scriptBudget,voiceRevision,chapterVoiceRevisions,feedback,repairRequirements,researchRounds,renders,gapRetakes:[...gapRetakes]}),{mode:0o600});
   const restored=new Map<string,WorkflowEvent>();
   try{for(const line of (await readFile(path.join(work,'calls.jsonl'),'utf8')).split('\n').filter(Boolean)){const event=JSON.parse(line) as WorkflowEvent;if(event.callId)restored.set(event.callId,event);}}catch{}
   const logged=new Set(restored.keys());
@@ -122,14 +125,19 @@ export async function runLessonWorkflow(o:Options){
     if(current)research=next;
     else if(research){const refs=structuredClone(research.references);for(const ref of next.references){const existing=refs.find(r=>r.url===ref.url);if(existing){if(['primary-page','primary-paper','primary-record'].includes(ref.verification))Object.assign(existing,ref,{id:existing.id});}else refs.push({...ref,id:`ref-${refs.length+1}`});}research={...next,summary:lessonResearchSummary(research.summary.split('\n\n可用原始来源与实际网页摘录')[0]+'\n追加定向查证：\n'+next.summary.split('\n\n可用原始来源与实际网页摘录')[0],refs),references:refs};}
     else research=next;
-    phase='script';await writeFile(path.join(work,'research.json'),JSON.stringify(research,null,2),{mode:0o600});return {summary:research.summary,references:research.references,settings,pacing,totalNarrationCharacters:lessonNarrationBudget(settings.requestedSeconds,pacing),nextTool:currentTool()};
+    phase=current&&settings.requestedSeconds<=60&&!report&&!scriptBudget?'budget':'script';await writeFile(path.join(work,'research.json'),JSON.stringify(research,null,2),{mode:0o600});return {summary:research.summary,references:research.references,settings,pacing,totalNarrationCharacters:lessonNarrationBudget(settings.requestedSeconds,pacing),nextTool:currentTool()};
+  });
+  add('plan_lesson_budget','分配短片旁白预算','选择3–5章的新闻叙事结构，服务端按目标时长计算每章旁白预算，再编写全文。不要自己估算英文名称字数。',Type.Object({chapters:Type.Integer({minimum:3,maximum:5})}),async a=>{
+    scriptBudget=lessonScriptBudget(settings.requestedSeconds,pacing,a.chapters);phase='script';
+    return {...scriptBudget,characterRule:'不含空格和标点，中文、英文字母和数字逐字符计数；每章写完整口语句，图解cue必须出现在对应旁白中。',nextTool:currentTool()};
   });
   const targetCharacters=lessonNarrationBudget(settings.requestedSeconds,pacing);
-  const narrationLimit=Math.min(220,Math.max(40,Math.round(settings.requestedSeconds*pacing.targetCharactersPerSecond/(settings.requestedSeconds<=60?3:8))));
+  const narrationLimit=Math.min(220,Math.max(20,Math.round(targetCharacters/(settings.requestedSeconds<=60?5:10))));
   const budgetedChapter=Type.Object({...chapterSchema.properties,narration:Type.String({maxLength:220,description:`本次总旁白预算约${targetCharacters}字，建议单章约${narrationLimit}字。先分配总预算，再组织完整讲解。`})});
   add('write_lesson_script',current?'编写新闻脚本':'编写递进教学脚本',`写教学目标、前置知识、完整旁白、事实引用与图解数据。本次全片旁白约${targetCharacters}字，建议${settings.requestedSeconds<=60?'3–5':'8–12'}章，不能每章用满上限。${current?'选一个已核验的热点，不要拼接多个无关新闻；图解日期、变化与观众影响。':'损失函数变迁史须包含formula、curve、timeline。'}cue须是旁白原词；公式用Unicode。`,Type.Object({title:Type.String(),audience:Type.String(),objectives:Type.Array(Type.String()),arc:Type.String(),chapters:Type.Array(budgetedChapter)}),async a=>{
     if(!research)throw new Error('先调用research_topic。');
     if(++attempts>6)throw new Error('教学脚本修正超过6次，需要检查具体校验问题。');
+    if(scriptBudget)assertLessonScriptBudget(a.chapters,scriptBudget);
     await writeFile(path.join(work,'script-attempt.json'),JSON.stringify(a,null,2),{mode:0o600});
     for(const c of a.chapters as LessonChapter[])c.referenceIds=[...new Set([...c.referenceIds,...c.claims.flatMap(cl=>cl.referenceIds)])];
     const used=new Set<string>(a.chapters.flatMap((c:LessonChapter)=>c.referenceIds));
@@ -271,13 +279,20 @@ export async function runLessonWorkflow(o:Options){
     else if(/错读|错字|残句|口误|漏字|重复残|重录|重新合成|音轨.*中断|爆音|咔声/.test(feedback))for(const id of lessonRepairTargets(report,feedback))chapterVoiceRevisions[id]=(chapterVoiceRevisions[id]||0)+1;
     phase='script';repairRequirements=`实际审查要求：${feedback}`;feedback=repairRequirements+`\n具体返修意图：${String(a.changes).slice(0,1200)}。保留未受影响的正确知识和引用，只提交所有受影响章节。`;return {feedback,priorScript:report,targets:lessonRepairTargets(report,repairRequirements),nextTool:currentTool()};
   });
-  const names:Record<string,string>={research:'research_topic',script:'write_lesson_script','fact-review':'review_lesson_script',narration:'synthesize_narration',scenes:'draw_lesson_scenes',timeline:'arrange_lesson_timeline',render:'render_lesson',review:'review_lesson',repair:'repair_lesson'};
+  const names:Record<string,string>={research:'research_topic',budget:'plan_lesson_budget',script:'write_lesson_script','fact-review':'review_lesson_script',narration:'synthesize_narration',scenes:'draw_lesson_scenes',timeline:'arrange_lesson_timeline',render:'render_lesson',review:'review_lesson',repair:'repair_lesson'};
   function currentTool(){return phase==='script'&&report?'revise_lesson_script':names[phase];}
   const agent=getAgent(o.config,trace.wrap(tools),(await loadEditingSkill('qingjian-teaching-video'))+'\n'+(current?await loadEditingSkill('qingjian-hot-video')+'\n':'')+(await loadMotionDesignContext()),true);
   const drainTrace=observeToolErrors(agent,trace);
   agent.onPayload=async payload=>{
     if(!payload||typeof payload!=='object')return;const p=payload as Record<string,any>,next=currentTool();
-    const allowed=p.tools?.filter((t:any)=>t.function?.name===next);
+    const allowed=p.tools?.filter((t:any)=>t.function?.name===next).map((t:any)=>{
+      if(!scriptBudget||next!=='write_lesson_script')return t;
+      const parameters=structuredClone(t.function.parameters),chapters=parameters.properties.chapters;
+      chapters.minItems=chapters.maxItems=scriptBudget.chapters;
+      chapters.items.properties.narration.maxLength=Math.ceil(scriptBudget.perChapterMaximum*1.35);
+      chapters.items.properties.narration.description=`本章约${scriptBudget.perChapterTarget}字，去除标点空格后的字符数最多${scriptBudget.perChapterMaximum}；英文字母和数字逐字符计数。`;
+      return {...t,function:{...t.function,parameters,description:t.function.description+`已分配${scriptBudget.chapters}章，全片约${scriptBudget.totalCharacters}字；每章约${scriptBudget.perChapterTarget}字，上限${scriptBudget.perChapterMaximum}字。`}};
+    });
     await appendFile(path.join(work,'llm-request-meta.jsonl'),JSON.stringify({at:new Date().toISOString(),model:p.model,max_tokens:p.max_tokens,phase,allowed:[next],toolDeclarations:allowed?.map((t:any)=>t.function?.name||t.name)})+'\n',{mode:0o600});
     await o.stage?.(`规划 · ${tools.find(t=>t.name===next)?.label||phase}`);
     return {...p,thinking:{type:'disabled'},tools:allowed,tool_choice:{type:'function',function:{name:next}}};
