@@ -76,6 +76,20 @@ test('technical durations and rendering settings are not mistaken for versioned 
   finally{globalThis.fetch=original;}
 });
 
+test('a follow-up script revision inherits the video task and cannot downgrade to source research',async()=>{
+  const original=globalThis.fetch;let requests=0;
+  globalThis.fetch=async(_url,init)=>{
+    const body=JSON.parse(String(init?.body));requests++;
+    const schema=body.tools.find((t:any)=>t.function.name==='route_video_request').function.parameters;
+    assert.doesNotMatch(JSON.stringify(schema.properties.mode),/research|conversation/);
+    return reply('route_video_request',{mode:'explainer',topic:'Fable5.5核验',export:true,reason:'继承上一轮视频脚本，只修改脚本'});
+  };
+  try{
+    const result=await resolveCreativeRequest(config(),'先改短脚本，暂不导出。',[{id:'prior',role:'user',text:'制作Fable5.5实时资讯视频，45秒横屏',createdAt:''}],0,async()=>{});
+    assert.equal(result.mode,'news');assert.equal(result.export,false);assert.equal(requests,1);
+  }finally{globalThis.fetch=original;}
+});
+
 test('invalid route decisions stop after the bounded attempts and never silently choose another topic',async()=>{
   const original=globalThis.fetch;let attempts=0;
   globalThis.fetch=async()=>{attempts++;return reply('route_video_request',{mode:'news',topic:'Fable5.1',export:true,reason:'错误版本'});};

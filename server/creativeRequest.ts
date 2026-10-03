@@ -73,7 +73,9 @@ export async function planCreationRoute(c:CreationContext,config:()=>Promise<Mod
 // wording access to production tools before a missing-footage gate can fire.
 export async function resolveCreativeRequest(config:ModelConfig,prompt:string,history:ChatMessage[],sourceCount:number,progress:(events:WorkflowEvent[])=>Promise<void>):Promise<CreativeRequest>{
   let result:CreativeRequest|undefined,turns=0;
-  const scriptRequested=!wantsConversation(prompt)&&wantsPlanOnly(prompt)&&/视频|短片|video|film/i.test(prompt)&&/脚本|分镜|script|storyboard/i.test(prompt)&&!reusesFootage(prompt)&&!excludesHtml(prompt);
+  const prior=history.filter(m=>m.role==='user').at(-1)?.text||'';
+  const taskText=/视频|短片|video|film/i.test(prompt)?prompt:prior+'\n'+prompt;
+  const scriptRequested=!wantsConversation(prompt)&&wantsPlanOnly(prompt)&&/视频|短片|video|film/i.test(taskText)&&/脚本|分镜|script|storyboard/i.test(prompt)&&!reusesFootage(taskText)&&!excludesHtml(taskText);
   const allowedModes=scriptRequested?['news','explainer']:['news','explainer','footage','research','conversation'];
   const schema=Type.Object({mode:Type.Union(allowedModes.map(v=>Type.Literal(v)),{description:scriptRequested?'要求实际完成视频脚本与分镜，选择news或explainer；研究是前置步骤，不能退回research或conversation。':'选择实际执行路径，不以素材数量撤销用户请求。'}),topic:Type.String({maxLength:240}),export:Type.Boolean(),reason:Type.String({maxLength:300})});
   const tool:AgentTool<typeof schema>={name:'route_video_request',label:'理解视频创作要求',description:'确定真实用户意图与可执行制作路径。无需已有素材也能查证主题、编写脚本、合成旁白、绘制HTML/GSAP分镜并导出图解视频。',parameters:schema,execute:async(_id,args)=>{
@@ -85,7 +87,7 @@ export async function resolveCreativeRequest(config:ModelConfig,prompt:string,hi
     const compact=(s:string)=>intentText(s).replace(/\s/g,'').toLowerCase();
     if(['news','explainer'].includes(args.mode)&&names.some(name=>!compact(args.topic).includes(compact(name))))throw new Error('主题必须保留用户原始名称与版本：'+names.join('、')+'；不能换成其他型号或热点。');
     result=args as CreativeRequest;
-    if(result.mode==='explainer'&&wantsCurrentResearch(prompt))result={...result,mode:'news',reason:'请求包含时效信息，按新闻流程核验。'+result.reason};
+    if(result.mode==='explainer'&&wantsCurrentResearch(taskText))result={...result,mode:'news',reason:'请求包含时效信息，按新闻流程核验。'+result.reason};
     if(wantsCurrentResearchOnly(prompt))result={...result,mode:'research',export:false};
     if(wantsConversation(prompt))result={...result,mode:'conversation',export:false};
     if(wantsPlanOnly(prompt)||['conversation','research'].includes(result.mode))result={...result,export:false};
