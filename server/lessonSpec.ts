@@ -97,6 +97,7 @@ export function validateLesson(report:LessonReport,prompt:string,plannedPacing?:
     try{
     if(!/^[a-zA-Z][\w-]{0,63}$/.test(c.id)||!['hook','foundation','development','application','recap'].includes(c.role))throw new Error('教学章节ID或角色无效。');
     string(c.title,24,'章节标题');string(c.goal,240,'教学目标');string(c.reason,240,'编排理由');string(c.narration,220,'旁白');
+    assertClearModelDates(c.narration);
     if(!Array.isArray(c.prerequisites)||c.prerequisites.some(id=>!seen.has(id))||(i>0&&c.prerequisites.length===0))throw new Error(`章节${c.id}须引用前面已引入的知识，不能前置引用或断开递进。`);
     if(!Array.isArray(c.referenceIds)||c.referenceIds.some(id=>!refs.has(id)))throw new Error(`章节${c.id}的引用不在真实研究中。`);
     if(!Array.isArray(c.claims)||!c.claims.length||c.claims.length>5)throw new Error('每章保存1–5条可核查事实。');
@@ -144,6 +145,12 @@ function spokenYears(text:string):string[]{
 function spokenDecimals(text:string):string[]{
   return [...text.replace(/\s/g,'').matchAll(/\d+\.\d+|[\d零〇一二两三四五六七八九十百千万亿]+点[\d零〇一二三四五六七八九]+/g)].map(m=>speechDecimalText(m[0]));
 }
+export function assertClearModelDates(text:string):void {
+  if(/\b[A-Za-z]{2,}(?:-[A-Za-z]+)*\s*\d+(?:\.\d+)?\s*[一二两三四五六七八九十]{1,3}[年月日号]/.test(text))throw new Error('型号与日期连写有歧义；用“Fable 5这个模型在六月发布”这样的完整表达，不能写“Fable 5六月发布”。');
+}
+function spokenModelVersions(text:string):string[] {
+  return [...text.matchAll(/\b([A-Za-z]{2,}(?:-[A-Za-z]+)*)\s*([\d零〇一二两三四五六七八九十百千万亿]+(?:[.点][\d零〇一二三四五六七八九]+)?)/g)].map(m=>m[1].toLowerCase()+':'+(/[.点]/.test(m[2])?speechDecimalText(m[2]):String(speechNumberValue(m[2]))));
+}
 function speechDecimalText(text:string):string{
   const digits:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9'};
   const [integer,fraction]=text.split(/[.点]/);
@@ -176,6 +183,8 @@ function speechQuantities(text:string):Array<{unit:string;value:number}>{
 export function correctLessonTranscript(chapter:LessonChapter,analysis:AudioAnalysis):AudioAnalysis{
   const aliases:Array<[string,string]>=[['智源','智元'],['报到','报道'],['cloud','Claude'],['Cloud','Claude'],['x二','X2'],['X二','X2'],['军方误差','均方误差'],['流族','留足'],['交叉商','交叉熵'],['交叉伤','交叉熵'],['交叉墒','交叉熵'],['绞链','铰链'],['饺链','铰链'],['易列','易例'],['编辑','边际'],['加码','伽马'],['加马','伽马'],['对其偏好','对齐偏好'],['复log','负log'],['sem','sim'],['派西塔','πθ'],['派ref','πref'],['德尔塔','δ'],['伽马','γ'],['陶','τ'],['贝塔','β'],['西格玛','σ']];
   for(const term of chapter.narration.match(/\b[A-Za-z][A-Za-z-]{1,24}(?=\b|\d)/g)||[])if(term!==term.toLowerCase())aliases.push([term.toLowerCase(),term]);
+  const digitNames=['零','一','二','三','四','五','六','七','八','九'];
+  for(const m of chapter.narration.matchAll(/\b([A-Za-z]{2,}(?:-[A-Za-z]+)*)\s*(\d)(?![\d.])/g))for(const name of new Set([m[1],m[1].toLowerCase()]))aliases.push([name+digitNames[Number(m[2])],m[1]+' '+m[2]]);
   for(const match of chapter.narration.matchAll(/[零〇一二两三四五六七八九十百千万亿]+[年月日号]/g)){
     const number=speechNumberValue(match[0].slice(0,-1));if(Number.isFinite(number))aliases.push([String(number)+match[0].at(-1),match[0]]);
   }
@@ -297,6 +306,7 @@ export function alignLessonSpeech(chapter:LessonChapter,analysis:AudioAnalysis):
   if(similarity<.86)throw new Error(`章节${chapter.id}实际旁白与脚本匹配${(similarity*100).toFixed(1)}%，低于86%；需要重新合成，不能用期望台词冒充实际音频。`);
   if(JSON.stringify(spokenYears(chapter.narration))!==JSON.stringify(spokenYears(analysis.transcript)))throw new Error(`章节${chapter.id}实际读出的年份与脚本不同，不能发布。`);
   const decimals=spokenDecimals(chapter.narration),heardDecimals=spokenDecimals(heardNumberText(numericAnalysis));
+  if(JSON.stringify(spokenModelVersions(chapter.narration))!==JSON.stringify(spokenModelVersions(heardNumberText(numericAnalysis))))throw new Error(`章节${chapter.id}实际型号或版本数字与脚本不同，需要独立复听或重录。`);
   if(JSON.stringify(decimals)!==JSON.stringify(heardDecimals))throw new Error(`章节${chapter.id}实际读出的小数数字${heardDecimals.join('、')}与脚本${decimals.join('、')}不同，需要重录。`);
   if(JSON.stringify(spokenDates(chapter.narration))!==JSON.stringify(spokenDates(heardNumberText(numericAnalysis))))throw new Error(`章节${chapter.id}日期数字或年月日单位与脚本不同，需要独立复听或重录。`);
   if(JSON.stringify(namedSpeechNumbers(chapter.narration))!==JSON.stringify(namedSpeechNumbers(analysis.transcript)))throw new Error(`章节${chapter.id}实际读出的残差、误差、伽马或阈值数字与脚本不同，需要核验或重录。`);

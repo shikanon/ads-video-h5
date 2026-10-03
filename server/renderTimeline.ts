@@ -10,6 +10,15 @@ import { lessonDimensions } from './lessonSpec';
 import { measureLoudness, parseLoudness, twoPassLoudnorm, voicedSpread, SOUND_LIMITS, type LoudnessMeasurement } from './audioQuality';
 
 export const planHash = (plan: EditPlan) => createHash('sha256').update(JSON.stringify(plan)).digest('hex');
+export function recoverPublishedPlan(plan:EditPlan,expected:string|undefined):EditPlan {
+  if(!expected||planHash(plan)===expected)return plan;
+  const core=plan.summary.replace(/[。.!！\s]+$/,'');
+  for(const suffix of ['','。','.','！','!']) {
+    const original={...plan,summary:core+suffix};
+    if(planHash(original)===expected)return original;
+  }
+  return plan;
+}
 export const dimensions = (plan: EditPlan) => plan.lesson ? lessonDimensions(plan.format) : plan.format === '16:9' ? [960, 540] : plan.format === '1:1' ? [720, 720] : plan.reconstruction ? [720, 1280] : [540, 960];
 const assTime = (seconds: number) => { const n = Math.round(seconds * 100); return `${Math.floor(n / 360000)}:${String(Math.floor(n / 6000) % 60).padStart(2, '0')}:${String(Math.floor(n / 100) % 60).padStart(2, '0')}.${String(n % 100).padStart(2, '0')}`; };
 const assText = (text: string) => text.replace(/\\/g, '＼').replace(/[{}]/g, '').replace(/\r?\n/g, '\\N');
@@ -117,7 +126,7 @@ export async function renderTimeline(inputPlan: EditPlan, media: MediaItem[], me
     const inputs = ['-i', composed, ...(bgmFile ? ['-stream_loop', '-1', '-i', bgmFile] : []), ...(narrationFile ? ['-i', narrationFile] : [])];
     const audio = plan.audio!;
     const tracks = [`[0:a]volume=${audio.originalVolume}[original]`]; const labels = ['[original]'];
-    if (bgmFile) { tracks.push(`[1:a]volume=${audio.bgmVolume}[music]`); labels.push('[music]'); }
+    if (bgmFile) { tracks.push(`[1:a]${plan.lesson?.presentation?.mood==='urgent'?'loudnorm=I=-20:TP=-2:LRA=7,':''}volume=${audio.bgmVolume}[music]`); labels.push('[music]'); }
     if (narrationFile) { tracks.push(`[${bgmFile ? 2 : 1}:a]volume=${audio.narrationVolume}[voice]`); labels.push('[voice]'); }
     const mix=`${labels.join('')}amix=inputs=${labels.length}:duration=first:dropout_transition=0:normalize=0`;
     let mixMeasurement:LoudnessMeasurement|undefined;let mixNormalize='';

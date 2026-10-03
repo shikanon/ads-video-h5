@@ -19,7 +19,7 @@ import { classify, shouldUpdatePlan, excludesBgm, narrativeRequest, lessonReques
 import { createAudioUnderstanding } from './audioUnderstanding';
 import { reviewRender } from './renderReview';
 import { recordVoiceRejection, reportsVoiceMismatch } from './audioQuality';
-import { planHash } from './renderTimeline';
+import { planHash, recoverPublishedPlan } from './renderTimeline';
 import { runEditorialWorkflow } from './editorialWorkflow';
 import { runNarrativeWorkflow, voiceReferenceAuthorized } from './narrativeWorkflow';
 import { inspectScene, verifySceneQuotes } from './sceneUnderstanding';
@@ -89,7 +89,9 @@ state.narrationBySession ||= {};
 state.bgmBySession ||= {};
 state.profiles ||= {};
 for (const session of state.sessions) if (session.plan) session.plan = normalizePlanSummary(session.plan);
-for (const artifact of state.artifacts) if (artifact.plan) artifact.plan = normalizePlanSummary(artifact.plan);
+// Published plans are immutable render evidence; display cleanup must not
+// change their hashes when the service restarts.
+for (const artifact of state.artifacts) if (artifact.plan) artifact.plan = recoverPublishedPlan(artifact.plan, artifact.planHash);
 if (!state.sessions.some((session) => session.id === state.activeSessionId)) state.activeSessionId = state.sessions[0].id;
 restoreInterruptedJobs(state.jobs, now());
 const jobRunner = createJobRunner();

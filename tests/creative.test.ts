@@ -17,10 +17,31 @@ import { checkHtmlProject } from '../server/narrativeScenes';
 import { researchHotTopics } from '../server/hotResearch';
 import { requestSemanticReview } from '../server/semanticReview';
 import { reviewNeedsContentRepair, newsFreshAtReview } from '../server/reviewResults';
+import { assertClearModelDates } from '../server/lessonSpec';
+import { planHash, recoverPublishedPlan } from '../server/renderTimeline';
 import { ARK_BASE_URL, TEXT_MODEL_PRESETS } from '../shared/textModels';
 import type { AudioAnalysis, LessonChapter, EditPlan, MediaItem } from '../src/types';
 
 const prompt='制作一个实时新闻资讯视频，视频内容讲述Fable5.5，渲染紧张迫切氛围';
+
+test('published snapshots recover punctuation only with exact recorded hash proof',()=>{
+  const original={summary:'新闻图解',targetSeconds:45,clips:[],format:'9:16'} as EditPlan,hash=planHash(original);
+  const changed={...original,summary:original.summary+'。'};
+  assert.deepEqual(recoverPublishedPlan(changed,hash),original);
+  const edited={...changed,targetSeconds:44};assert.equal(recoverPublishedPlan(edited,hash),edited,'real changes cannot be masked by summary recovery');
+  assert.equal(recoverPublishedPlan(changed,undefined),changed);
+});
+
+test('model integers cannot merge with a spoken month or change during transcription',()=>{
+  assert.throws(()=>assertClearModelDates('官方确认Fable 5六月发布。'),/型号与日期/);
+  assert.doesNotThrow(()=>assertClearModelDates('官方确认Fable 5这个模型在六月发布。'));
+  const chapter={id:'official',narration:'官方确认Fable 5这个模型在六月发布。',visual:{items:[]}} as unknown as LessonChapter;
+  const audio=(text:string):AudioAnalysis=>({status:'ready',modelId:'test',sourceHash:'test',duration:10,transcript:text,sentences:[{id:'s',text,start:0,end:10,complete:true,words:[...text].map((text,i)=>({text,start:i*.1,end:(i+1)*.1}))}],pauses:[],timing:'model-estimated',warnings:[],createdAt:''});
+  const raw=audio('官方确认Fable五这个模型在六月发布'),corrected=correctLessonTranscript(chapter,raw);
+  assert.match(corrected.transcript,/Fable 5这个模型/);assert.match(raw.transcript,/Fable五/);
+  assert.equal(alignLessonSpeech(chapter,corrected).similarity,1);
+  assert.throws(()=>alignLessonSpeech(chapter,audio('官方确认Fable六这个模型在六月发布')),/型号|数字/);
+});
 
 test('unfinished review retains the film while actual defects still require repair',()=>{
   const base={status:'needs-review',checks:[{name:'成片语义审查',passed:false}]};
