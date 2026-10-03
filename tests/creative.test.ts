@@ -55,6 +55,14 @@ test('model integers cannot merge with a spoken month or change during transcrip
   assert.throws(()=>alignLessonSpeech(chapter,audio('官方确认Fable六这个模型在六月发布')),/型号|数字/);
 });
 
+test('consecutive heard model names after Arabic version digits still retain every version',()=>{
+  const chapter={id:'official',narration:'但官方已列Fable 5.1、Opus 5.5和Sonnet 5.5；两类页面暂未看到Fable 5.5公告。',visual:{items:[]}} as unknown as LessonChapter;
+  const text='但官方已列fable5点1opus5点5和sonnet5点5两类页面暂未看到fable5点5公告';
+  const audio=(transcript:string):AudioAnalysis=>({status:'ready',modelId:'test',sourceHash:'test',duration:10,transcript,sentences:[{id:'s',text:transcript,start:0,end:10,complete:true,words:[...transcript].map((text,i)=>({text,start:i*.1,end:(i+1)*.1}))}],pauses:[],timing:'model-estimated',warnings:[],createdAt:''});
+  assert.equal(alignLessonSpeech(chapter,audio(text)).similarity,1);
+  assert.throws(()=>alignLessonSpeech(chapter,audio(text.replace('opus5点5','opus5点6'))),/型号|数字/);
+});
+
 test('unfinished review retains the film while actual defects still require repair',()=>{
   const base={status:'needs-review',checks:[{name:'成片语义审查',passed:false}]};
   assert.equal(reviewNeedsContentRepair(base),false);

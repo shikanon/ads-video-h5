@@ -162,7 +162,7 @@ export function assertClearModelDates(text:string):void {
   if(/\b[A-Za-z]{2,}(?:-[A-Za-z]+)*\s*\d+(?:\.\d+)?\s*[一二两三四五六七八九十]{1,3}[年月日号]/.test(text))throw new Error('型号与日期连写有歧义；用“Fable 5这个模型在六月发布”这样的完整表达，不能写“Fable 5六月发布”。');
 }
 function spokenModelVersions(text:string):string[] {
-  return [...text.matchAll(/\b([A-Za-z]{2,}(?:-[A-Za-z]+)*)\s*([\d零〇一二两三四五六七八九十百千万亿]+(?:[.点][\d零〇一二三四五六七八九]+)?)/g)].map(m=>m[1].toLowerCase()+':'+(/[.点]/.test(m[2])?speechDecimalText(m[2]):String(speechNumberValue(m[2]))));
+  return [...text.matchAll(/(?<![A-Za-z])([A-Za-z]{2,}(?:-[A-Za-z]+)*)\s*([\d零〇一二两三四五六七八九十百千万亿]+(?:[.点][\d零〇一二三四五六七八九]+)?)/g)].map(m=>m[1].toLowerCase()+':'+(/[.点]/.test(m[2])?speechDecimalText(m[2]):String(speechNumberValue(m[2]))));
 }
 function speechDecimalText(text:string):string{
   const digits:Record<string,string>={'零':'0','〇':'0','一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9'};
