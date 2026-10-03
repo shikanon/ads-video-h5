@@ -92,11 +92,8 @@ const labels = {
     videos: "视频",
     images: "图片",
     audios: "音频",
-    model: "默认对话模型",
-    chatModel: "当前对话模型",
-    modelLocked: "任务完成或停止后可切换模型",
-    modelNextMessage: "切换后从下一条消息开始使用，保留当前对话",
-    modelUnavailable: "当前模型不可用，请选择模型",
+    model: "对话模型",
+    modelLocked: "当前任务完成后可切换。",
     language: "界面语言",
     background: "对话背景",
     default: "默认背景",
@@ -139,11 +136,8 @@ const labels = {
     videos: "Videos",
     images: "Images",
     audios: "Audio",
-    model: "Default chat model",
-    chatModel: "Current chat model",
-    modelLocked: "Switch after the task finishes or stops",
-    modelNextMessage: "Use the selected model for the next message, keeping this conversation",
-    modelUnavailable: "Current model unavailable — choose a model",
+    model: "Chat model",
+    modelLocked: "Switch after the current task finishes.",
     language: "Language",
     background: "Chat background",
     default: "Default",
@@ -544,7 +538,6 @@ function Message({
         </span>
       ) : null}
       <div className="message-main">
-        {message.role === 'user' && job?.textModel ? <div className="message-model" title={job.textModel.modelId}><span>{job.textModel.name}</span><code>{job.textModel.modelId}</code></div> : null}
         {message.role==='assistant' ? <AssistantReply message={message} job={job} locale={locale}/> : message.text ? (
           <div className="message-bubble">{message.text}</div>
         ) : null}
@@ -691,7 +684,6 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   const activeSessionJobs = state?.jobs.filter(job => job.sessionId === session?.id && isActiveJob(job)) || [];
   const sessionRunning = activeSessionJobs.length > 0;
   const textModels = state?.models.filter(model => model.kind === 'text' && model.enabled) || [];
-  const selectedTextModel = textModels.find(model => model.id === session?.modelId);
   const sessions = state?.sessions.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) || [];
   const sessionTitle = (item: Session) =>
     item.title === "新对话" || item.title === "新会话" ? t.newChat : item.title;
@@ -898,7 +890,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
     nav("chat");
     requestAnimationFrame(() => composerInput.current?.focus());
   }
-  async function patch(settings: Partial<AppSettings>) {
+  async function patch(settings: Partial<AppSettings> & { applyToCurrentSession?: boolean }) {
     await mutate("/api/settings", "PATCH", settings);
   }
   function backgroundFile(file?: File) {
@@ -1001,17 +993,6 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
         ) : null}
         {page === "chat" ? (
           <>
-            {state && session ? <div className="conversation-model" title={sessionRunning ? t.modelLocked : t.modelNextMessage}>
-              <label htmlFor="conversation-model">{t.chatModel}</label>
-              <div className="conversation-model-choice">
-                <select id="conversation-model" value={session.modelId || ''} disabled={pending || sessionRunning || !textModels.length} onChange={event => void mutate(`/api/sessions/${encodeURIComponent(session.id)}/model`, 'PATCH', { modelId: event.target.value })}>
-                  {!selectedTextModel ? <option value={session.modelId || ''} disabled>{session.modelId ? t.modelUnavailable : locale === 'zh-CN' ? '跟随默认模型' : 'Default model'}</option> : null}
-                  {textModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
-                </select>
-                <ChevronDown size={14} aria-hidden="true" />
-              </div>
-              <small>{sessionRunning ? t.modelLocked : selectedTextModel?.modelId || t.modelNextMessage}</small>
-            </div> : null}
             <div
               className="chat-scroll"
               ref={chatScroll}
@@ -1484,25 +1465,26 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
             <div className="setting-group">
               <h2>{t.model}</h2>
               <select
-                value={state?.settings.defaultModelId || ""}
+                value={session ? session.modelId || "" : state?.settings.defaultModelId || ""}
+                disabled={pending || sessionRunning || !session || !textModels.length}
                 onChange={(e) =>
-                  void patch({ defaultModelId: e.target.value || null })
+                  void patch({ defaultModelId: e.target.value || null, applyToCurrentSession: true })
                 }
                 aria-label={t.model}
               >
                 <option value="">
-                  {locale === "zh-CN" ? "自动选择" : "Auto select"}
+                  {locale === "zh-CN" ? "使用默认" : "Use default"}
                 </option>
                 {textModels.map((m) => (
                     <option value={m.id} key={m.id}>
-                      {m.name} · {m.modelId}
+                      {m.name}
                     </option>
                   ))}
               </select>
               <p>
-                {locale === "zh-CN"
-                  ? "用于之后创建的新对话。"
-                  : "Used for new chats."}
+                {sessionRunning ? t.modelLocked : locale === "zh-CN"
+                  ? "更改后从下一条消息起生效，也用于新对话。"
+                  : "Applies to the next message and new chats."}
               </p>
             </div>
             <div className="setting-group">

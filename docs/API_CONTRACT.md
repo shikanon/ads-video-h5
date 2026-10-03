@@ -32,7 +32,7 @@
 | `POST /api/music/pixabay/detail` | `{"detailUrl":"https://pixabay.com/zh/music/<slug-id>/"}` | 从官方曲目详情页提取 MP3 CDN 地址和曲目信息 |
 | `POST /api/music/pixabay/download` | `{"url":"https://cdn.pixabay.com/download/audio/...mp3?filename=...mp3"}` | 代理返回 MP3，最大 25 MB |
 | `POST /api/music/24bit/download` | `{detailUrl,track:{type,name,player,album},audioUrl}` | 先调用 24bit 下载授权接口，再代理曲目页提供的 NetEase 音频，最大 200 MB |
-| `PATCH /api/settings` | `Partial<AppSettings>` | `AppState`，默认模型/语言/聊天背景 |
+| `PATCH /api/settings` | `Partial<AppSettings> & {applyToCurrentSession?: boolean}` | `AppState`，默认模型/语言/聊天背景；切换模型时传入 `applyToCurrentSession: true`，同步更新当前会话和新会话的默认模型，运行中的会话返回 `409` |
 | `GET /api/effects` | 无 | 已启用 HTML 特效的名称、说明、画幅和时长，不返回源码 |
 
 音乐接口使用本次浏览器抓到的路由、请求体及常见浏览器头重放，不会复用个人 Cookie 或绕过 Cloudflare。上游拒绝时返回可识别的错误；见 [抓包记录及限制](BGM_SOURCE_RESEARCH.md)。
@@ -42,6 +42,8 @@
 需要复用测试浏览器会话时，使用 `scripts/music-browser-client.js` 中的 `window.qingjianMusicBrowser` 方法，并在对应站点原页面上下文运行；`fetch` 由 Chrome 自动附带同源凭据，脚本不读取 Cookie。服务端 `/api/music/*` 与浏览器上下文方法是两条不同传输路径，当前网络仅浏览器会话路径已完成 24bit 的搜索到音频流读取验证。
 
 管理后台 API 使用 `/api/admin` 前缀，凭本地管理员令牌访问。模型配置项包含 `id/name/provider/kind/modelId/baseUrl/enabled/apiKey`，读取时只返回密钥是否已设置与掩码，永不回传完整密钥。
+
+H5 仅在设置页提供对话模型切换，选项显示模型名称，不在聊天页或消息中展示模型信息。设置页发送 `{defaultModelId, applyToCurrentSession: true}`；服务端按当前帐号的激活会话更新选择并保留历史与方案，排队、执行或停止中的任务会阻止切换。`defaultModelId: null` 表示使用系统默认。省略该标志的请求仍只更新新会话的默认模型。
 
 预置文本模型包含 `doubao-seed-2-1-pro-260915`、`deepseek-v4-pro-ga-260813`、`glm-5-3-flash-260828`。旧注册表只补齐一次，保留已有条目、禁用状态、默认选择和之后的删除操作；新增条目的密钥引用仅在服务端解析，限定同厂商、同服务地址的文本模型。任务开始时冻结各用途的模型配置，`Job.textModel` 保存实际文本模型的 `{id,name,modelId}`，不含密钥或服务地址。已执行的任务记录不随之后的会话模型切换而改变。
 

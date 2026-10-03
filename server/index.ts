@@ -841,11 +841,24 @@ app.get('/api/download/:id', async (request, response) => { const artifact = sta
 app.patch('/api/settings', async (request, response) => {
   const user = userOf(request);
   const profile = await profileOf(user);
-  const body = request.body as Partial<AppSettings> | undefined;
+  const body = request.body as (Partial<AppSettings> & { applyToCurrentSession?: boolean }) | undefined;
   if (!body || typeof body !== 'object' || Array.isArray(body)) return response.status(400).json({ error: '设置格式无效。' });
   if ('language' in body && body.language !== 'zh-CN' && body.language !== 'en-US') return response.status(400).json({ error: '不支持的语言。' });
   if ('chatBackground' in body && body.chatBackground !== null && (typeof body.chatBackground !== 'string' || body.chatBackground.length > 500_000)) return response.status(400).json({ error: '对话背景图片无效或过大。' });
-  if ('defaultModelId' in body) { const id = body.defaultModelId; if (id !== null && (typeof id !== 'string' || !(await listPublicModels()).some((model) => model.id === id && model.kind === 'text' && model.enabled))) return response.status(400).json({ error: '默认文本模型不可用。' }); profile.settings.defaultModelId = id!; }
+  if ('applyToCurrentSession' in body && typeof body.applyToCurrentSession !== 'boolean') return response.status(400).json({ error: '设置格式无效。' });
+  if (body.applyToCurrentSession && !('defaultModelId' in body)) return response.status(400).json({ error: '请选择对话模型。' });
+  if ('defaultModelId' in body) {
+    const id = body.defaultModelId;
+    if (id !== null && (typeof id !== 'string' || !(await listPublicModels()).some((model) => model.id === id && model.kind === 'text' && model.enabled))) return response.status(400).json({ error: '对话模型不可用。' });
+    if (body.applyToCurrentSession) {
+      const session = getSession(profile.activeSessionId, user.id);
+      if (!session) return response.status(404).json({ error: '对话不存在。' });
+      if (state.jobs.some(job => job.sessionId === session.id && isActiveJob(job))) return response.status(409).json({ error: '请等当前任务完成后再切换。' });
+      session.modelId = id!;
+      session.updatedAt = now();
+    }
+    profile.settings.defaultModelId = id!;
+  }
   if ('language' in body) profile.settings.language = body.language!;
   if ('chatBackground' in body) profile.settings.chatBackground = body.chatBackground!;
   await saveState(); response.json(await publicState(user));
