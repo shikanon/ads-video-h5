@@ -94,12 +94,15 @@ export async function renderTimeline(inputPlan: EditPlan, media: MediaItem[], me
       audioSegments.push(`${segments.map((_,i)=>`[sa${i}]`).join('')}concat=n=${segments.length}:v=0:a=1[voice]`);
       await runFFmpeg(['-v','error','-y','-f','concat','-safe','0','-i',list,...segments.flatMap(s=>['-i',s]),'-filter_complex',audioSegments.join(';'),'-map','0:v:0','-map','[voice]','-t',String(timelineDuration(plan)),'-c:v','copy','-c:a','aac','-b:a','128k',merged]);
     } else {
-      const filters = segments.map((_, i) => `[${i}:v]settb=AVTB,setpts=PTS-STARTPTS[v${i}];[${i}:a]atrim=duration=${plan.clips[i].end-plan.clips[i].start},asetpts=PTS-STARTPTS[a${i}]`);
+      // Timebase/PTS conversion can leave an unknown frame rate on Linux.
+      // Establish CFR after conversion and after each join before another xfade.
+      const filters = segments.map((_, i) => `[${i}:v]setpts=PTS-STARTPTS,fps=30,settb=AVTB[v${i}];[${i}:a]atrim=duration=${plan.clips[i].end-plan.clips[i].start},asetpts=PTS-STARTPTS[a${i}]`);
       let v = 'v0'; let a = 'a0'; let elapsed = plan.clips[0].end - plan.clips[0].start;
       for (let i = 1; i < segments.length; i++) {
         const fade = plan.clips[i].transition?.kind === 'fade' ? plan.clips[i].transition!.duration : 0;
-        if (fade) filters.push(`[${v}][v${i}]xfade=transition=fade:duration=${fade}:offset=${(elapsed - fade).toFixed(3)}[vm${i}];[${a}][a${i}]acrossfade=d=${fade}:c1=tri:c2=tri[am${i}]`);
-        else filters.push(`[${v}][${a}][v${i}][a${i}]concat=n=2:v=1:a=1[vm${i}][am${i}]`);
+        if (fade) filters.push(`[${v}][v${i}]xfade=transition=fade:duration=${fade}:offset=${(elapsed - fade).toFixed(3)}[joined${i}];[${a}][a${i}]acrossfade=d=${fade}:c1=tri:c2=tri[am${i}]`);
+        else filters.push(`[${v}][${a}][v${i}][a${i}]concat=n=2:v=1:a=1[joined${i}][am${i}]`);
+        filters.push(`[joined${i}]fps=30,settb=AVTB[vm${i}]`);
         v = `vm${i}`; a = `am${i}`; elapsed += plan.clips[i].end - plan.clips[i].start - fade;
       }
       await runFFmpeg(['-v', 'error', '-y', '-filter_complex_threads', '1', ...segments.flatMap((s) => ['-i', s]), '-filter_complex', filters.join(';'), '-map', `[${v}]`, '-map', `[${a}]`, '-t', String(timelineDuration(plan)), '-c:v', 'libx264', '-threads', '2', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-c:a', 'aac', merged]);

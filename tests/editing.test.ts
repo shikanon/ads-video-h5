@@ -116,3 +116,24 @@ test('fade, zoom, volume and subtitles are rendered into a real changed file', a
     assert.notDeepEqual(await readFile(rendered.file), await readFile(alternative.file));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('multiple fades and mixed cuts retain constant frame rate and full audio duration', async () => {
+  const dir=await mkdtemp(path.join(tmpdir(),'qingjian-chain-render-'));
+  try {
+    await runFFmpeg(['-v','error','-y','-f','lavfi','-i','color=c=blue:s=270x480:r=30','-f','lavfi','-i','sine=frequency=660:sample_rate=44100','-t','1.3','-c:v','libx264','-threads','2','-pix_fmt','yuv420p','-c:a','aac','-f','mp4',path.join(dir,'source')]);
+    const media=[{...fixture,duration:1.3,analysis:undefined}];
+    for(const mixed of [false,true]) {
+      const clips=Array.from({length:5},(_,i)=>({sourceId:'source',start:0,end:1.23,transition:{kind:i===0||mixed&&i===2?'cut' as const:'fade' as const,duration:i===0||mixed&&i===2?0:.18}}));
+      const candidate=validatePlan({format:'9:16',summary:'连续转场',targetSeconds:0,clips,captions:[],overlays:[],audio:{originalVolume:1,bgmVolume:0,narrationVolume:1,normalize:false}},media);
+      const output=await renderPlan(candidate,media,dir,path.join(dir,'out'));
+      const probe=await probeVideo(output.file);assert.ok(probe.hasAudio);assert.ok(Math.abs(probe.duration-candidate.targetSeconds)<.15);
+      const log=await runFFmpeg(['-hide_banner','-i',output.file,'-vf','showinfo','-af','ashowinfo','-f','null','-'],180000,250000);
+      assert.match(log,/frame_rate:\s*30\/1/);
+      const videoTimes=[...log.matchAll(/\[Parsed_showinfo[^\]]*\].*?\bn:\s*\d+\s+pts:\s*\d+\s+pts_time:([\d.]+)/g)].map(m=>Number(m[1]));
+      const audioTimes=[...log.matchAll(/\[Parsed_ashowinfo[^\]]*\].*?\bn:\s*\d+\s+pts:\s*\d+\s+pts_time:([\d.]+).*?nb_samples:(\d+)/g)].map(m=>Number(m[1])+Number(m[2])/44100);
+      assert.ok(videoTimes.length>100&&Math.abs(videoTimes.at(-1)!+1/30-candidate.targetSeconds)<.15);
+      for(let i=1;i<videoTimes.length;i++)assert.ok(Math.abs(videoTimes[i]-videoTimes[i-1]-1/30)<.00002);
+      assert.ok(audioTimes.length>0&&Math.abs(audioTimes.at(-1)!-candidate.targetSeconds)<.15);
+    }
+  } finally {await rm(dir,{recursive:true,force:true});}
+});
