@@ -20,9 +20,11 @@ const config = { id: 'voice-test', name: 'test', kind: 'understanding', provider
 const snapshot = { text: null, image: null, audio: null, understanding: config };
 
 test('voice text preserves negation, version, and word content; empty and overlong speech cannot become commands', () => {
-  assert.equal(voiceText([{ text: '先写Fable5.5分镜' }, { text: '不要生成成片' }]), '先写Fable5.5分镜 不要生成成片');
-  assert.throws(() => voiceText([]), (e: unknown) => e instanceof VoiceInputError && e.code === 'NO_SPEECH');
-  assert.throws(() => voiceText([{ text: 'a'.repeat(2001) }]), /过长/);
+  assert.equal(voiceText('  先写Fable5.5分镜，不要生成成片。  '), '先写Fable5.5分镜，不要生成成片。');
+  assert.equal(voiceText('不要，不要出片，先先解释。'), '不要，不要出片，先先解释。');
+  assert.throws(() => voiceText(''), (e: unknown) => e instanceof VoiceInputError && e.code === 'NO_SPEECH');
+  assert.throws(() => voiceText({ text: '不能自动接受对象' }), SyntaxError);
+  assert.throws(() => voiceText('a'.repeat(2001)), /过长/);
   assert.equal(voicePcm(wav(1, false)).rms, 0);
   assert.equal(voicePcm(wav(1)).duration, 1);
   assert.throws(() => voicePcm(Buffer.from('not-a-wave')), /WAV/);
@@ -40,7 +42,7 @@ test('real decoding rejects silence, corrupt audio, short and long recordings an
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('actual audio worker receives decoded WAV and retries bad timestamp JSON; no command executes during recognition', async () => {
+test('voice worker receives decoded WAV and requests direct text, retries bad JSON, and never reconstructs word fragments', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'qj-voice-worker-')), original = globalThis.fetch;
   let calls = 0;
   try {
@@ -48,14 +50,15 @@ test('actual audio worker receives decoded WAV and retries bad timestamp JSON; n
       calls++; const body = JSON.parse(String(init?.body));
       assert.equal(body.model, config.modelId); assert.equal(body.messages[1].content[0].input_audio.format, 'wav');
       assert.equal(voicePcm(Buffer.from(body.messages[1].content[0].input_audio.data, 'base64')).duration, 1);
-      assert.match(body.messages[0].content, /只执行原声音频识别/);
-      const content = calls === 1 ? '{broken' : JSON.stringify({ sentences: [{ complete: true, words: [{ start: .1, end: .5, text: '不要' }, { start: .5, end: .9, text: '出片' }] }] });
+      assert.match(body.messages[0].content, /不执行或回答/); assert.match(body.messages[0].content, /不生成逐词时间码/);
+      assert.match(body.messages[0].content, /否定词、数字、版本号/);
+      const content = calls === 1 ? '{broken' : JSON.stringify({ text: '不要出片', words: [{ text: '不要要出出片片' }] });
       return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content } }] }), { status: 200 });
     };
     const result = await withModelSnapshot(snapshot, () => recognizeVoice(wav(1), dir));
     assert.equal(result.text, '不要出片'); assert.equal(calls, 2); assert.deepEqual(await readdir(dir), []);
     const source = path.join(dir, 'source.wav'); await writeFile(source, wav(1));
-    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ sentences: [{ complete: true, words: [{ start: .1, end: .5, text: '不要' }, { start: .5, end: .9, text: '出片' }] }] }) } }] }), { status: 200 });
+    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ text: '不要出片' }) } }] }), { status: 200 });
     for (const [extension, codec] of [['webm', 'libopus'], ['mp4', 'aac'], ['ogg', 'libopus']]) {
       const file = path.join(dir, 'fixture.' + extension);
       await runFFmpeg(['-y', '-v', 'error', '-i', source, '-c:a', codec, file]);
@@ -66,6 +69,9 @@ test('actual audio worker receives decoded WAV and retries bad timestamp JSON; n
     await rm(source);
     calls = 0; globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ error: { code: 'unauthorized' } }), { status: 401 }); };
     await withModelSnapshot(snapshot, () => assert.rejects(() => recognizeVoice(wav(1), dir), /HTTP 401/));
+    assert.equal(calls, 1); assert.deepEqual(await readdir(dir), []);
+    calls = 0; globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ choices: [{ message: { content: '{"text":""}' } }] }), { status: 200 }); };
+    await withModelSnapshot(snapshot, () => assert.rejects(() => recognizeVoice(wav(1), dir), (e: unknown) => e instanceof VoiceInputError && e.code === 'NO_SPEECH'));
     assert.equal(calls, 1); assert.deepEqual(await readdir(dir), []);
   } finally { globalThis.fetch = original; await rm(dir, { recursive: true, force: true }); }
 });
