@@ -797,6 +797,17 @@ details[open] > summary .disclosure-chevron {
   height: 35px;
   padding: 0;
 }
+.composer-actions .newline-button {
+  display: none;
+  width: auto;
+  height: 44px;
+  gap: 3px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+@media (pointer: coarse) {
+  .composer-actions .newline-button { display: flex; }
+}
 .composer-actions .send-button {
   margin-left: auto;
   width: 38px;

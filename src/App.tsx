@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  CornerDownLeft,
   Film,
   Image as ImageIcon,
   ImagePlus,
@@ -891,6 +892,15 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
     nav("chat");
     requestAnimationFrame(() => composerInput.current?.focus());
   }
+  function insertLineBreak() {
+    const input = composerInput.current;
+    if (!input || input.disabled) return;
+    const { value, selectionStart: start, selectionEnd: end } = input;
+    if (value.length - (end - start) + 1 > input.maxLength) return;
+    input.setRangeText("\n", start, end, "end");
+    setPrompt(input.value);
+    input.focus();
+  }
   function open(artifact: Artifact) {
     if (artifact.kind === "video") {
       setSelectedVideo(artifact);
@@ -1224,15 +1234,18 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                   disabled={voiceBusy}
                   aria-label={t.input}
                   placeholder={t.input}
+                  enterKeyHint="enter"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  rows={attachments.length ? 2 : 1}
+                  rows={Math.min(5, Math.max(attachments.length ? 2 : 1, prompt.split("\n").length))}
                   maxLength={3000}
                   onKeyDown={(e) => {
                     if (
                       e.key === "Enter" &&
                       !e.shiftKey &&
-                      !e.nativeEvent.isComposing
+                      !e.nativeEvent.isComposing &&
+                      e.nativeEvent.keyCode !== 229 &&
+                      !window.matchMedia("(pointer: coarse)").matches
                     ) {
                       e.preventDefault();
                       void send();
@@ -1257,6 +1270,17 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                     aria-label={t.media}
                   >
                     <Library size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    className="newline-button"
+                    disabled={voiceBusy}
+                    aria-label={locale === "zh-CN" ? "插入换行" : "Insert line break"}
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={insertLineBreak}
+                  >
+                    <CornerDownLeft size={14} aria-hidden="true" />
+                    {locale === "zh-CN" ? "换行" : "Newline"}
                   </button>
                   <VoiceInput
                     key={state?.activeSessionId}
