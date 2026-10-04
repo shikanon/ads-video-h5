@@ -18,6 +18,7 @@
 | `POST /api/sessions/:id/activate` | `{}` | `AppState`，切换历史会话 |
 | `PATCH /api/sessions/:id/model` | `{modelId}`（模型配置条目的 `id`） | `AppState`，仅切换当前帐号该会话的文本模型，保留历史；不可用模型返回 `400`，会话有排队、执行或停止中的任务返回 `409` |
 | `POST /api/chat` | `{sessionId, message, attachmentIds?}` | `AppState`，先持久化用户消息与异步任务，不等待耗时生成 |
+| `POST /api/voice/transcribe` | 已登录，`multipart/form-data` 字段 `audio` | `{text,duration}`；先识别录音，不创建消息或 Agent 任务 |
 | `POST /api/media` | `multipart/form-data`，字段 `files` | `AppState`，支持视频、图片和 MP3/WAV/OGG 音频；视频自动检测最多 8 段分镜 |
 | `DELETE /api/media/:id` | 无 | `AppState`，删除素材前由前端提示关联影响 |
 | `GET /api/media/:id` | 无 | 对应视频/图片/音频文件 |
@@ -127,3 +128,11 @@ HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说�
 作者原图与序列图使用私有本地媒体文件和受登录保护的素材接口，不进入公共 OSS。默认作者切换不改变已生成文件，需重新导出才能更新历史成片。
 
 已渲染作品中的 `Artifact.plan` 是哈希校验的输入，服务重启不得改写其摘要或其他字段。普通知识教学的纯导出指令可沿用当前已验证时间线、HTML 和旁白，仍生成新 MP4、清单与审查记录；改变内容的请求继续走方案更新，热点教学继续走时效查证。
+
+## 长按语音指令
+
+输入栏的麦克风支持长按录音、松开识别后自动发送，上滑或按 Escape 取消；键盘 Space/Enter 也可按住录音。页面隐藏或切换会话时取消尚未发送的录音和识别请求。一次最长 60 秒。浏览器需要麦克风权限和 HTTPS（本机开发可用 localhost）。录音格式由 MediaRecorder 实际能力选择，兼容 WebM/Opus、MP4/AAC 和 OGG。
+
+`POST /api/voice/transcribe` 复用已经配置的 `understanding` 模型，服务端先实际解码为 16 kHz 单声道 WAV，校验时长、音量和逐字转写。最大 8 MiB、总识别时限 90 秒；未登录 401、格式不支持 415、上传过大 413、静音或无可辨语音 422、服务不可用 503。暂存录音和归一化音频在成功、失败或取消后清理，不加入素材库，不持久化原录音，也不将原音频传给指令 Agent。
+
+识别成功后前端将原话与当前输入文字合并，通过现有 `/api/chat` 发送，沿用当前会话和附件。识别失败、取消或空文本不发送指令；发送失败时识别文字留在输入框供修改重试。转写完成不等于 Agent 任务完成，执行进度及结果仍以 `Job` 为准。

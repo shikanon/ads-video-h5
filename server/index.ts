@@ -43,6 +43,7 @@ import { excludesAvatar, generateAuthorSprite, planAuthorAvatar, usesAvatar } fr
 import { createToolTrace } from './toolTrace';
 import { isActiveJob } from '../src/jobStatus';
 import { planCreationRoute } from './creativeRequest';
+import { mountVoiceInputRoutes } from './voiceInput';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -739,6 +740,7 @@ app.get('/api/effects/assets/:id', async (request, response) => {
 const auth = createAuth(dataDir, publicBase);
 await auth.load();
 auth.mount(app);
+mountVoiceInputRoutes(app, tmpDir);
 mountAvatarRoutes(app,{
   media:()=>state.media,mediaDir,tmpDir,save:saveState,publicState,
   settings:async user=>(await profileOf(user)).settings,session:getSession,

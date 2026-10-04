@@ -39,6 +39,7 @@ import type {
 import { MAX_MEDIA_UPLOAD_BYTES } from "./uploadLimits";
 import AssistantReply from "./AssistantReply";
 import HotResearchCard from "./HotResearchCard";
+import VoiceInput from './VoiceInput';
 import { isActiveJob } from './jobStatus';
 const AvatarPanel = lazy(() => import('./AvatarPanel'));
 
@@ -605,6 +606,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   const [prompt, setPrompt] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -815,15 +817,17 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
     xhr.send(form);
     if (fileInput.current) fileInput.current.value = "";
   }
-  async function send() {
-    const message = prompt.trim();
+  async function send(voiceText?: string) {
+    const message = voiceText === undefined ? prompt.trim() : [prompt.trim(), voiceText.trim()].filter(Boolean).join('\n');
     if (
       !message ||
       !state ||
       pending ||
+      (voiceBusy && voiceText === undefined) ||
       uploadProgress !== null
     )
-      return;
+      return false;
+    if (voiceText !== undefined) setPrompt(message);
     if (
       await mutate("/api/chat", "POST", {
         sessionId: state.activeSessionId,
@@ -837,7 +841,9 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
       requestAnimationFrame(() =>
         chatEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" }),
       );
+      return true;
     }
+    return false;
   }
   async function newChat() {
     const previousId = stateRef.current?.activeSessionId;
@@ -1215,6 +1221,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                 ) : null}
                 <textarea
                   ref={composerInput}
+                  disabled={voiceBusy}
                   aria-label={t.input}
                   placeholder={t.input}
                   value={prompt}
@@ -1236,6 +1243,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                   <button
                     type="button"
                     className="attach-button"
+                    disabled={voiceBusy}
                     onClick={() => openFilePicker("image")}
                     aria-label={locale === "zh-CN" ? "添加图片" : "Add image"}
                   >
@@ -1244,16 +1252,26 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                   <button
                     type="button"
                     className="library-button"
+                    disabled={voiceBusy}
                     onClick={() => nav("media")}
                     aria-label={t.media}
                   >
                     <Library size={18} />
                   </button>
+                  <VoiceInput
+                    key={state?.activeSessionId}
+                    locale={locale}
+                    endpoint={apiPath('/api/voice/transcribe')}
+                    disabled={pending || uploadProgress !== null || !state}
+                    onBusyChange={setVoiceBusy}
+                    onRecognized={async text => { if (!(await send(text))) throw new Error(locale === 'zh-CN' ? '指令未发送，识别文字已保留在输入框，请重试。' : 'Instruction not sent. The transcript is kept in the input. Please retry.'); }}
+                  />
                   <button
                     type="submit"
                     className="send-button"
                     disabled={
                       pending ||
+                      voiceBusy ||
                       uploadProgress !== null ||
                       !prompt.trim()
                     }
