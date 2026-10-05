@@ -233,7 +233,7 @@ async function performJob(job: Job): Promise<void> {
     addReply(session,job,excludesAvatar(prompt)?'已从当前方案移除作者形象，发送“生成成片”可导出。':'已在当前方案加入作者动画，发送“生成成片”可导出。');await saveState();return;
   }
   const reviewRender:typeof reviewBaseRender=(file,next,items,request)=>withReviewAssets(oss,job.ownerId!,publish=>{
-    const run=()=>reviewBaseRender(file,next,items,request,publish);
+    const run=()=>reviewBaseRender(file,next,items,request,publish,Date.parse(message.createdAt));
     return next.avatars?.length||job.kind==='review'
       ?avatarTrace.run(next.avatars?.length?'review_author_video':'review_existing_video',next.avatars?.length?'检查作者动画、画面与声音':'检查已有成片与声音',{planHash:planHash(next)},run)
       :run();
@@ -395,7 +395,7 @@ async function performJob(job: Job): Promise<void> {
   if(lessonPrompt&&(job.kind==='export'||job.kind==='plan')){
     const config=await getModelConfig('text',session.modelId);
     if(!config)throw new Error('文本模型尚未配置。');
-    const workflow=await runLessonWorkflow({prompt:lessonPrompt,config,audioConfig:await getModelConfig('audio'),media,dataDir,mediaDir,ownerId:job.ownerId!,checkpointKey:job.id,export:job.kind==='export',
+    const workflow=await runLessonWorkflow({prompt:lessonPrompt,requestedAt:Date.parse(message.createdAt),config,audioConfig:await getModelConfig('audio'),media,dataDir,mediaDir,ownerId:job.ownerId!,checkpointKey:job.id,export:job.kind==='export',
       analyze:(item,file)=>audioUnderstanding.analyze(item,file),
       register:async item=>{throwIfJobCancelled();await oss?.put(job.ownerId!,'media',item.id,path.join(mediaDir,item.id),item.mimeType);throwIfJobCancelled();state.media.push(item);await saveState();},
       persist:async next=>{throwIfJobCancelled();session.plan=next;await saveState();},saveDraft:async next=>{throwIfJobCancelled();session.lessonDraft=structuredClone(next);await saveState();},progress:workflowProgress,stage:async stage=>{throwIfJobCancelled();job.stage=stage;await saveState();},
@@ -939,7 +939,7 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   if (job.status !== 'failed'&&!needsLessonRepair) return response.status(409).json({ error: '只有失败的任务或未通过审查的教学成片可以重试。' });
   // An unavailable auditor has no content correction to make. Recheck the
   // existing artifact instead of restarting today's research and rendering.
-  if(needsLessonRepair&&candidate?.review&&!reviewNeedsContentRepair(candidate.review))job.kind='review';
+  if(needsLessonRepair&&candidate?.review)job.kind=reviewNeedsContentRepair(candidate.review)?'export':'review';
   job.status = 'queued'; job.error = undefined; job.progress = 0; job.updatedAt = now();
   const session = getSession(job.sessionId);
   if(session)session.messages=session.messages.filter(m=>!(m.role==='assistant'&&m.jobId===job.id));

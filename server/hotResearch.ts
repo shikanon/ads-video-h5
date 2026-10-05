@@ -11,7 +11,7 @@ import { loadEditingSkill } from './skills';
 import type { PublicReader } from './publicResearch';
 import { runRequiredTool } from './requiredTool';
 import {requestedModelNames} from './creativeRequest';
-import {hasTodayEventEvidence,requiresTodayEvent} from './lessonAcceptance';
+import {beijingDate,hasTodayEventEvidence,requiresTodayEvent} from './lessonAcceptance';
 
 export function newsSearchPolicy(prompt:string){
   const subject=prompt.split(/\n(?:研究方向：|制作路径：)/)[0],anchors=requestedModelNames(subject);
@@ -76,8 +76,8 @@ export async function refreshHotTopics(previous:ResearchResult,prompt:string,opt
   return {summary:`锁定原选题重新读取来源，核验截止UTC ${asOf}，新闻窗口${windowHours}小时；热度信号仍为首次发现时的记录，不表示已刷新榜单。\n选题与实际证据：${JSON.stringify(topics)}\n本次已读正文：${JSON.stringify(verified.references)}\n限制：${verified.failures.join('；')}`,references:verified.references,current,queries:[...previous.queries,{provider:'source-pages',action:'refresh',urls:verified.references.map(r=>r.url)}]};
 }
 
-export async function researchHotTopics(config:ModelConfig,prompt:string,progress?:(events:WorkflowEvent[])=>Promise<void>,options:{read?:PublicReader;trace?:ReturnType<typeof createToolTrace>;search?:typeof researchGaps}={}):Promise<ResearchResult>{
-  const asOf=new Date().toISOString(),windowHours=newsWindowHours(prompt),expiresAt=new Date(Date.parse(asOf)+30*60000).toISOString();
+export async function researchHotTopics(config:ModelConfig,prompt:string,progress?:(events:WorkflowEvent[])=>Promise<void>,options:{read?:PublicReader;trace?:ReturnType<typeof createToolTrace>;search?:typeof researchGaps;requestedAt?:number}={}):Promise<ResearchResult>{
+  const requestedAt=options.requestedAt??Date.now(),asOf=new Date().toISOString(),windowHours=newsWindowHours(prompt),expiresAt=new Date(Date.parse(asOf)+30*60000).toISOString();
   const trace=options.trace||createToolTrace(progress||(async()=>{}),[config.apiKey]);
   const skill=await loadEditingSkill('qingjian-hot-video');
   const policy=newsSearchPolicy(prompt),daily=requiresTodayEvent(policy.subject),requested=/(\d+)\s*个.{0,25}选题/.exec(prompt),maxTopics=Math.min(3,Math.max(1,Number(requested?.[1]||1)));
@@ -95,7 +95,7 @@ export async function researchHotTopics(config:ModelConfig,prompt:string,progres
     try{await runRequiredTool(agent,input,{name:tool.name,label:tool.label,done,config,secrets:[config.apiKey]});}finally{await drain();}
   }
   const selectionScope=policy.scope==='fixed-topic'?`用户明确指定了${policy.anchors.join('、')}：名称、版本和事件须锁定，不能换产品。遇到网页不可读应查同一事件的官方公告或其他可读媒体。`:'用户没有指定具体对象或事件、只指定领域时，选题由你决定。第一次自行选出的候选不是用户指定主题；日期过时、无法取得正文或交叉来源时，主动淘汰它，在用户原始领域内重选其他合格事件。用户明确指定的对象与事件仍须保留。不得因为你选的新闻失败就停止整个视频需求，也不能换到仅泛泛提及AI的无关新闻。';
-  const userDemand=`用户需求：${prompt.slice(0,3000)}\n资料截止UTC ${asOf}；新闻时效窗口${windowHours}小时。${selectionScope}用户要求今天发生时，至少一个核心事件必须确有北京时间今天发生或首次公开的正文依据；今天报道旧事件、下载统计旧日期或无日期页面不能替代，缺少合格候选时补查后保留缺口。只要求今天值得讲或最新热点时，可以选择明确标注日期的近期事件。未核实的发布或能力传闻应查证传闻本身和官方状态，保留不确定性，不能当成已发布事实。优先可直接读取正文的当事方公告和有日期的媒体报道；讨论页、登录页、只有摘要或需执行JavaScript的页面不能当来源。`;
+  const userDemand=`用户需求：${prompt.slice(0,3000)}\n原始制作指令日期为北京时间${beijingDate(requestedAt)}，今天按该日期核验。资料截止UTC ${asOf}；新闻时效窗口${windowHours}小时。${selectionScope}用户要求今天发生时，至少一个核心事件必须确有北京时间今天发生或首次公开的正文依据；今天报道旧事件、下载统计旧日期或无日期页面不能替代，缺少合格候选时补查后保留缺口。只要求今天值得讲或最新热点时，可以选择明确标注日期的近期事件。未核实的发布或能力传闻应查证传闻本身和官方状态，保留不确定性，不能当成已发布事实。优先可直接读取正文的当事方公告和有日期的媒体报道；讨论页、登录页、只有摘要或需执行JavaScript的页面不能当来源。`;
   await plan(choose,`${userDemand}\n实际榜单：${JSON.stringify(discovered.signals)}。选择后搜索原始公告和独立报道，不以宽泛年度综述代替新闻。`,()=>Boolean(selection));
   let raw:ResearchResult|undefined;
   const failures=[...discovered.failures],readReferences=new Map<string,ResearchReference>(),searched=new Set<string>(),attempts=new Map<string,number>(),unusable=new Set<string>(),readURLs=new Set<string>(),rejected:Array<{title:string;reason:string}>=[];
@@ -130,7 +130,7 @@ export async function researchHotTopics(config:ModelConfig,prompt:string,progres
           validateHotBrief([topic],references,discovered.signals);
           const content=normalizeEvidence([topic.title,topic.hook,...topic.facts.map(f=>f.text)].join(' ')).toLowerCase();
           if(policy.anchors.some(name=>!content.includes(normalizeEvidence(name).toLowerCase())))throw new Error('选题没有保留用户指定的名称和版本。');
-          if(daily&&!topic.facts.some(f=>f.evidence.some(e=>hasTodayEventEvidence(references.find(r=>r.id===e.referenceId),e.quote,Date.parse(asOf)))))throw new Error('该候选缺少今天发生或首次宣布的核心事件原文；今天报道旧事件不能满足用户要求。');
+          if(daily&&!topic.facts.some(f=>f.evidence.some(e=>hasTodayEventEvidence(references.find(r=>r.id===e.referenceId),e.quote,requestedAt))))throw new Error('该候选缺少今天发生或首次宣布的核心事件原文；今天报道旧事件不能满足用户要求。');
           accepted.push(topic);
         }catch(error){const reason=error instanceof Error?error.message:String(error);rejected.push({title:topic.title,reason});failures.push(`淘汰选题「${topic.title}」：${reason}`);}}
         brief.topics=accepted;submitted=true;

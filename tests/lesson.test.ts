@@ -189,6 +189,20 @@ test('news amounts and percentages cannot lose magnitude or unit words behind a 
   assert.throws(()=>alignLessonSpeech(news,analysis(news.narration.replace('百分之','百分'))),/金额、百分比、数量数字或单位/);
   assert.throws(()=>alignLessonSpeech(news,analysis(news.narration.replace('三十九','四十九'))),/金额、百分比、数量数字或单位/);
 });
+test('news captions keep actual amounts and units together without merging distinct spoken quantities',()=>{
+  const plan={clips:[{sourceId:'speech',sceneId:'c1',start:0,end:16}],lesson:{} as LessonReport} as EditPlan;
+  for(const quantity of ['六十九亿美元','二百二十三万元','35GB','百分之三十九个百分点']){
+    const text='这是已经核对来源的累计许可总额超'+quantity+'是累计口径';
+    const raw=analysis(text,0);raw.captionBreaks=[text.indexOf(quantity)+1];
+    const captions=captionsFromTranscript(plan,[{id:'speech',analysis:raw} as MediaItem]);
+    assert.equal(captions.map(c=>c.text).join(''),text);
+    assert.ok(captions.some(c=>c.text.includes(quantity)),quantity+' must stay on one caption');
+    assert.equal(captions[0].start,raw.sentences[0].words[0].start);
+    assert.ok(Math.abs(captions.at(-1)!.end-raw.sentences[0].words.at(-1)!.end)<.001);
+  }
+  const raw=analysis('六十九美元',0),fixed=lessonCaptionAnalysis({...chapter,narration:'六；十九美元。'},raw);
+  assert.deepEqual(captionsFromTranscript(plan,[{id:'speech',analysis:fixed} as MediaItem]).map(c=>c.text),['六','十九美元']);
+});
 test('real subtitle regressions separate zero from decimals, colon clauses and heard pauses',()=>{
   const plan={clips:[{sourceId:'speech',sceneId:'c1',start:0,end:16}],lesson:{} as LessonReport} as EditPlan;
   const captions=(narration:string,raw:AudioAnalysis)=>captionsFromTranscript(plan,[{id:'speech',analysis:lessonCaptionAnalysis({...chapter,narration},raw)} as MediaItem]);

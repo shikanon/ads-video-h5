@@ -25,11 +25,18 @@ export function captionsFromTranscript(plan: EditPlan, media: MediaItem[], style
     const safeEnds=new Set([...new Intl.Segmenter('zh',{granularity:'word'}).segment(words.map((w)=>w.text).join(''))].map((s)=>s.index+s.segment.length));
     if(plan.lesson){
       const joined=words.map(w=>w.text).join('');
+      // Protect heard quantities within verified clauses. A provider's visual
+      // line break must not turn 六十九亿美元 into 六 / 十九亿美元; distinct
+      // spoken clauses such as 六；十九美元 must remain distinct.
+      let clause='',clauseStart=0;const clauses:Array<{text:string;start:number}>=[];
+      for(const word of words){clause+=word.text;if(analysis?.captionBoundarySource==='matched-clauses'&&breakWords.has(word)){clauses.push({text:clause,start:clauseStart});clauseStart+=clause.length;clause='';}}if(clause)clauses.push({text:clause,start:clauseStart});
+      const quantities=clauses.flatMap(({text,start})=>[...text.matchAll(/(?:百分之)?[\d零〇一二三四五六七八九十百千万亿两]+(?:[点.][\d零〇一二三四五六七八九]+)?(?:[万亿]?(?:美元|人民币|欧元|港元|元)|个百分点|%|％|GB|MB|TB|毫秒|秒|分钟|小时|天|日|年|台|家|次|个|人)/gi)].map(m=>({start:start+m.index!,end:start+m.index!+m[0].length})));
       const terms=['德尔塔','西格玛','伽马','贝塔','铰链损失','交叉熵','均方误差','易样本','难样本','简单样本','相似关系','残差','正在训练','正确类别概率','合页','灰度测试','灰度','负责人','正式发布','游戏手柄','InfoNCE','Focal Loss',...(joined.match(/[零〇一二三四五六七八九]+点[零〇一二三四五六七八九]+/g)||[]),...(joined.match(/(?<![A-Za-z\d零〇一二三四五六七八九十])[1-9一二三四五六七八九]G(?![A-Za-z\d])/g)||[])];
       for(const term of terms){let start=joined.indexOf(term);while(start>=0){for(let k=start+1;k<start+term.length;k++)safeEnds.delete(k);safeEnds.add(start+term.length);start=joined.indexOf(term,start+term.length);}}
       // A verified sentence end separates adjacent numbers ("损失零；零点五").
       // Protecting a decimal in concatenated ASR must not erase that boundary.
       if(analysis?.captionBoundarySource==='matched-clauses'){let end=0;for(const word of words){end+=word.text.length;if(breakWords.has(word))safeEnds.add(end);}}
+      for(const span of quantities){for(let k=span.start+1;k<span.end;k++)safeEnds.delete(k);safeEnds.add(span.end);}
     }
     let position=0;let pendingBreak=false;
     let text = ''; let start = 0; let end = 0;let lastWord:typeof words[number]|undefined;let previousEndedClause=true;

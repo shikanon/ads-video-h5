@@ -1,11 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { beijingDate,requiresTodayEvent,todayEventFindings,requiresSelectionReason,selectionReasonFindings } from '../server/lessonAcceptance';
+import { beijingDate,requiresTodayEvent,todayEventFindings,requiresSelectionReason,selectionReasonFindings,newsRenderAcceptance } from '../server/lessonAcceptance';
 import { reviewLessonScript } from '../server/lessonWorkflow';
+import { canReuseNewsEvidence } from '../server/reviewResults';
 import type { LessonReport } from '../src/types';
 
 for(const prompt of ['介绍今天发生的大模型新闻','今日发布的模型做成视频','今早宣布了什么，查证后出片','介绍今天呢，发生的事情','Explain what happened today'])test(`strict event-date requirement: ${prompt}`,()=>assert.equal(requiresTodayEvent(prompt),true));
 for(const prompt of ['今天大模型圈有什么值得讲的新闻','制作最新热点视频','不要把旧闻说成今天发生。讲清实际日期。'])test(`recent-news wording keeps its actual date scope: ${prompt}`,()=>assert.equal(requiresTodayEvent(prompt),false));
+
+test('an existing news movie reviewed after midnight retains its request date while new today requests and old events keep strict gates',()=>{
+  const requested=Date.parse('2026-10-05T15:21:19Z'),reviewed=Date.parse('2026-10-05T16:35:00Z'),prompt='介绍今天发生的大模型新闻';
+  const instructions=newsRenderAcceptance(prompt,requested);
+  assert.doesNotMatch(instructions,/2026-10-06/);
+  assert.match(instructions,/原始制作指令日期为北京时间2026-10-05/);
+  assert.match(instructions,/新制作指令仍按新指令的当日验收/);
+  assert.match(instructions,/没有要求配乐时，缺少BGM只可列为建议/);
+  const quote='2026年10月5日，机构宣布推出新的人工智能基础设施合作协议。';
+  const report={hotResearch:{},references:[{id:'r1',verification:'news-page',excerpt:quote.repeat(8),publishedAt:new Date(requested).toISOString()}]} as unknown as LessonReport;
+  const evidence=[{date:'2026-10-05',referenceId:'r1',quote}];
+  assert.equal(todayEventFindings(evidence,report,prompt,requested).length,0);
+  assert.ok(todayEventFindings(evidence,report,prompt,reviewed).length>0);
+  report.references[0].excerpt=quote.replace('10月5日','9月28日').repeat(8);
+  assert.ok(todayEventFindings([{...evidence[0],quote:quote.replace('10月5日','9月28日')}],report,prompt,requested).length>0);
+});
 
 test('a fresh article about an old event cannot satisfy an explicit today-event request',()=>{
   const now=Date.parse('2026-10-05T06:00:00Z'),quote='2026年9月30日，机构宣布了九月的模型安装量估算。';
@@ -13,6 +30,17 @@ test('a fresh article about an old event cannot satisfy an explicit today-event 
   assert.equal(todayEventFindings([{date:'2026-10-05',referenceId:'r1',quote}],report,'介绍今天发生的新闻',now).length,1);
   assert.equal(todayEventFindings([],report,'今天值得讲的最新热点',now).length,0);
   assert.equal(todayEventFindings(undefined,report,'介绍今天发生的新闻',now).length,1);
+});
+
+test('repair evidence retains original event date but rejects expired sources and unverified facts',()=>{
+  const requested=Date.parse('2026-10-05T15:21:19Z'),reviewed=Date.parse('2026-10-05T17:00:00Z'),prompt='介绍今天发生的大模型新闻';
+  const quote='2026年10月5日，机构宣布推出新的人工智能基础设施合作协议。';
+  const report={hotResearch:{asOf:new Date(requested).toISOString(),windowHours:24},factReview:{score:94,needsRepair:false,todayEvents:[{date:'2026-10-05',referenceId:'r1',quote}]},references:[{id:'r1',verification:'news-page',freshness:'fresh',excerpt:quote.repeat(8),publishedAt:new Date(requested).toISOString()}]} as unknown as LessonReport;
+  assert.equal(canReuseNewsEvidence(report,prompt,requested,reviewed),true);
+  assert.equal(canReuseNewsEvidence(report,prompt,reviewed,reviewed),false,'new instructions cannot reuse the prior day as today');
+  assert.equal(canReuseNewsEvidence(report,prompt,requested,requested+25*3600000),false,'real source-age gate still applies');
+  report.factReview!.needsRepair=true;
+  assert.equal(canReuseNewsEvidence(report,prompt,requested,reviewed),false);
 });
 
 test('daily-event acceptance requires actually read, verbatim evidence with a matching event date',()=>{
