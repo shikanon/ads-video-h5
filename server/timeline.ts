@@ -25,7 +25,7 @@ export function captionsFromTranscript(plan: EditPlan, media: MediaItem[], style
     const safeEnds=new Set([...new Intl.Segmenter('zh',{granularity:'word'}).segment(words.map((w)=>w.text).join(''))].map((s)=>s.index+s.segment.length));
     if(plan.lesson){
       const joined=words.map(w=>w.text).join('');
-      const terms=['德尔塔','西格玛','伽马','贝塔','铰链损失','交叉熵','均方误差','易样本','难样本','简单样本','相似关系','残差','正在训练','正确类别概率','合页','灰度测试','灰度','负责人','正式发布','游戏手柄','InfoNCE','Focal Loss',...(joined.match(/[零〇一二三四五六七八九]+点[零〇一二三四五六七八九]+/g)||[])];
+      const terms=['德尔塔','西格玛','伽马','贝塔','铰链损失','交叉熵','均方误差','易样本','难样本','简单样本','相似关系','残差','正在训练','正确类别概率','合页','灰度测试','灰度','负责人','正式发布','游戏手柄','InfoNCE','Focal Loss',...(joined.match(/[零〇一二三四五六七八九]+点[零〇一二三四五六七八九]+/g)||[]),...(joined.match(/(?<![A-Za-z\d零〇一二三四五六七八九十])[1-9一二三四五六七八九]G(?![A-Za-z\d])/g)||[])];
       for(const term of terms){let start=joined.indexOf(term);while(start>=0){for(let k=start+1;k<start+term.length;k++)safeEnds.delete(k);safeEnds.add(start+term.length);start=joined.indexOf(term,start+term.length);}}
       // A verified sentence end separates adjacent numbers ("损失零；零点五").
       // Protecting a decimal in concatenated ASR must not erase that boundary.

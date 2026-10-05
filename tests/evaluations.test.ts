@@ -24,11 +24,12 @@ function output(): EvaluationOutcome {
 }
 test('seed corpus covers all three capabilities and validates multi-turn regression cases', () => {
   const cases = initialEvaluationCases();
-  assert.equal(cases.length,30);
+  assert.equal(cases.length,31);
   assert.deepEqual([...new Set(cases.map(c => c.category))].sort(),['hot-news','knowledge','multi-video']);
   for (const c of cases) assert.doesNotThrow(() => validateEvaluationCase(c));
   assert(cases.some(c => c.category === 'hot-news' && c.messages.length === 2));
   assert(cases.some(c => c.category === 'multi-video' && c.messages.length === 2));
+  assert(cases.some(c => c.id === 'news-spoken-llm' && c.messages[0].includes('今天发生') && c.messages[0].includes('为什么选')));
   assert.throws(() => validateEvaluationCase({ ...sample(), expectation: { ...sample().expectation, minSources: 1 } }));
   assert.throws(() => validateEvaluationCase({ ...sample(), messages: [''] }));
   assert.throws(() => validateEvaluationCase({ ...sample(), fixtureIds: ['one','one'] }));
@@ -40,8 +41,8 @@ test('upgrade adds missing regression cases while preserving edits, disabled cas
   const history={id:'old-run',name:'old',status:'completed',createdAt:'',maxCaseSeconds:60,snapshot:{revision:null,implementationHash:'old',skillHash:'old',rubricVersion:'old',models:[]},results:[{id:'old-result',case:structuredClone(old[0]),caseHash:'old-hash',repeat:1,fixtures:[],status:'failed',jobIds:[]}]};
   await writeFile(file,JSON.stringify({version:1,cases:old,fixtures:[],runs:[history]}));
   const manager=createEvaluations({dataDir:dir,implementation:{revision:null,implementationHash:'code',skillHash:'skill'},models:async()=>models,execute:async()=>output(),stop:async()=>{},artifactFile:()=>undefined});
-  await manager.init();assert.equal(manager.catalog().cases.length,30);assert.deepEqual(manager.catalog().cases[0],old[0]);
-  assert.deepEqual(manager.get('old-run'),history);await manager.init();assert.equal(manager.catalog().cases.length,30);
+  await manager.init();assert.equal(manager.catalog().cases.length,31);assert.deepEqual(manager.catalog().cases[0],old[0]);
+  assert.deepEqual(manager.get('old-run'),history);await manager.init();assert.equal(manager.catalog().cases.length,31);
   assert.equal(manager.catalog().cases.filter(c=>c.id==='news-fable-original').length,1);
 });
 test('multipart video filenames preserve Chinese, ASCII and genuine Latin-1 names', () => {

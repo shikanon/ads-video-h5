@@ -10,6 +10,13 @@ import { mergeResearch, researchGaps } from './narrativeResearch';
 import { loadEditingSkill } from './skills';
 import type { PublicReader } from './publicResearch';
 import { runRequiredTool } from './requiredTool';
+import {requestedModelNames} from './creativeRequest';
+import {hasTodayEventEvidence,requiresTodayEvent} from './lessonAcceptance';
+
+export function newsSearchPolicy(prompt:string){
+  const subject=prompt.split(/\n(?:研究方向：|制作路径：)/)[0],anchors=requestedModelNames(subject);
+  return {subject,anchors,scope:anchors.length?'fixed-topic' as const:'user-domain' as const};
+}
 
 export function currentResearchExpired(result:ResearchResult,now=Date.now()):boolean{
   const c=result.current;if(!c)return true;
@@ -30,9 +37,9 @@ export function hydrateHotEvidence(topics:any[],refs:ResearchReference[]):HotRes
     const p=passages.get(e.passageId);if(!p||e.referenceId!==undefined&&p.referenceId!==e.referenceId)throw new Error(`新闻证据片段ID ${String(e.passageId)} 不在对应实际来源内。只能选择已读正文的 passageId；baidu/hn 榜单编号仅放在 signalIds，不能作为新闻事实证据。`);return {...p};
   })}))}));
 }
-export function hotBriefParameters(refs:ResearchReference[]){
+export function hotBriefParameters(refs:ResearchReference[],maxTopics=3){
   const passage=Type.Union(refs.flatMap(newsPassages).map(p=>Type.Literal(p.id)),{description:'仅选择实际已读正文片段ID，来源编号与原话由程序补全。'});
-  return Type.Object({topics:Type.Array(Type.Object({title:Type.String({maxLength:180}),hook:Type.String({maxLength:300}),angle:Type.String({maxLength:500}),signalIds:Type.Array(Type.String()),facts:Type.Array(Type.Object({text:Type.String({maxLength:400}),evidence:Type.Array(Type.Object({passageId:passage},{additionalProperties:false}),{minItems:1,maxItems:3})}),{minItems:1,maxItems:4,description:'每题只保留1–4条核心新闻事实；榜单排名、热度、访问日期不属于这里的新闻事实。'}),visualPlan:Type.String({maxLength:500}),uncertainties:Type.Array(Type.String({maxLength:500}))}),{maxItems:3})});
+  return Type.Object({topics:Type.Array(Type.Object({title:Type.String({maxLength:180}),hook:Type.String({maxLength:300}),angle:Type.String({maxLength:500}),signalIds:Type.Array(Type.String()),facts:Type.Array(Type.Object({text:Type.String({maxLength:400}),evidence:Type.Array(Type.Object({passageId:passage},{additionalProperties:false}),{minItems:1,maxItems:3})}),{minItems:1,maxItems:4,description:'每题只保留1–4条核心新闻事实；榜单排名、热度、访问日期不属于这里的新闻事实。'}),visualPlan:Type.String({maxLength:500}),uncertainties:Type.Array(Type.String({maxLength:500}))}),{maxItems:maxTopics})});
 }
 export function validateHotBrief(topics:HotResearchBrief['topics'],refs:ResearchReference[],signals:HotResearchBrief['signals']):HotResearchBrief['topics']{
   if(!Array.isArray(topics)||topics.length>3)throw new Error('热点选题最多3个。');
@@ -73,6 +80,7 @@ export async function researchHotTopics(config:ModelConfig,prompt:string,progres
   const asOf=new Date().toISOString(),windowHours=newsWindowHours(prompt),expiresAt=new Date(Date.parse(asOf)+30*60000).toISOString();
   const trace=options.trace||createToolTrace(progress||(async()=>{}),[config.apiKey]);
   const skill=await loadEditingSkill('qingjian-hot-video');
+  const policy=newsSearchPolicy(prompt),daily=requiresTodayEvent(policy.subject),requested=/(\d+)\s*个.{0,25}选题/.exec(prompt),maxTopics=Math.min(3,Math.max(1,Number(requested?.[1]||1)));
   const discovered=await trace.run('discover_hot_topics','读取实时热榜',{sources:['baidu','hackernews']},()=>discoverHotTopics(options.read));
   let selection:{signalIds:string[];queries:string[]}|undefined;
   const choose:AgentTool={name:'select_hot_topics',label:'选择热点与查证问题',description:'根据用户领域从真实榜单选择0–2个相关ID，提交1–2条具体新闻查证查询。没有相关榜单时按用户领域查新闻；不得编造榜单ID。',parameters:Type.Object({signalIds:Type.Array(Type.String(),{maxItems:2}),queries:Type.Array(Type.String({minLength:2,maxLength:240}),{minItems:1,maxItems:2})}),execute:async(_id,args)=>{
@@ -82,21 +90,24 @@ export async function researchHotTopics(config:ModelConfig,prompt:string,progres
   }};
   async function plan(tool:AgentTool,input:string,done:()=>boolean){
     const agent=getAgent(config,trace.wrap([tool]),skill+'\n本轮只执行'+tool.name+'。其他搜索、读取或制作步骤由服务端按阶段执行，无需本轮提供所有下游工具。',true),drain=observeToolErrors(agent,trace);
+    const payload=agent.onPayload;
+    agent.onPayload=async value=>{const next=payload?await payload(value,agent.state.model):value;return next&&typeof next==='object'?{...next,max_tokens:16000}:next;};
     try{await runRequiredTool(agent,input,{name:tool.name,label:tool.label,done,config,secrets:[config.apiKey]});}finally{await drain();}
   }
-  const userDemand=`用户需求：${prompt.slice(0,3000)}\n资料截止UTC ${asOf}；新闻时效窗口${windowHours}小时。用户指定的名称、版本和事件必须锁定，不能换成别的榜单热点。用户要求今天发生时，至少一个核心事件必须确有北京时间今天发生或首次公开的正文依据；今天报道旧事件、下载统计旧日期或无日期页面不能替代，缺少合格候选时补查后保留缺口。只要求今天值得讲或最新热点时，可以选择明确标注日期的近期事件。未核实的发布或能力传闻应查证传闻本身和官方状态，保留不确定性，不能当成已发布事实。`;
+  const selectionScope=policy.scope==='fixed-topic'?`用户明确指定了${policy.anchors.join('、')}：名称、版本和事件须锁定，不能换产品。遇到网页不可读应查同一事件的官方公告或其他可读媒体。`:'用户没有指定具体对象或事件、只指定领域时，选题由你决定。第一次自行选出的候选不是用户指定主题；日期过时、无法取得正文或交叉来源时，主动淘汰它，在用户原始领域内重选其他合格事件。用户明确指定的对象与事件仍须保留。不得因为你选的新闻失败就停止整个视频需求，也不能换到仅泛泛提及AI的无关新闻。';
+  const userDemand=`用户需求：${prompt.slice(0,3000)}\n资料截止UTC ${asOf}；新闻时效窗口${windowHours}小时。${selectionScope}用户要求今天发生时，至少一个核心事件必须确有北京时间今天发生或首次公开的正文依据；今天报道旧事件、下载统计旧日期或无日期页面不能替代，缺少合格候选时补查后保留缺口。只要求今天值得讲或最新热点时，可以选择明确标注日期的近期事件。未核实的发布或能力传闻应查证传闻本身和官方状态，保留不确定性，不能当成已发布事实。优先可直接读取正文的当事方公告和有日期的媒体报道；讨论页、登录页、只有摘要或需执行JavaScript的页面不能当来源。`;
   await plan(choose,`${userDemand}\n实际榜单：${JSON.stringify(discovered.signals)}。选择后搜索原始公告和独立报道，不以宽泛年度综述代替新闻。`,()=>Boolean(selection));
   let raw:ResearchResult|undefined;
-  const failures=[...discovered.failures],readReferences=new Map<string,ResearchReference>(),searched=new Set<string>();
+  const failures=[...discovered.failures],readReferences=new Map<string,ResearchReference>(),searched=new Set<string>(),attempts=new Map<string,number>(),unusable=new Set<string>(),readURLs=new Set<string>(),rejected:Array<{title:string;reason:string}>=[];
   let references:ResearchReference[]=[];
   const brief:HotResearchBrief={asOf,expiresAt,windowHours,signals:discovered.signals,topics:[],failures};
-  for(let round=0;round<2;round++){
+  for(let round=0;round<3;round++){
     if(round){
       selection=undefined;
       await plan({...choose,name:'refine_news_search',label:'补查新闻来源',execute:async(id,args)=>{
         if((args as {queries:string[]}).queries.every(q=>searched.has(q)))throw new Error('补查必须更换查询或来源，不能重复全部失败查询。');
         return choose.execute(id,args);
-      }},`${userDemand}\n前次未找到合格选题。换查询、域名或检索传闻核验与官方状态；不能重复失败网页或改变主题。已搜索：${JSON.stringify([...searched])}；已读资料：${JSON.stringify(references.map(({excerpt,...r})=>r))}；实际缺口：${JSON.stringify(failures.slice(-12))}。`,()=>Boolean(selection));
+      }},`${userDemand}\n前次未找到合格选题。${policy.scope==='user-domain'?(round===2?'最后一轮必须回到用户原始领域重新选择其他事件，不围绕已失败候选反复改标题。':'若原候选过时或缺少交叉正文，优先重选其他相关事件；只有已有合格事件的交叉报道缺口才继续定向补查。'):'保留用户指定的名称、版本和事件，改查可读的一手公告与其他媒体，不反复尝试访问检查页面。'}换查询、域名或检索传闻核验与官方状态。不要再次返回以下不可用页面：${JSON.stringify([...unusable])}。已搜索：${JSON.stringify([...searched])}；已读资料：${JSON.stringify(references.map(({excerpt,...r})=>r))}；淘汰候选：${JSON.stringify(rejected)}；实际缺口：${JSON.stringify(failures.slice(-12))}。`,()=>Boolean(selection));
     }
     const queries=selection!.queries;queries.forEach(q=>searched.add(q));
     const searches=await Promise.allSettled(queries.map(query=>trace.run('search_news','检索新闻与一手来源',{query,windowHours,asOf,attempt:round+1},()=>(options.search||researchGaps)(config,query,[`北京时间当前日期${new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'})}，近${windowHours}小时`,`同一事件至少两家发布者的新闻正文或官方公告；列出实际链接和日期`],'news'))));
@@ -104,25 +115,35 @@ export async function researchHotTopics(config:ModelConfig,prompt:string,progres
     let candidates:ResearchResult|undefined;
     for(const result of searches){if(result.status==='fulfilled')candidates=mergeResearch(candidates,{...result.value,references:result.value.references.slice(0,6)});else failures.push(result.reason instanceof Error?result.reason.message:'新闻搜索失败');}
     if(candidates)raw=mergeResearch(raw,candidates);
-    const unread=candidates?.references.filter(r=>!readReferences.has(r.url))||[];
+    const unread=candidates?.references.filter(r=>!readURLs.has(r.url)&&!readReferences.has(r.url)&&!unusable.has(r.url)&&(attempts.get(r.url)||0)<2)||[];
+    unread.forEach(r=>attempts.set(r.url,(attempts.get(r.url)||0)+1));
     const verified=await trace.run('read_news_sources','读取正文与发布时间',{urls:unread.map(r=>r.url),windowHours,attempt:round+1},()=>verifyNewsPages(unread,windowHours,options.read));
     failures.push(...verified.failures);
+    for(const page of verified.pages){if(page.status==='read')readURLs.add(page.url);else if(!page.retryable)unusable.add(page.url);}
     verified.references.forEach(r=>readReferences.set(r.url,r));
     references=[...readReferences.values()].map((r,i)=>({...r,id:`ref-${i+1}`}));
-    if(references.some(r=>r.freshness==='fresh')&&new Set(references.map(r=>newsPublisher(r.url))).size>=2){
+    if(references.some(r=>r.freshness==='fresh')&&new Set(references.filter(r=>r.freshness!=='future').map(r=>newsPublisher(r.url))).size>=2){
       let submitted=false;
-      const tool:AgentTool={name:'propose_hot_brief',label:'提炼有证据的热点选题',description:'用实际新闻正文提交最多3个选题；每题仅1–4条核心事实，跨发布者、至少1个新稿。每条事实只选择1–3个passageId，精简事实以适配证据数量；程序保存来源与原话，不另写referenceId或摘录。热度仅放在signalIds，不作为facts证据。证据不足时返回topics:[]，不要提交空facts的选题。',parameters:hotBriefParameters(references),execute:async(_id,args)=>{
-        brief.topics=validateHotBrief(hydrateHotEvidence((args as {topics:any[]}).topics,references),references,discovered.signals);submitted=true;
-        return {content:[{type:'text',text:JSON.stringify(brief.topics)}],details:brief.topics};
+      const tool:AgentTool={name:'propose_hot_brief',label:'提炼有证据的热点选题',description:`用实际新闻正文提交最多${maxTopics}个选题；每题仅1–4条核心事实，跨发布者、至少1个新稿。每条事实只选择1–3个passageId，精简事实以适配证据数量；程序保存来源与原话，不另写referenceId或摘录。热度仅放在signalIds，不作为facts证据。证据不足时返回topics:[]，不要提交空facts的选题。`,parameters:hotBriefParameters(references,maxTopics),execute:async(_id,args)=>{
+        const hydrated=hydrateHotEvidence((args as {topics:any[]}).topics,references),accepted:HotResearchBrief['topics']=[];
+        for(const topic of hydrated){try{
+          validateHotBrief([topic],references,discovered.signals);
+          const content=normalizeEvidence([topic.title,topic.hook,...topic.facts.map(f=>f.text)].join(' ')).toLowerCase();
+          if(policy.anchors.some(name=>!content.includes(normalizeEvidence(name).toLowerCase())))throw new Error('选题没有保留用户指定的名称和版本。');
+          if(daily&&!topic.facts.some(f=>f.evidence.some(e=>hasTodayEventEvidence(references.find(r=>r.id===e.referenceId),e.quote,Date.parse(asOf)))))throw new Error('该候选缺少今天发生或首次宣布的核心事件原文；今天报道旧事件不能满足用户要求。');
+          accepted.push(topic);
+        }catch(error){const reason=error instanceof Error?error.message:String(error);rejected.push({title:topic.title,reason});failures.push(`淘汰选题「${topic.title}」：${reason}`);}}
+        brief.topics=accepted;submitted=true;
+        const result={topics:accepted,rejected:rejected.slice(-3),nextStrategy:accepted.length?'complete':policy.scope==='user-domain'?'reselect-within-user-domain':'same-topic-readable-sources'};
+        return {content:[{type:'text',text:JSON.stringify(result)}],details:result};
       }};
       const sources=references.map(({excerpt,...ref})=>({...ref,passages:newsPassages({...ref,excerpt})}));
-      await plan(tool,`${userDemand}\n当前UTC ${asOf}。不得声称新闻发生于抓取日期；只有publishedAt是原文发布日期，eventDate须依据正文。制作角度是建议，不能写成事实或保证爆款。每题只提交1–4条核心事实，至少两家发布者。每条事实最多1–3个正文片段，超出时精简事实，只保留核心信息。evidence只填写已读正文的passageId，程序补全来源与逐字引文；不要填写referenceId。榜单编号baidu/hn只放在signalIds，不能写入evidence；热度、排名和抓取时间不要作为facts。标题与钩子也应遵循正文证据。可以区分新报道与旧背景。只使用以下已读正文，不使用以前搜索摘要的编号或事实。\n实际已读来源（以下ref-ID与passage-ID为唯一映射）：${JSON.stringify(sources)}\n真实热度信号：${JSON.stringify(discovered.signals.filter(s=>selection!.signalIds.includes(s.id)))}`,()=>submitted);
+      await plan(tool,`${userDemand}\n当前UTC ${asOf}。不得声称新闻发生于抓取日期；只有publishedAt是原文发布日期，eventDate须依据正文。制作角度是建议，不能写成事实或保证爆款。最多提交${maxTopics}个选题，每题只提交1–4条核心事实，至少两家发布者。${daily?'必须选择含今天日期或“今日/今天/today宣布”的实际正文片段作为核心事件证据，不要把过时发布当今日事件。':''}每条事实最多1–3个正文片段，超出时精简事实，只保留核心信息。evidence只填写已读正文的passageId，程序补全来源与逐字引文；不要填写referenceId。榜单编号baidu/hn只放在signalIds，不能写入evidence；热度、排名和抓取时间不要作为facts。标题与钩子也应遵循正文证据。可以区分新报道与旧背景。只使用以下已读正文，不使用以前搜索摘要的编号或事实。\n实际已读来源（以下ref-ID与passage-ID为唯一映射）：${JSON.stringify(sources)}\n真实热度信号：${JSON.stringify(discovered.signals.filter(s=>selection!.signalIds.includes(s.id)))}`,()=>submitted);
     }
     if(brief.topics.length)break;
-    failures.push(`第${round+1}轮未找到时效与交叉证据同时合格的选题，继续锁定原主题补查。`);
+    failures.push(`第${round+1}轮未找到合格选题；${policy.scope==='user-domain'?'淘汰不合格候选，在用户领域内重选并更换可读来源。':'保留用户指定主题，改查其他可读来源。'}`);
   }
   if(!brief.topics.length)failures.push('本次缺少时效与交叉来源同时满足的选题；不能生成今日热点事实性脚本。');
-  const requested=/(\d+)\s*个.{0,25}选题/.exec(prompt);
   if(requested&&brief.topics.length<Number(requested[1]))failures.push(`用户希望${requested[1]}个选题，本次仅${brief.topics.length}个通过证据校验；没有凑数，其他候选仍需补充可读来源。`);
   return {summary:`热点研究截止UTC ${asOf}（北京时区理解今日），新闻窗口${windowHours}小时，榜单热度与新闻事实分开记录。\n可制作选题及实际证据：\n${JSON.stringify(brief.topics)}\n实际已读来源与日期：\n${JSON.stringify(references)}\n限制：${failures.join('；')}`,references,queries:raw?.queries||[],usage:raw?.usage,current:brief};
 }

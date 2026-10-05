@@ -65,6 +65,29 @@ test('single-letter hardware labels retain heard spans and numbers when restorin
   assert.throws(()=>alignLessonSpeech(c,correctLessonTranscript(c,analysis('n卡二十四GB起，a卡三十二GB起。'))),/数字|匹配/);
   assert.doesNotMatch(correctLessonTranscript(c,analysis('a卡二十二GB起，a卡三十二GB起。')).transcript,/N卡/);
 });
+test('network generation captions retain whole terms and heard spans without changing generations or mass units',()=>{
+  const narration='协议覆盖人工智能、计算和五G网络。',c={...chapter,narration,visual:{...chapter.visual,items:[{label:'人工智能',detail:'许可范围',cue:'人工智能'},{label:'五G',detail:'连接范围',cue:'五G网络'}]}};
+  for(const heard of ['五g','5g','5G']){
+    const raw=analysis(narration.replace('五G',heard),0),before=structuredClone(raw),fixed=correctLessonTranscript(c,raw);
+    assert.equal(fixed.transcript,narration);assert.deepEqual(raw,before);
+    const at=raw.transcript.indexOf(heard),term=fixed.sentences[0].words.find(w=>w.text==='五G')!;
+    assert.equal(term.start,raw.sentences[0].words[at].start);assert.equal(term.end,raw.sentences[0].words[at+heard.length-1].end);
+    assert.equal(alignLessonSpeech(c,fixed).similarity,1);
+  }
+  const raw=analysis('协议覆盖人工智能计算和五G网络',0),at=raw.transcript.indexOf('五');raw.captionBreaks=[at,raw.transcript.length-1];
+  const plan={clips:[{sourceId:'speech',start:0,end:16}],lesson:{} as LessonReport} as EditPlan;
+  const captions=captionsFromTranscript(plan,[{id:'speech',analysis:raw} as MediaItem]);
+  assert.ok(captions.some(c=>c.text.includes('五G')));assert.equal(captions.map(c=>c.text).join(''),raw.transcript);
+  const wrong=correctLessonTranscript(c,analysis(narration.replace('五G','四g')));assert.match(wrong.transcript,/四g/);assert.throws(()=>alignLessonSpeech(c,wrong),/数字|匹配/);
+  assert.doesNotMatch(correctLessonTranscript(c,analysis(narration.replace('五G','五'))).transcript,/五G/);
+  const mass={...chapter,narration:'样品重量5g，规格为15GB。'};const massRaw=analysis(mass.narration);assert.equal(correctLessonTranscript(mass,massRaw),massRaw);
+});
+test('a single news amount displays its actual value and unit instead of a fictitious comparison chart',()=>{
+  const c={...chapter,visual:{...chapter.visual,items:[{label:'累计预计＞69亿美元',detail:'交易完成后累计许可总额，非本笔到账',cue:'许可总额',illustration:'bar-chart' as const},{label:'待批准',detail:'购买交易需要监管批准',cue:'监管批准'}]}};
+  const html=lessonSceneHtml(c,0,1,15,'9:16',undefined,true);
+  assert.match(html,/data-metric="true"/);assert.match(html,/>＞69<\/text>/);assert.match(html,/>亿美元<\/text>/);assert.match(html,/非本笔到账/);
+  assert.doesNotMatch(html,/>甲<\/text>|>乙<\/text>/);
+});
 test('quantization identifiers get an explicit spoken separator and only heard matching values restore their written form',()=>{
   const c={...chapter,narration:'项目称Q2_0量化下显存更低，仍待复现。',visual:{...chapter.visual,items:[{label:'量化',detail:'低精度方案',cue:'Q2_0量化'},{label:'复现',detail:'证据要求',cue:'仍待复现'}]}};
   assert.match(spokenLessonText(c.narration),/Q2下划线0/);

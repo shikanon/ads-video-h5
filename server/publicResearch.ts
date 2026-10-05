@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns';
 import { isIP } from 'node:net';
 import { request } from 'node:https';
+import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { currentJobSignal, throwIfJobCancelled } from './jobExecution';
 
 export function publicAddress(ip: string): boolean {
@@ -23,6 +24,30 @@ export function publicResearchUrl(value: string): string | undefined {
 export interface PublicPage { url: string; text: string; contentType: string; }
 export type PublicReader = (url: string) => Promise<PublicPage>;
 
+const pageLimit = 1500000;
+// HTTPS can return compressed bytes even without content negotiation. Keep
+// both the wire and expanded size bounded before decoding the declared text.
+export function decodePublicPageBody(body: Buffer, contentType: string, contentEncoding = ''): string {
+  if (body.length > pageLimit) throw new Error('研究页面超过 1.5 MB 上限。');
+  const encodings = contentEncoding.toLowerCase().split(',').map(v => v.trim()).filter(v => v && v !== 'identity');
+  let decoded = body;
+  for (const encoding of encodings.reverse()) {
+    try {
+      const options = { maxOutputLength: pageLimit };
+      if (encoding === 'gzip' || encoding === 'x-gzip') decoded = gunzipSync(decoded, options);
+      else if (encoding === 'deflate') decoded = inflateSync(decoded, options);
+      else if (encoding === 'br') decoded = brotliDecompressSync(decoded, options);
+      else throw new Error('不支持的压缩编码。');
+    } catch { throw new Error('研究页面解压失败或解压后超过 1.5 MB 上限。'); }
+  }
+  const headerCharset = /charset\s*=\s*["']?([\w-]+)/i.exec(contentType)?.[1];
+  const head = decoded.subarray(0, 4096).toString('latin1');
+  const metaCharset = /<meta\b[^>]*charset\s*=\s*["']?([\w-]+)/i.exec(head)?.[1];
+  const charset = headerCharset || metaCharset || 'utf-8';
+  try { return new TextDecoder(/^gb(?:2312|k)$/i.test(charset) ? 'gb18030' : charset).decode(decoded); }
+  catch { throw new Error('研究页面的文字编码无法读取。'); }
+}
+
 // Validate and pin every resolved connection, including redirects. No proxy,
 // cookies, TLS exceptions or access to private addresses for external sources.
 export async function readPublicPage(value: string, redirects = 0): Promise<PublicPage> {
@@ -32,7 +57,7 @@ export async function readPublicPage(value: string, redirects = 0): Promise<Publ
   return new Promise((resolve, reject) => {
     const req = request(safe, {
       signal: currentJobSignal(),
-      headers: { Accept: 'text/html,application/json,text/plain', 'User-Agent': 'Qingjian-Research/1.0' },
+      headers: { Accept: 'text/html,application/xhtml+xml,application/json,text/plain', 'Accept-Encoding': 'gzip, deflate, br', 'User-Agent': 'Qingjian-Research/1.0' },
       lookup: (host, options, cb) => lookup(host, { all: true }, (error, addresses) => {
         if (error) return cb(error, '', 4);
         if (!addresses.length || addresses.some(a => !publicAddress(a.address))) return cb(new Error('研究页面解析到非公开地址。'), '', 4);
@@ -46,11 +71,14 @@ export async function readPublicPage(value: string, redirects = 0): Promise<Publ
       }
       if (res.statusCode !== 200) { res.resume(); reject(new Error(`研究页面 HTTP ${res.statusCode}`)); return; }
       const contentType = String(res.headers['content-type'] || '');
-      if (!/text\/html|application\/(?:json|ld\+json)|text\/plain/.test(contentType)) { res.resume(); reject(new Error('研究页面不是可读取的网页或 JSON。')); return; }
+      if (!/text\/html|application\/(?:json|ld\+json|xhtml\+xml)|text\/plain/.test(contentType)) { res.resume(); reject(new Error('研究页面不是可读取的网页或 JSON。')); return; }
       const chunks: Buffer[] = []; let size = 0;
-      res.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 1500000) req.destroy(new Error('研究页面超过 1.5 MB 上限。')); else chunks.push(chunk); });
+      res.on('data', (chunk: Buffer) => { size += chunk.length; if (size > pageLimit) req.destroy(new Error('研究页面超过 1.5 MB 上限。')); else chunks.push(chunk); });
       res.on('error', reject);
-      res.on('end', () => resolve({ url: safe, text: Buffer.concat(chunks).toString('utf8'), contentType }));
+      res.on('end', () => {
+        try { resolve({ url: safe, text: decodePublicPageBody(Buffer.concat(chunks), contentType, String(res.headers['content-encoding'] || '')), contentType }); }
+        catch (error) { reject(error); }
+      });
     });
     const timer = setTimeout(() => req.destroy(new Error('研究页面读取超时。')), 20000);
     req.on('close', () => clearTimeout(timer)); req.on('error', reject); req.end();

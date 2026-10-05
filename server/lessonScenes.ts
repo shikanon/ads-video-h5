@@ -2,10 +2,13 @@ import {barChartSvg,validateBarChart,chapterBarChart,inferBarData,barChartDetail
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AudioAnalysis, Format, LessonChapter, LessonCurveFunction, LessonPacing, LessonPresentation, LessonVisual, LessonBarChart } from '../src/types';
-import { lessonDimensions } from './lessonSpec';
+import { lessonDimensions, correctLessonTranscript, lessonCaptionAnalysis } from './lessonSpec';
+import { captionsFromTranscript } from './timeline';
 import { hashBytes, renderHtmlProject, drawingHtml, authorDrawing, validateDrawing, drawingDimensions, type HtmlDrawing } from './narrativeScenes';
 import { probeVideo, runFFmpeg } from './core';
 import { motionLibrary } from './motionComponents';
+import {visualRepairTargets,speechOnlyRepair} from './visualRecovery';
+import {voiceComparisonTask} from './audioQuality';
 
 const escape=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const colors=['#e56a48','#397ba4','#7b65a5'];
@@ -82,9 +85,13 @@ function newsIllustration(item:LessonVisual['items'][number],index:number):strin
   if(/\bCPU\b|处理器/i.test(subject)||!components.length)components.push(['CPU','<rect x="50" y="34" width="80" height="80" rx="8" fill="#54779b" stroke="currentColor" stroke-width="3"/><rect x="68" y="52" width="44" height="44" rx="4" fill="var(--news-accent)"/><path d="M61 23V34M80 23V34M100 23V34M119 23V34M61 114V125M80 114V125M100 114V125M119 114V125M39 45H50M39 64H50M39 84H50M39 103H50M130 45H141M130 64H141M130 84H141M130 103H141" stroke="currentColor" stroke-width="3"/>']);
   const hardware=components.slice(0,4).map(([name,shape],i,all)=>`<g data-component="${name}" transform="translate(${all.length===1?0:(i%2)*90} ${all.length<=2?0:Math.floor(i/2)*70}) scale(${all.length===1?1:.5})">${shape}<text x="90" y="140" text-anchor="middle" font-size="20" fill="currentColor">${name}</text></g>`).join('');
   const modules='<circle cx="19" cy="72" r="13" fill="var(--news-accent)"/><path d="M33 72H55M55 38V110M55 38H81M55 72H81M55 110H81" stroke="currentColor" stroke-width="3" fill="none"/>'+[0,1,2].map(i=>`<rect x="83" y="${22+i*36}" width="70" height="27" rx="5" fill="${i===1?'var(--news-accent)':'#54779b'}" opacity="${i===1?1:.45}"/><path d="M96 ${33+i*36}H138M96 ${40+i*36}H126" stroke="${i===1?'#101622':'currentColor'}" stroke-width="3"/>`).join('');
+  // A single reported amount is a value card, not an invented comparison.
+  // Full quantitative charts use the separately validated barChart data.
+  const metrics=[...item.label.matchAll(/([<>≤≥＜＞]?\s*\d+(?:\.\d+)?)(亿美元|亿元|万美元|万元|美元|元|%|％|GB|MB|台|个|人|次)/g)];
+  const metricCard=metrics.length===1?`<rect data-metric="true" x="14" y="23" width="152" height="102" rx="12" fill="none" stroke="currentColor" stroke-width="3"/><text data-math-width="132" data-math-min-font="18" x="90" y="68" text-anchor="middle" font-size="32" fill="currentColor">${escape(metrics[0][1].trim())}</text><text x="90" y="103" text-anchor="middle" font-size="20">${escape(metrics[0][2])}</text>`:undefined;
   const topical:Record<string,string>={
     thermos:'<path d="M55 22H125V120Q90 139 55 120Z" fill="#e5edf3" stroke="currentColor" stroke-width="3"/><path d="M68 28H112V109Q90 123 68 109Z" fill="#f6bd91" stroke="#c16442" stroke-width="3"/><path d="M68 24H112" stroke="#54779b" stroke-width="9"/><path d="M27 53L49 53M27 81L49 81M132 53H153M132 81H153" stroke="var(--news-accent)" stroke-width="3" stroke-dasharray="4 4"/><path d="M42 47L49 53L42 59M139 75L132 81L139 87" stroke="var(--news-accent)" fill="none" stroke-width="3"/>',
-    'bar-chart':'<path d="M25 20V118H168" fill="none" stroke="currentColor" stroke-width="3"/><path d="M22 88H168M22 58H168M22 28H168" stroke="#bbc7d2" stroke-dasharray="3 4"/><rect x="47" y="66" width="34" height="50" fill="#54779b"/><rect x="110" y="32" width="34" height="84" fill="var(--news-accent)"/><text x="10" y="122" font-size="15">0</text><text x="65" y="138" text-anchor="middle" font-size="16">甲</text><text x="127" y="138" text-anchor="middle" font-size="16">乙</text>',
+    'bar-chart':metricCard||'<path d="M25 20V118H168" fill="none" stroke="currentColor" stroke-width="3"/><path d="M22 88H168M22 58H168M22 28H168" stroke="#bbc7d2" stroke-dasharray="3 4"/><rect x="47" y="66" width="34" height="50" fill="#54779b"/><rect x="110" y="32" width="34" height="84" fill="var(--news-accent)"/><text x="10" y="122" font-size="15">0</text><text x="65" y="138" text-anchor="middle" font-size="16">甲</text><text x="127" y="138" text-anchor="middle" font-size="16">乙</text>',
     book:'<path d="M15 28Q50 13 90 35Q130 13 165 28V117Q127 103 90 123Q52 103 15 117Z" fill="#f6ecd9" stroke="currentColor" stroke-width="3"/><path d="M90 35V123M30 48L73 58M30 70L73 80M110 58L151 48M110 80L151 70" stroke="#54779b" stroke-width="3"/>',
     clothing:'<path d="M60 27L31 34L13 70L43 85L55 64V127H125V64L138 85L168 70L149 34L120 27Q90 49 60 27Z" fill="#54779b" stroke="currentColor" stroke-width="3"/><path d="M72 53V114M108 53V114M61 85H119" stroke="#f6ecd9" stroke-width="2" stroke-dasharray="4 4"/>',
     desk:'<path d="M14 91H166V105H14ZM31 105V134M149 105V134" fill="#c69a72" stroke="currentColor" stroke-width="3"/><rect x="43" y="23" width="96" height="58" rx="5" fill="#54779b"/><path d="M90 81V91M67 89H113" stroke="currentColor" stroke-width="4"/>',
@@ -136,7 +143,7 @@ for(const node of document.querySelectorAll('[data-math-width]')){
 ${motionLibrary}window.__timelines={};const tl=gsap.timeline({paused:true});tl.from('#accent',{scaleX:0,transformOrigin:'left',duration:.6,ease:'power2.out'},.1);tl.from('#title',{y:20,duration:.6,ease:'power3.out'},.05);${side?"tl.from('#graphic',{opacity:0,y:12,duration:.6,ease:'power2.out'},.45);":''}${enters}${curves}${formula}tl.to('#title',{opacity:0,duration:.2,ease:'sine.in'},${Math.max(.8,duration-.35).toFixed(3)});tl.from('#takeaway',{opacity:0,x:-12,duration:.5,ease:'power2.out'},${takeawayAt.toFixed(3)});${urgent?`tl.to('#accent',{opacity:.55,duration:.45,repeat:${Math.min(10,Math.floor(duration/1.1))},yoyo:true,ease:'sine.inOut'},1);`:''}window.__timelines.main=tl;</script></body></html>`;
 }
 
-export function lessonRendererHash(){return hashBytes([lessonSceneHtml,newsIllustration,curveSvg,formulaSvg,drawingHtml,authorDrawing,validateDrawing,drawingDimensions,barChartSvg,validateBarChart,chapterBarChart,inferBarData,barChartDetail].map(fn=>fn.toString()).join('\n'));}
+export function lessonRendererHash(){return hashBytes([lessonSceneHtml,newsIllustration,curveSvg,formulaSvg,drawingHtml,authorDrawing,validateDrawing,drawingDimensions,barChartSvg,validateBarChart,chapterBarChart,inferBarData,barChartDetail,visualRepairTargets,speechOnlyRepair,correctLessonTranscript,lessonCaptionAnalysis,captionsFromTranscript,voiceComparisonTask].map(fn=>fn.toString()).join('\n'));}
 
 export async function produceLessonScene(chapter:LessonChapter,index:number,total:number,format:Format,speechFile:string,analysis:AudioAnalysis,project:string,pacing?:LessonPacing,presentation?:LessonPresentation,news=false,drawing?:HtmlDrawing,barChart?:LessonBarChart){
   const lead=pacing?.leadSeconds??.35,tail=pacing?.tailSeconds??.55,duration=+(analysis.duration+lead+tail).toFixed(3);

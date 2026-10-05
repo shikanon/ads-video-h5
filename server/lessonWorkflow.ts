@@ -131,9 +131,12 @@ export async function runLessonWorkflow(o:Options){
   async function verifiedSpeech(){
     const reused=new Map<string,{file:string;analysis:AudioAnalysis}>();
     for(const chapter of report!.chapters){
-      const file=path.join(work,chapter.id,'speech.mp3'),analysis=JSON.parse(await readFile(path.join(work,chapter.id,'speech-analysis.json'),'utf8')) as AudioAnalysis;
-      if(analysis.status!=='ready'||analysis.sourceHash!==hashBytes(await readFile(file)))throw new Error('复用旁白文件哈希与实际转写不一致，不能跳过配音核验。');
-      alignLessonSpeech(chapter,analysis);reused.set(chapter.id,{file,analysis});
+      const file=path.join(work,chapter.id,'speech.mp3'),prior=JSON.parse(await readFile(path.join(work,chapter.id,'speech-analysis.json'),'utf8')) as AudioAnalysis;
+      if(prior.status!=='ready'||prior.sourceHash!==hashBytes(await readFile(file)))throw new Error('复用旁白文件哈希与实际转写不一致，不能跳过配音核验。');
+      const corrected=correctLessonTranscript(chapter,prior),aligned=alignLessonSpeech(chapter,corrected),analysis=corrected===prior?prior:lessonCaptionAnalysis(chapter,corrected);
+      chapter.speechMatch=aligned.similarity;chapter.cues=aligned.cues;
+      if(analysis!==prior)await writeFile(path.join(work,chapter.id,'speech-analysis.json'),JSON.stringify(analysis,null,2),{mode:0o600});
+      reused.set(chapter.id,{file,analysis});
     }return reused;
   }
   if(o.export&&savedCheckpoint&&(o.rebuildScenes||savedCheckpoint.rendererHash&&savedCheckpoint.rendererHash!==rendererHash)){
@@ -315,7 +318,7 @@ export async function runLessonWorkflow(o:Options){
           const dir=path.join(work,chapter.id),barChart=chapterBarChart(chapter,commonChart);let layoutFeedback='';
           for(let layoutAttempt=0;layoutAttempt<2;layoutAttempt++){
           let drawing:HtmlDrawing|undefined;
-          const custom=!barChart&&!current&&!['formula','curve'].includes(chapter.visual.kind)&&(visualFeedback[chapter.id]||['product','tutorial','promotion','story'].includes(brief.genre)||/程序绘制/.test(o.prompt));
+          const custom=!barChart&&!['formula','curve'].includes(chapter.visual.kind)&&(visualFeedback[chapter.id]||!current&&(['product','tutorial','promotion','story'].includes(brief.genre)||/程序绘制/.test(o.prompt)));
           if(custom){
             const key=hashBytes(JSON.stringify({rendererHash,prompt:o.prompt,narration:chapter.narration,visual:chapter.visual,reason:chapter.reason,feedback:visualFeedback[chapter.id],layoutFeedback}));
             try{const cache=JSON.parse(await readFile(path.join(dir,'drawing-cache.json'),'utf8'));if(cache.key===key)drawing=cache.drawing;}catch{}
@@ -333,6 +336,9 @@ export async function runLessonWorkflow(o:Options){
       });
       let item=o.media.find(m=>m.generation?.workflowId===report!.workflowId&&m.generation.beatId===chapter.id&&m.generation.audioHash===result.audioHash&&m.generation.htmlHash===result.htmlHash);
       if(item){try{if(hashBytes(await readFile(path.join(o.mediaDir,item.id)))!==item.analysis?.sourceHash)item=undefined;}catch{item=undefined;}}
+      // Identical media bytes can have a corrected transcript or caption
+      // boundary map. Do not revive the old ASR from a visual/audio cache hit.
+      if(item&&JSON.stringify(item.analysis)!==JSON.stringify(result.analysis))item=undefined;
       if(!item){const id=randomUUID();await copyFile(result.file,path.join(o.mediaDir,id));item={id,ownerId:o.ownerId,name:`教学分镜-${chapter.title}.mp4`,kind:'video',mimeType:'video/mp4',duration:result.duration,url:`/api/media/${id}`,createdAt:new Date().toISOString(),origin:'generated',hasAudio:true,analysis:result.analysis,generation:{workflowId:report!.workflowId,beatId:chapter.id,mode:'generated',lineHash:hashBytes(chapter.narration),audioHash:result.audioHash,htmlHash:result.htmlHash,referenceHash:report!.voice!.anchorHash}};await o.register(item);o.media.push(item);}
       chapter.mediaId=item.id;chapter.duration=result.duration;chapter.audioHash=result.audioHash;chapter.htmlHash=result.htmlHash;
     });

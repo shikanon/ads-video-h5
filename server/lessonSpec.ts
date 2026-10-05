@@ -224,8 +224,15 @@ export function correctLessonTranscript(chapter:LessonChapter,analysis:AudioAnal
   // Single-letter labels (N卡/A卡) carry the same spoken letter in either
   // case. Require the identical adjacent Han context; never change a letter
   // to a different hardware label or rewrite a following quantity.
-  for(const term of chapter.narration.match(/\b[A-Z]\p{Script=Han}{1,4}/gu)||[])aliases.push([term.toLowerCase(),term]);
+  for(const term of chapter.narration.match(/(?<![\d零〇一二三四五六七八九十])\b[A-Z]\p{Script=Han}{1,4}/gu)||[])aliases.push([term.toLowerCase(),term]);
   const digitNames=['零','一','二','三','四','五','六','七','八','九'];
+  // Network generations have identical spoken digits and letter case. Only
+  // restore the generation explicitly written in this chapter; 4G cannot
+  // become 5G, and lowercase mass units (5g) are not an intended label.
+  for(const m of chapter.narration.matchAll(/(?<![A-Za-z\d零〇一二三四五六七八九十])([1-9一二三四五六七八九])G(?![A-Za-z\d])/g)){
+    const number=speechNumberValue(m[1]);
+    for(const digit of [String(number),digitNames[number]])for(const letter of ['G','g'])if(digit+letter!==m[0])aliases.push([digit+letter,m[0]]);
+  }
   for(const m of chapter.narration.matchAll(/\b([A-Z])(\d+)_(\d+)\b/g))for(const prefix of [m[1],m[1].toLowerCase()])for(const [left,right] of [[m[2],m[3]],[[...m[2]].map(c=>digitNames[Number(c)]).join(''),[...m[3]].map(c=>digitNames[Number(c)]).join('')]])aliases.push([prefix+left+'下划线'+right,m[0]]);
   for(const m of chapter.narration.matchAll(/\b([A-Za-z]{2,}(?:-[A-Za-z]+)*)\s*(\d)(?![\d.])/g))for(const name of new Set([m[1],m[1].toLowerCase()]))aliases.push([name+digitNames[Number(m[2])],m[1]+' '+m[2]]);
   for(const match of chapter.narration.matchAll(/[零〇一二两三四五六七八九十百千万亿]+[年月日号]/g)){

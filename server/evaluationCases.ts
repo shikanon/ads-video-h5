@@ -37,6 +37,7 @@ export function initialEvaluationCases(): EvaluationCase[] {
     define('travel-hangzhou-45', 'knowledge', '城市介绍与地图示意', '新领域仍能主动研究，不虚构实拍和商家评价。', ['做一条45秒横屏杭州城市介绍视频，用地图示意与旁白，不要假冒实拍，也不推荐具体消费项目。'], expected(45, '16:9', {requiredWords:['杭州']})),
     define('product-script-export', 'knowledge', '产品分镜到授权出片', '先写脚本无渲染，第二轮继承主题、画幅与时长。', ['先写30秒横屏保温杯介绍视频的分镜和旁白，暂时不生成视频。', '按刚才的分镜直接制作成片。'], expected(30, '16:9', {requiredWords:['保温']})),
     define('tutorial-revise-export', 'knowledge', '教程出片后修改画幅', '第二轮实际重新出片，不能只修改计划或重复旧文件。', ['制作30秒竖屏整理书桌教程视频，用步骤示意、旁白和字幕。', '改成横屏，步骤和旁白保留，重新生成成片。'], expected(30, '16:9', {requiredWords:['书桌']})),
+    define('news-spoken-llm', 'hot-news', '口述今日大模型新闻原始指令', '真实口述回归：自主换可读来源和不合格候选，核验今日事件，实际旁白说明选题理由并完成视频。', ['帮我生成一个最新新闻的一个口播视频，介绍今天发生的事情。呃，你在选择新闻的时候先啊，深度思考一下，为什么选这篇新闻的原因，我希望和大模型相关的。然后的热点。'], expected(45, '9:16')),
   ];
 }
 

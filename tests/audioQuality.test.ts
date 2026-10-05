@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {parseLoudness,twoPassLoudnorm,inspectAudioLevels,soundChecks,validateVoiceAssessment,recordVoiceRejection,hasRejectedVoice} from '../server/audioQuality';
+import {parseLoudness,twoPassLoudnorm,inspectAudioLevels,soundChecks,validateVoiceAssessment,recordVoiceRejection,hasRejectedVoice,voiceComparisonTask} from '../server/audioQuality';
 import {runFFmpeg,probeVideo} from '../server/core';
 import {renderTimeline} from '../server/renderTimeline';
 import type {EditPlan,MediaItem,ReconstructionBeat} from '../src/types';
@@ -20,6 +20,12 @@ test('voice auditor must cover every real segment and preserves uncertain and fa
   assert.equal(validateVoiceAssessment(result,['b1','b2']).segments[1].status,'uncertain');
   assert.throws(()=>validateVoiceAssessment({...result,segments:[result.segments[0]]},['b1','b2']),/遗漏/);
   assert.throws(()=>validateVoiceAssessment({...result,segments:[result.segments[0],result.segments[0]]},['b1','b2']),/遗漏/);
+});
+test('generated narration is assessed against actual chapter voices while reference imitation retains its own requirement',()=>{
+  const task=voiceComparisonTask({lesson:{}} as EditPlan,false);
+  assert.match(task,/仅审听片内各段声线一致性/);assert.match(task,/第一段音频/);assert.match(task,/实际不可辨、无法比较，仍须填uncertain/);assert.match(task,/真实声线漂移仍须失败/);
+  assert.match(voiceComparisonTask({reconstruction:{}} as EditPlan,true),/REFERENCE是用户真实原声参考/);
+  assert.match(voiceComparisonTask({reconstruction:{}} as EditPlan,false),/不得声称已确认像用户本人/);
 });
 test('human voice rejection survives volume-only exports but does not reject a genuinely regenerated audio hash',()=>{
   const plan={reconstruction:{beats:[{id:'b1',mode:'generated',mediaId:'tts',audioHash:'audio-v1'}]}} as EditPlan;

@@ -128,26 +128,27 @@ async function seedRendered(directory:string,phase='review'){
 }
 const passedReview:RenderReview={status:'passed',score:94,checks:[{name:'成片语义审查',passed:true,detail:'受控审查'}],semantic:{score:94,findings:[],suggestions:[]},limitations:[],createdAt:new Date().toISOString()};
 
-test('a verified subtitle homophone repairs the hashed source and rerenders without another voice or authoring request',async()=>{
+for(const generation of [false,true])test(`a verified subtitle ${generation?'5G spelling':'homophone'} repairs the hashed source and rerenders without another voice or authoring request`,async()=>{
   const directory=await mkdtemp(path.join(tmpdir(),'qingjian-caption-recovery-')),original=globalThis.fetch;
   const {o,checkpoint,work}=await seedRendered(directory,'repair'),chapter=checkpoint.report.chapters[0];
   for(const item of o.media){const sentence=item.analysis!.sentences[0],chars=[...sentence.text];sentence.words=chars.map((text,i)=>({text,start:i*15/chars.length,end:(i+1)*15/chars.length}));}
-  chapter.narration='专家像专项模块。'+'误差变大损失越高。'.repeat(6);
-  const item=o.media[0],text=chapter.narration.replace('专家像','专家项'),bytes=Buffer.from('CONTROLLED SOURCE HASH FIXTURE — not actual media QA');
+  chapter.narration=(generation?'协议覆盖五G网络。':'专家像专项模块。')+'误差变大损失越高。'.repeat(6);
+  const item=o.media[0],text=chapter.narration.replace(generation?'五G':'专家像',generation?'五g':'专家项'),bytes=Buffer.from('CONTROLLED SOURCE HASH FIXTURE — not actual media QA');
   item.generation!.lineHash=createHash('sha256').update(chapter.narration).digest('hex');
   item.analysis={...item.analysis!,transcript:text,sourceHash:createHash('sha256').update(bytes).digest('hex'),sentences:[{id:'s',start:0,end:text.length*.2,text,complete:true,words:[...text].map((text,i)=>({text,start:i*.2,end:(i+1)*.2}))}]};
   await writeFile(path.join(directory,item.id),bytes);
-  const rejection={...passedReview,status:'needs-review' as const,score:85,checks:[{name:'成片语义审查',passed:false,detail:'c0字幕：专家项专项模块为同音错写'}],semantic:{score:85,findings:['c0字幕：专家项专项模块为同音错写'],suggestions:[]}};
+  const finding=generation?'c0字幕：五g大小写不一致，统一为五G':'c0字幕：专家项专项模块为同音错写';
+  const rejection={...passedReview,status:'needs-review' as const,score:85,checks:[{name:'成片语义审查',passed:false,detail:finding}],semantic:{score:85,findings:[finding],suggestions:[]}};
   await writeFile(path.join(work,'checkpoint.json'),JSON.stringify({...checkpoint,review:rejection}));
   let renders=0,registrations=0;
   globalThis.fetch=async()=>{throw new Error('Caption recovery must not request authoring or recognition');};
   try{
     const result=await runLessonWorkflow({...o,register:async()=>{registrations++;},render:async plan=>{
-      renders++;assert.match(plan.captions!.map(c=>c.text).join(''),/专家像专项模块/);assert.doesNotMatch(plan.captions!.map(c=>c.text).join(''),/专家项/);
+      renders++;assert.match(plan.captions!.map(c=>c.text).join(''),generation?/五G网络/:/专家像专项模块/);assert.doesNotMatch(plan.captions!.map(c=>c.text).join(''),generation?/五g/:/专家项/);
       const file=path.join(directory,'corrected-fixture.mp4');await writeFile(file,'CONTROLLED RENDER FIXTURE');return {id:'caption-fixed',file};
     },review:async()=>({...passedReview,score:83,semantic:{score:83,findings:[],suggestions:[]}})});
     assert.equal(renders,1);assert.equal(registrations,1);assert.equal(result.rendered?.id,'caption-fixed');assert.equal(result.review?.status,'passed');assert.equal(result.review?.score,83,'a passed movie wins over an 85-point rejected movie');
-    assert.match(item.analysis!.transcript,/专家项专项模块/,'raw source ASR is retained');
+    assert.match(item.analysis!.transcript,generation?/五g/:/专家项专项模块/,'raw source ASR is retained');
     assert.deepEqual(await readFile(path.join(directory,result.report.chapters[0].mediaId!)),bytes,'the approved source audio/video bytes are unchanged');
     assert.equal(result.events.some(e=>e.tool==='synthesize_narration'||e.tool==='revise_lesson_script'),false);
   }finally{globalThis.fetch=original;await rm(directory,{recursive:true,force:true});}
@@ -203,9 +204,20 @@ test('resumed content rejection triggers server repair and chapter revision; can
   }finally{globalThis.fetch=original;await rm(directory,{recursive:true,force:true});}
 });
 
-for(const changedAudio of [false,true])test(`visual recovery ${changedAudio?'rejects changed audio':'changes the drawing strategy without rewriting verified speech'}`,async()=>{
+for(const mode of ['valid','changed-audio','news','stale-captions'] as const)test(`visual recovery ${mode==='changed-audio'?'rejects changed audio':mode==='news'?'redraws news visual omissions without rerecording correct speech':mode==='stale-captions'?'replaces stale ASR despite identical audio and visual hashes':'changes the drawing strategy without rewriting verified speech'}`,async()=>{
+  const changedAudio=mode==='changed-audio',news=mode==='news',staleCaptions=mode==='stale-captions';
   const directory=await mkdtemp(path.join(tmpdir(),'qingjian-visual-repair-')),original=globalThis.fetch;
   const {o,checkpoint,work}=await seedRendered(directory);
+  if(news){
+    o.prompt='制作45秒横屏最新大模型新闻图解视频，每秒4字';
+    const now=Date.now(),current={asOf:new Date(now).toISOString(),expiresAt:new Date(now+30*60000).toISOString(),windowHours:72,signals:[],topics:[],failures:[]};
+    checkpoint.report.hotResearch=current;
+    checkpoint.report.references=[...checkpoint.report.references.map(r=>({...r,verification:'news-page' as const,freshness:'fresh' as const,publishedAt:new Date(now).toISOString()})),{id:'r2',title:'Controlled independent news source',url:'https://news.example.net/story',verification:'news-page',freshness:'fresh',publishedAt:new Date(now).toISOString(),excerpt:'Controlled fixture: an independently read news body.'}];
+    checkpoint.report=validateLesson(checkpoint.report,o.prompt);
+    checkpoint.plan.lesson=structuredClone(checkpoint.report);
+    checkpoint.fingerprint=createHash('sha256').update(JSON.stringify({version:1,owner:'fixture-owner',prompt:o.prompt,export:true})).digest('hex');
+    await writeFile(path.join(work,'checkpoint.json'),JSON.stringify({...checkpoint,research:{...checkpoint.research,references:checkpoint.report.references,current}}));
+  }
   for(const chapter of checkpoint.report.chapters){
     const dir=path.join(work,chapter.id);await mkdir(dir,{recursive:true});
     const bytes=Buffer.from('CONTROLLED speech fixture '+chapter.id),analysis={...o.media.find(m=>m.id===chapter.mediaId)!.analysis!,sourceHash:createHash('sha256').update(bytes).digest('hex')};
@@ -219,12 +231,17 @@ for(const changedAudio of [false,true])test(`visual recovery ${changedAudio?'rej
   const drawing={title:'误差示意',nodes:[{id:'axis',kind:'line' as const,x:100,y:450,w:1000,h:0,text:'',tone:'ink' as const,fontSize:24,highlight:false},{id:'bar',kind:'path' as const,pathData:'M300 450V250H400V450Z',x:300,y:250,w:100,h:200,text:'',tone:'blue' as const,fontSize:24,highlight:true},{id:'label',kind:'text' as const,x:300,y:465,w:200,h:70,text:'误差评分',tone:'ink' as const,fontSize:32,highlight:false}]};
   globalThis.fetch=async()=>{throw new Error('A drawing-only repair must not rewrite or synthesize speech');};
   const run=()=>runLessonWorkflow({...o,progress:async updates=>{events.splice(0,events.length,...updates);},
-    authorVisual:async(_config,beat,format)=>{authors++;assert.equal(format,'16:9');assert.match(beat.visualBrief,/配图无关/);assert.equal(beat.line,checkpoint.report.chapters[0].narration);return drawing;},
+    authorVisual:async(_config,beat,format)=>{authors++;assert.equal(format,'16:9');assert.match(beat.visualBrief,news?/视觉遗漏/:/配图无关/);assert.equal(beat.line,checkpoint.report.chapters[0].narration);return drawing;},
     produceScene:async(chapter,_index,_total,format,speechFile,analysis,project,_pacing,_presentation,_news,custom)=>{
       await mkdir(project,{recursive:true});const file=path.join(project,'controlled-scene.mp4'),bytes=Buffer.from('CONTROLLED scene fixture '+chapter.id);await writeFile(file,bytes);
-      return {file,duration:15,audioHash:hashBytes(await readFile(speechFile)),htmlHash:hashBytes(custom?drawingHtml(custom,15,format):chapter.id),analysis:{...analysis,sourceHash:hashBytes(bytes)}};
-    },render:async plan=>{renders++;assert.deepEqual(plan.lesson!.chapters.map(c=>c.narration),checkpoint.report.chapters.map(c=>c.narration));const file=path.join(directory,'repaired-movie-fixture.mp4');await writeFile(file,'CONTROLLED rerender fixture');return {id:'redrawn-fixture',file};},
-    review:async()=>++reviews===1?{...passedReview,status:'needs-review',score:90,checks:[{name:'成片语义审查',passed:false,detail:'c0：画面没有柱状图，图标配图无关'}],semantic:{score:90,findings:['c0：画面没有柱状图，图标配图无关'],suggestions:[]}}:{...passedReview,score:83}});
+      const result={file,duration:15,audioHash:hashBytes(await readFile(speechFile)),htmlHash:hashBytes(custom?drawingHtml(custom,15,format):chapter.id),analysis:{...analysis,sourceHash:hashBytes(bytes)}};
+      if(staleCaptions){
+        const id='stale-'+chapter.id;await writeFile(path.join(directory,id),bytes);
+        o.media.push({id,kind:'video',mimeType:'video/mp4',name:'Stale caption fixture',url:'',createdAt:'',duration:15,analysis:{...result.analysis,transcript:'STALE CAPTIONS',sentences:[{...result.analysis.sentences[0],text:'STALE CAPTIONS',words:[{text:'STALE CAPTIONS',start:0,end:15}]}]},generation:{workflowId:checkpoint.report.workflowId,beatId:chapter.id,mode:'generated',audioHash:result.audioHash,htmlHash:result.htmlHash,lineHash:hashBytes(chapter.narration),referenceHash:''}});
+      }
+      return result;
+    },render:async plan=>{renders++;assert.deepEqual(plan.lesson!.chapters.map(c=>c.narration),checkpoint.report.chapters.map(c=>c.narration));if(staleCaptions){assert.doesNotMatch(plan.captions!.map(c=>c.text).join(''),/STALE/);assert.ok(plan.clips.every(c=>!c.sourceId.startsWith('stale-')));}const file=path.join(directory,'repaired-movie-fixture.mp4');await writeFile(file,'CONTROLLED rerender fixture');return {id:'redrawn-fixture',file};},
+    review:async()=>{const finding=news?'c0：旁白清晰说出术语，但对应章节所有抽帧均未出现底部摘要提示条，存在重要信息视觉遗漏。':'c0：画面没有柱状图，图标配图无关';return ++reviews===1?{...passedReview,status:'needs-review',score:90,checks:[{name:'成片语义审查',passed:false,detail:finding}],semantic:{score:90,findings:[finding],suggestions:[]}}:{...passedReview,score:83};}});
   try{
     if(changedAudio){await assert.rejects(run,/旁白文件哈希/);assert.equal(authors,0);assert.equal(renders,0);}
     else{const result=await run();assert.equal(result.review?.status,'passed');assert.equal(result.review?.score,83);assert.equal(result.rendered?.id,'redrawn-fixture');assert.equal(authors,1);assert.equal(renders,1);assert.equal(reviews,2);assert.equal(result.events.some(e=>e.tool==='synthesize_narration'||e.tool==='revise_lesson_script'),false);}
