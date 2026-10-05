@@ -20,7 +20,7 @@ import { createEffectStore, type EffectValues } from './htmlEffects';
 import { classify, shouldUpdatePlan, excludesBgm, narrativeRequest } from './intents';
 import { createAudioUnderstanding } from './audioUnderstanding';
 import { reviewRender as reviewBaseRender } from './renderReview';
-import { renderReviewSummary } from './reviewResults';
+import { renderReviewSummary, reviewNeedsContentRepair } from './reviewResults';
 import { recordVoiceRejection, reportsVoiceMismatch } from './audioQuality';
 import { planHash, recoverPublishedPlan } from './renderTimeline';
 import { runEditorialWorkflow } from './editorialWorkflow';
@@ -933,6 +933,9 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   const candidate=state.artifacts.find(a=>a.id===job.artifactId&&owned(a,user.id));
   const needsLessonRepair=job.status==='succeeded'&&candidate?.plan?.lesson&&candidate.review?.status==='needs-review';
   if (job.status !== 'failed'&&!needsLessonRepair) return response.status(409).json({ error: '只有失败的任务或未通过审查的教学成片可以重试。' });
+  // An unavailable auditor has no content correction to make. Recheck the
+  // existing artifact instead of restarting today's research and rendering.
+  if(needsLessonRepair&&candidate?.review&&!reviewNeedsContentRepair(candidate.review))job.kind='review';
   job.status = 'queued'; job.error = undefined; job.progress = 0; job.updatedAt = now();
   const session = getSession(job.sessionId);
   if(session)session.messages=session.messages.filter(m=>!(m.role==='assistant'&&m.jobId===job.id));
