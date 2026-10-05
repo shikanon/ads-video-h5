@@ -21,6 +21,7 @@ import { classify, shouldUpdatePlan, excludesBgm, narrativeRequest } from './int
 import { createAudioUnderstanding } from './audioUnderstanding';
 import { reviewRender as reviewBaseRender } from './renderReview';
 import { renderReviewSummary, reviewNeedsContentRepair } from './reviewResults';
+import { withReviewAssets } from './reviewAssets';
 import { recordVoiceRejection, reportsVoiceMismatch } from './audioQuality';
 import { planHash, recoverPublishedPlan } from './renderTimeline';
 import { runEditorialWorkflow } from './editorialWorkflow';
@@ -231,9 +232,12 @@ async function performJob(job: Job): Promise<void> {
     next.version=(session.plan.version||0)+1;session.plan=next;
     addReply(session,job,excludesAvatar(prompt)?'已从当前方案移除作者形象，发送“生成成片”可导出。':'已在当前方案加入作者动画，发送“生成成片”可导出。');await saveState();return;
   }
-  const reviewRender:typeof reviewBaseRender=(file,next,items,request)=>next.avatars?.length
-    ?avatarTrace.run('review_author_video','检查作者动画、画面与声音',{planHash:planHash(next)},()=>reviewBaseRender(file,next,items,request))
-    :reviewBaseRender(file,next,items,request);
+  const reviewRender:typeof reviewBaseRender=(file,next,items,request)=>withReviewAssets(oss,job.ownerId!,publish=>{
+    const run=()=>reviewBaseRender(file,next,items,request,publish);
+    return next.avatars?.length||job.kind==='review'
+      ?avatarTrace.run(next.avatars?.length?'review_author_video':'review_existing_video',next.avatars?.length?'检查作者动画、画面与声音':'检查已有成片与声音',{planHash:planHash(next)},run)
+      :run();
+  });
   const renderPlan:typeof renderBasePlan=async(next,items,dir,out,narration,bgm)=>{
     if(job.kind!=='review'){
       next.authorAvatarMode ??= avatarModeAtStart;

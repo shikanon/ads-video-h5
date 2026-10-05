@@ -185,6 +185,7 @@ export interface RenderReview {
   score: number;
   checks: Array<{ name: string; passed: boolean; detail: string }>;
   semantic?: { score: number; findings: string[]; suggestions?: string[]; repaired?: boolean };
+  transport?: { mode: 'inline' | 'hosted'; requests: Array<{stage: 'voice' | 'semantic'; attempt: number; bytes: number; durationMs: number; status?: number; error?: string}> };
   audio?: {
     limits: { targetLufs:number;truePeakDb:number;segmentSpreadLu:number;adjacentJumpLu:number;withinSpreadLu:number };
     segments: Array<{id:string;mode:string;start:number;end:number;integratedLufs:number|null;truePeakDb:number|null;voicedSpreadLu:number|null;headLufs:number|null;tailLufs:number|null}>;

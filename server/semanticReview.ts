@@ -1,13 +1,12 @@
-import { jobFetch, jobDelay, throwIfJobCancelled } from './jobExecution';
+import { jobDelay, throwIfJobCancelled } from './jobExecution';
 import type { ModelConfig } from './modelRegistry';
 import { validateSemanticReview } from './reviewResults';
+import { requestReviewJson, type ReviewObserver } from './reviewAssets';
 
-export async function requestSemanticReview(config:ModelConfig,messages:unknown[]) {
+export async function requestSemanticReview(config:ModelConfig,messages:unknown[],observe?:ReviewObserver) {
   for(let attempt=0;attempt<2;attempt++) {
     try {
-      const response=await jobFetch(config.baseUrl.replace(/\/$/,'')+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+config.apiKey,'Content-Type':'application/json'},signal:AbortSignal.timeout(180000),body:JSON.stringify({model:config.modelId,thinking:{type:'disabled'},response_format:{type:'json_object'},max_tokens:8000,messages})});
-      if(!response.ok)throw new Error(`HTTP ${response.status}`);
-      const body=await response.json() as {choices?:Array<{message?:{content?:string}}>};
+      const body=await requestReviewJson(config,{model:config.modelId,thinking:{type:'disabled'},response_format:{type:'json_object'},max_tokens:8000,messages},'semantic',attempt,observe);
       return validateSemanticReview(JSON.parse(body.choices?.[0]?.message?.content||''));
     } catch(error) {
       throwIfJobCancelled();
