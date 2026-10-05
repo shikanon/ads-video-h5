@@ -90,7 +90,7 @@ export interface NarrativeScript {
 export interface EditorialReport { scenes: SelectedScene[]; script: NarrativeScript; }
 export interface ResearchReference {
   id: string; title: string; url: string; excerpt: string; retrievedAt: string;
-  verification: 'search-cited'|'primary-page'|'primary-record'|'primary-paper'|'news-page';
+  verification: 'search-cited'|'primary-page'|'primary-record'|'primary-paper'|'public-page'|'news-page';
   publishedAt?: string; dateEvidence?: string; freshness?: 'fresh'|'stale'|'undated'|'future';
 }
 export interface HotTopicSignal {
@@ -126,12 +126,19 @@ export interface WorkflowEvent {
 }
 
 export type LessonCurveFunction = 'mse' | 'mae' | 'huber' | 'cross-entropy' | 'hinge' | 'focal';
-export type LessonIllustration = 'interface' | 'steps' | 'code' | 'character' | 'controller' | 'interaction' | 'gallery' | 'announcement' | 'signal';
+export type LessonIllustration = 'interface' | 'steps' | 'code' | 'character' | 'controller' | 'interaction' | 'gallery' | 'announcement' | 'signal' | 'hardware' | 'modules' | 'thermos' | 'bar-chart' | 'book' | 'clothing' | 'desk' | 'coffee' | 'orbit' | 'battery' | 'map';
+export interface LessonBarChart {
+  bars: Array<{label:string;value:number}>;
+  unit: string;
+  illustrative: boolean;
+  panels: Array<{title:string;min:number;max:number}>;
+}
 export interface LessonVisual {
-  kind: 'concept' | 'formula' | 'curve' | 'timeline' | 'comparison';
+  kind: 'concept' | 'formula' | 'curve' | 'timeline' | 'comparison' | 'bar-chart';
   takeaway: string;
   items: Array<{ label: string; detail: string; cue: string; illustration?: LessonIllustration }>;
   formula?: string;
+  barChart?: LessonBarChart;
   plot?: {
     xLabel: string; yLabel: string; xMin: number; xMax: number; yMin: number; yMax: number;
     curves: Array<{ label: string; fn: LessonCurveFunction; parameter?: number }>;
@@ -152,7 +159,7 @@ export interface LessonReport {
   requestedSeconds: number; explicitDuration: boolean; format: Format;
   chapters: LessonChapter[]; references: ResearchReference[];
   pacing?: LessonPacing;
-  factReview?: { score: number; needsRepair: boolean; findings: string[]; suggestions?: string[]; adjudication?: { modelId: string; primaryScore: number; primaryNeedsRepair: boolean; primaryFindings: string[] } };
+  factReview?: { score: number; needsRepair: boolean; findings: string[]; suggestions?: string[]; todayEvents?: Array<{date:string;referenceId:string;quote:string}>; selectionReason?: {chapterId:string;quote:string}; adjudication?: { modelId: string; primaryScore: number; primaryNeedsRepair: boolean; primaryFindings: string[] } };
   voice?: { mode: 'preset'; modelId: string; anchorHash: string; revision: number; tempo: number; spokenCharacters?: number; spokenSeconds?: number; charactersPerSecond?: number };
   limitations: string[];
 }

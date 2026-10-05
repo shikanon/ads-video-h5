@@ -13,7 +13,10 @@
     "build:admin": "pnpm --filter @qingjian/admin build",
     "build": "pnpm build:h5 && pnpm build:admin && node tooling/package-frontends.mjs",
     "start": "tsx server/index.ts",
-    "eval:requests": "node --import tsx tooling/evaluate-requests.ts"
+    "eval:requests": "node --import tsx tooling/evaluate-requests.ts",
+    "eval:workflow-entry": "node --import tsx tooling/evaluate-workflow-entry.ts",
+    "eval:production": "node --import tsx tooling/evaluate-production.ts",
+    "eval:recovery": "node --import tsx tooling/evaluate-recovery.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.87.1",

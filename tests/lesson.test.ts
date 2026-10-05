@@ -49,6 +49,30 @@ test('generated captions resolve contextual homophones without inserting words o
   assert.equal(correctLessonTranscript(ambiguous,analysis(ambiguous.narration)).transcript,ambiguous.narration,'同音名称同时出现时不能统一替换');
 });
 
+test('news homophones resolve only in matching heard sentence context and keep numeric errors blocking',()=>{
+  const c={...chapter,narration:'专家像专项模块，每个词只调十个。',visual:{...chapter.visual,items:[{label:'专家',detail:'专门模块',cue:'专项模块'},{label:'数量',detail:'每词调用',cue:'十个'}]}};
+  const raw=analysis('专家项专项模块，每个词只调十个。'),before=structuredClone(raw),fixed=correctLessonTranscript(c,raw);
+  assert.equal(fixed.transcript,c.narration);assert.deepEqual(raw,before);assert.equal(alignLessonSpeech(c,fixed).similarity,1);
+  assert.equal(fixed.sentences[0].words[0].start,raw.sentences[0].words[0].start);assert.equal(fixed.sentences[0].words.at(-1)!.end,raw.sentences[0].words.at(-1)!.end);
+  const missing=correctLessonTranscript(c,analysis('专家项模块，每个词只调十个。'));assert.doesNotMatch(missing.transcript,/专项模块/);assert.notEqual(alignLessonSpeech(c,missing).similarity,1);
+  assert.throws(()=>alignLessonSpeech(c,correctLessonTranscript(c,analysis('专家项专项模块，每个词只调十二个。'))),/数字|匹配/);
+});
+test('single-letter hardware labels retain heard spans and numbers when restoring case',()=>{
+  const c={...chapter,narration:'N卡二十二GB起，A卡三十二GB起。',visual:{...chapter.visual,items:[{label:'N卡',detail:'显存要求',cue:'二十二GB'},{label:'A卡',detail:'显存要求',cue:'三十二GB'}]}};
+  const raw=analysis('n卡二十二GB起，a卡三十二GB起。'),before=structuredClone(raw),fixed=correctLessonTranscript(c,raw);
+  assert.equal(fixed.transcript,c.narration);assert.deepEqual(raw,before);assert.equal(alignLessonSpeech(c,fixed).similarity,1);
+  assert.equal(fixed.sentences[0].words[0].start,raw.sentences[0].words[0].start);assert.equal(fixed.sentences[0].words.at(-1)!.end,raw.sentences[0].words.at(-1)!.end);
+  assert.throws(()=>alignLessonSpeech(c,correctLessonTranscript(c,analysis('n卡二十四GB起，a卡三十二GB起。'))),/数字|匹配/);
+  assert.doesNotMatch(correctLessonTranscript(c,analysis('a卡二十二GB起，a卡三十二GB起。')).transcript,/N卡/);
+});
+test('quantization identifiers get an explicit spoken separator and only heard matching values restore their written form',()=>{
+  const c={...chapter,narration:'项目称Q2_0量化下显存更低，仍待复现。',visual:{...chapter.visual,items:[{label:'量化',detail:'低精度方案',cue:'Q2_0量化'},{label:'复现',detail:'证据要求',cue:'仍待复现'}]}};
+  assert.match(spokenLessonText(c.narration),/Q2下划线0/);
+  const raw=analysis('项目称Q二下划线零量化下显存更低，仍待复现。'),before=structuredClone(raw),fixed=correctLessonTranscript(c,raw);
+  assert.equal(fixed.transcript,c.narration);assert.deepEqual(raw,before);assert.equal(alignLessonSpeech(c,fixed).similarity,1);
+  assert.throws(()=>alignLessonSpeech(c,correctLessonTranscript(c,analysis('项目称Q四下划线零量化下显存更低，仍待复现。'))),/数字|匹配/);
+  assert.throws(()=>alignLessonSpeech(c,correctLessonTranscript(c,analysis('项目称Q二减去零量化下显存更低，仍待复现。'))),/字词|台词|匹配/);
+});
 test('one sentence enters no-footage teaching, while recorded speech keeps reconstruction',()=>{
   assert.equal(classify(brief),'export');assert.equal(lessonRequest(brief,[]),brief);
   assert.equal(classify(brief+'，先给脚本'),'plan');
@@ -154,6 +178,22 @@ test('real subtitle regressions separate zero from decimals, colon clauses and h
   const intro=analysis('错的有多坏训练要把错误变成一个数',0);
   intro.sentences[0].words.forEach((w,i)=>{if(i>=5){w.start+=1.2;w.end+=1.2;}});
   assert.deepEqual(captions('错得多坏？训练要把错误变成一个数。',intro).map(c=>c.text),['错的有多坏','训练要把错误变成一个数']);
+});
+test('equivalent heard integer quantities and ranges match without replacing ASR or accepting changed values',()=>{
+  const news={...chapter,narration:'首次启动可能占35到55GB，安装二十二天超过500万次，仍需核查。',visual:{...chapter.visual,items:[{label:'启动空间',detail:'硬盘需求',cue:'35到55GB'},{label:'时间窗口',detail:'安装统计范围',cue:'二十二天'}]}};
+  for(const text of ['首次启动可能占三五到五五gb，安装22天超过五百万次，仍需核查。','首次启动可能占三十五到五十五GB，安装22天超过五百万次，仍需核查。']){
+    const raw=analysis(text),before=structuredClone(raw),result=alignLessonSpeech(news,raw);
+    assert.equal(result.similarity,1);assert.deepEqual(raw,before);assert.ok(result.cues.every(c=>c.end>c.start));
+  }
+  assert.throws(()=>alignLessonSpeech(news,analysis(news.narration.replace('35到55GB','30到50GB'))),/数字或单位/);
+  assert.throws(()=>alignLessonSpeech(news,analysis(news.narration.replace('35到55GB','35到55MB'))),/数字或单位/);
+  assert.throws(()=>alignLessonSpeech(news,analysis(news.narration.replace('二十二天','二十天'))),/数字或单位/);
+  const mixed={...chapter,narration:'1250亿参数仍需核查。',visual:{...chapter.visual,items:[{label:'参数',detail:'模型规模',cue:'1250亿参数'},{label:'核查',detail:'来源要求',cue:'仍需核查'}]}};
+  const raw=analysis('12百5十亿参数仍需核查。'),before=structuredClone(raw);
+  assert.equal(alignLessonSpeech(mixed,raw).similarity,1);assert.deepEqual(raw,before);
+  assert.throws(()=>alignLessonSpeech(mixed,analysis('13百5十亿参数仍需核查。')),/原词|匹配|数字|台词/);
+  const bare={...chapter,narration:'速度为94，口径不同，暂无第三方基准。',visual:{...chapter.visual,items:[{label:'速度',detail:'项目自报',cue:'速度为94'},{label:'限制',detail:'等待复现',cue:'暂无第三方基准'}]}};
+  assert.throws(()=>alignLessonSpeech(bare,analysis(bare.narration.replace('94','90'))),/数字/);
 });
 test('Focal subtraction is spoken explicitly and reversed audio fails despite high matching',()=>{
   const c={...chapter,narration:'交叉熵乘 (1−p_t) 的伽马次方，误差变大，损失越高。'};

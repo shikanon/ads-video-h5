@@ -270,6 +270,12 @@ a {
 .assistant .message-bubble {
   border-bottom-left-radius: 5px;
 }
+.message-time {
+  color: #99938e;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
 .sent-attachments {
   display: flex;
   flex-wrap: wrap;

@@ -1,6 +1,6 @@
 import type { EvaluationCase, EvaluationCategory, EvaluationExpectation } from '../src/evaluationTypes';
 
-export const EVALUATION_RUBRIC_VERSION = 'qingjian-video-v2';
+export const EVALUATION_RUBRIC_VERSION = 'qingjian-video-v3';
 export const evaluationCategoryNames: Record<EvaluationCategory, string> = { 'hot-news': '热点新闻', knowledge: '知识科普', 'multi-video': '多素材剪辑' };
 const expected = (seconds: number, format: EvaluationExpectation['format'], extra: Partial<EvaluationExpectation> = {}): EvaluationExpectation => ({ seconds, toleranceSeconds: Math.max(2, seconds * .08), format, captions: true, minSources: 0, html: true, originalOnly: false, requiredWords: [], ...extra });
 const define = (id: string, category: EvaluationCategory, name: string, description: string, messages: string[], expectation: EvaluationExpectation): EvaluationCase => ({ id, category, name, description, messages, expectation, fixtureIds: [], threshold: 80, enabled: true, version: 1, updatedAt: '2026-10-02T00:00:00.000Z' });
@@ -25,6 +25,18 @@ export function initialEvaluationCases(): EvaluationCase[] {
     define('knowledge-photosynthesis-question', 'knowledge', '科普任务的礼貌问法', '从零开始、儿童受众、简短问法和真实可读图解。', ['可以把光合作用讲清楚，做成一个60秒横屏科普视频吗？给小朋友看，画面你自己做。'], expected(60, '16:9', {requiredWords:['光合']})),
     define('knowledge-cn-duration', 'knowledge', '中文时长和新主题', '四十五秒必须按45秒执行，不能回到默认三分钟。', ['生成四十五秒横屏教学视频，向零基础观众解释月亮为什么有阴晴圆缺，用图解和字幕。'], expected(45, '16:9', {requiredWords:['月亮']})),
     define('news-script-to-film', 'hot-news', '先分镜后授权出片', '首轮不应合成音频或导出；第二轮继承主题、横屏和时长。', ['Fable5.5实时资讯短片，45秒横屏，先写分镜，暂时别生成成片。', '现在按这个脚本生成成片，主题和画幅保持不变。'], expected(45, '16:9', {requiredWords:['Fable5.5']})),
+    define('product-thermos-30', 'knowledge', '保温杯产品原理介绍', '没有产品实拍也应查证原理并设计示意；不得编造品牌性能。', ['制作30秒竖屏保温杯产品介绍视频，解释真空隔热原理，用示意图和旁白，不编造具体品牌性能。'], expected(30, '9:16', {requiredWords:['真空']})),
+    define('product-coffee-30', 'knowledge', '产品介绍的礼貌问法', '完整制作授权、产品结构图与事实限制。', ['能帮我制作30秒横屏咖啡滤杯介绍视频吗？没有实拍，结构画面你来设计，不要杜撰销量和评价。'], expected(30, '16:9', {requiredWords:['咖啡']})),
+    define('tutorial-fold-30', 'knowledge', '收纳教程从零制作', '实际步骤和图解动作，不能只有文字承诺或要求上传视频。', ['做一条30秒竖屏T恤收纳教程视频，分步骤图解，配音字幕一起完成。'], expected(30, '9:16', {requiredWords:['T恤']})),
+    define('tutorial-chart-30', 'knowledge', '主题含如何的多行教程', '内容主题的如何不能被误认为只咨询流程。', ['主题：如何读懂柱状图\n画面：程序绘制\n请做30秒横屏视频，配音和字幕。'], expected(30, '16:9', {requiredWords:['柱状图']})),
+    define('tutorial-rag-45', 'knowledge', '软件操作的界面示意', '无录屏用标注示意的流程图，不能假称操作过真实软件。', ['制作45秒横屏RAG入门操作教程视频，说明准备文档、检索和回答，界面用示意，带旁白和字幕。'], expected(45, '16:9', {requiredWords:['检索']})),
+    define('promo-reading-30', 'knowledge', '读书活动宣传', '宣传结构与结尾号召，不能自动套用数学课堂。', ['制作30秒竖屏读书活动宣传视频，用图解和旁白突出每天读一点，不虚构活动时间地点。'], expected(30, '9:16', {requiredWords:['读书']})),
+    define('promo-water-30', 'knowledge', '公益宣传与行动', '事实有依据，行动可理解，不杜撰统计数字。', ['来一条30秒横屏节约用水公益宣传视频，用示意动画讲清楚可做的行动，不要编造统计数字。'], expected(30, '16:9', {requiredWords:['水']})),
+    define('story-printing-45', 'knowledge', '历史叙事的图解制作', '真实史实核验、叙事顺序和时间线，不能冒充现场。', ['制作45秒横屏介绍印刷术的历史视频，先核实史实，再用时间线图解和旁白出片。'], expected(45, '16:9', {requiredWords:['印刷']})),
+    define('story-tree-30', 'knowledge', '寓言式主题短片', '可自主设计寓言图解，明确虚构性质，不能假冒新闻。', ['用种树的比喻讲坚持，做成30秒竖屏故事视频，画面你来设计，注明寓言示意。'], expected(30, '9:16', {requiredWords:['坚持']})),
+    define('travel-hangzhou-45', 'knowledge', '城市介绍与地图示意', '新领域仍能主动研究，不虚构实拍和商家评价。', ['做一条45秒横屏杭州城市介绍视频，用地图示意与旁白，不要假冒实拍，也不推荐具体消费项目。'], expected(45, '16:9', {requiredWords:['杭州']})),
+    define('product-script-export', 'knowledge', '产品分镜到授权出片', '先写脚本无渲染，第二轮继承主题、画幅与时长。', ['先写30秒横屏保温杯介绍视频的分镜和旁白，暂时不生成视频。', '按刚才的分镜直接制作成片。'], expected(30, '16:9', {requiredWords:['保温']})),
+    define('tutorial-revise-export', 'knowledge', '教程出片后修改画幅', '第二轮实际重新出片，不能只修改计划或重复旧文件。', ['制作30秒竖屏整理书桌教程视频，用步骤示意、旁白和字幕。', '改成横屏，步骤和旁白保留，重新生成成片。'], expected(30, '16:9', {requiredWords:['书桌']})),
   ];
 }
 

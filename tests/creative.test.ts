@@ -327,6 +327,15 @@ test('real news diagrams keep four information points readable and pass contrast
   }finally{await rm(directory,{recursive:true,force:true});}
 });
 
+test('hardware and expert news render their actual objects even when an older script picked an unrelated icon',()=>{
+  const chapter:LessonChapter={id:'hardware',title:'本地推理门槛',role:'foundation',goal:'分清硬件与专家路由',prerequisites:[],narration:'显卡显存、内存与SSD协作，专家按需调用。',reason:'展示实际对象',referenceIds:[],claims:[],visual:{kind:'concept',takeaway:'显存不是整机预算',items:[{label:'显卡显存',detail:'单张12GB GPU',cue:'显卡',illustration:'controller'},{label:'内存与SSD',detail:'32GB RAM和固态硬盘',cue:'内存',illustration:'steps'},{label:'稀疏专家',detail:'路由只激活需要的模块',cue:'专家',illustration:'signal'}]}};
+  const html=lessonSceneHtml(chapter,0,3,4,'9:16',{mood:'neutral',bgm:false},true);
+  assert.ok(html.includes('data-component="GPU"'));assert.ok(html.includes('data-component="RAM"'));assert.ok(html.includes('data-component="SSD"'));
+  assert.ok(html.includes('data-illustration="modules"'));assert.ok(!html.includes('data-illustration="controller"'));
+  chapter.visual.items=[{label:'游戏手柄',detail:'控制角色移动',cue:'手柄',illustration:'controller'},{label:'官方页面',detail:'核对公告',cue:'公告',illustration:'announcement'}];
+  assert.ok(lessonSceneHtml(chapter,0,3,4,'9:16',{mood:'neutral',bgm:false},true).includes('data-illustration="controller"'),'gamepad news retains its actual controller');
+});
+
 test('news lookup changes failed queries, reads replacement sources and keeps the original subject',async()=>{
   const originalFetch=globalThis.fetch,queries:string[]=[],events:any[]=[];let calls=0;
   const text='Fable5.5的发布消息需要核对，报道将网络演示标为传闻，不能据此宣布正式发布。';

@@ -226,7 +226,7 @@ for(let index=0;index<3;index++)test(`${TEXT_MODEL_PRESETS[index].modelId}: real
     const body=JSON.parse(String(init?.body));assert.equal(body.thinking.type,index===2?'enabled':'disabled');
     if(!body.stream){reviews++;if(reviews===1)return new Response('{}',{status:503});return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(reviews===2?{score:75,needsRepair:true,findings:['c1：示例表述有实际错误，请修正旁白。']}:{score:92,needsRepair:false,findings:[]})}}]}));}
     const name=body.tool_choice.function.name;requests.push(name);assert.deepEqual(body.tools.map((t:any)=>t.function.name),[name]);
-    if(name==='write_lesson_script'){writes++;if(writes===2)assert.ok(JSON.stringify(body.messages).includes('教学需要3–24个不同章节'));
+    if(name==='write_lesson_script'){writes++;if(writes===2)assert.ok(JSON.stringify(body.messages).includes('已分配3章的旁白预算'));
       return reply(name,{title:'误差评分',audience:'初学者',objectives:['理解误差','理解评分'],arc:'先误差再评分',chapters:writes===1?chapters.slice(0,2):chapters},config(index).modelId);
     }
     if(name==='revise_lesson_script'){
@@ -238,7 +238,8 @@ for(let index=0;index<3;index++)test(`${TEXT_MODEL_PRESETS[index].modelId}: real
   try{
     const result=await runLessonWorkflow({prompt,config:config(index),audioConfig:null,dataDir:directory,mediaDir:directory,ownerId:owner,checkpointKey:checkpoint,media:[],export:false,analyze:async()=>{throw new Error('script-only must not analyze audio');},register:async()=>{throw new Error('script-only must not create media');},persist:async()=>{throw new Error('script-only must not create a timeline');},saveDraft:async()=>{},progress:async e=>{events.splice(0,events.length,...structuredClone(e));},render:async()=>{throw new Error('script-only must not render');},review:async()=>{throw new Error('script-only must not review a movie');}});
     assert.equal(result.report.factReview?.score,92);assert.equal(result.report.factReview?.needsRepair,false);
-    assert.deepEqual(requests,['write_lesson_script','write_lesson_script','review_lesson_script','review_lesson_script','revise_lesson_script','review_lesson_script']);
+    assert.deepEqual(requests,['write_lesson_script','write_lesson_script','revise_lesson_script']);
+    assert.ok(events.filter(e=>e.tool==='review_lesson_script').every(e=>e.callId?.startsWith('server-')));
     assert.equal(reviews,3);assert.deepEqual(result.report.chapters[0],chapters[0]);assert.deepEqual(result.report.chapters[2],chapters[2]);
     assert.notEqual(result.report.chapters[1].narration,chapters[1].narration);
     assert.equal(executionDiagnostics(events).recoveredFailures,2);

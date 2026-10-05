@@ -9,6 +9,7 @@ import { discoverHotTopics, newsWindowHours, normalizeEvidence, verifyNewsPages 
 import { mergeResearch, researchGaps } from './narrativeResearch';
 import { loadEditingSkill } from './skills';
 import type { PublicReader } from './publicResearch';
+import { runRequiredTool } from './requiredTool';
 
 export function currentResearchExpired(result:ResearchResult,now=Date.now()):boolean{
   const c=result.current;if(!c)return true;
@@ -57,6 +58,17 @@ export function validateHotBrief(topics:HotResearchBrief['topics'],refs:Research
   return structuredClone(topics);
 }
 
+export async function refreshHotTopics(previous:ResearchResult,prompt:string,options:{read?:PublicReader;trace?:ReturnType<typeof createToolTrace>}={}):Promise<ResearchResult>{
+  if(!previous.current)throw new Error('没有可续查的新闻选题。');
+  const now=Date.now(),asOf=new Date(now).toISOString(),windowHours=newsWindowHours(prompt);
+  const read=()=>verifyNewsPages(previous.references,windowHours,options.read,now);
+  const verified=options.trace?await options.trace.run('refresh_news_sources','重读已选新闻原文',{urls:previous.references.map(r=>r.url),asOf,windowHours},read):await read();
+  const topics=previous.current.topics.flatMap(topic=>{try{return validateHotBrief([topic],verified.references,previous.current!.signals);}catch{return [];}});
+  if(!topics.length)throw new Error('已选新闻原文未能重新满足日期、逐字证据和交叉来源要求。'+verified.failures.slice(-4).join('；'));
+  const current={...previous.current,asOf,expiresAt:new Date(now+30*60000).toISOString(),windowHours,topics,failures:verified.failures};
+  return {summary:`锁定原选题重新读取来源，核验截止UTC ${asOf}，新闻窗口${windowHours}小时；热度信号仍为首次发现时的记录，不表示已刷新榜单。\n选题与实际证据：${JSON.stringify(topics)}\n本次已读正文：${JSON.stringify(verified.references)}\n限制：${verified.failures.join('；')}`,references:verified.references,current,queries:[...previous.queries,{provider:'source-pages',action:'refresh',urls:verified.references.map(r=>r.url)}]};
+}
+
 export async function researchHotTopics(config:ModelConfig,prompt:string,progress?:(events:WorkflowEvent[])=>Promise<void>,options:{read?:PublicReader;trace?:ReturnType<typeof createToolTrace>;search?:typeof researchGaps}={}):Promise<ResearchResult>{
   const asOf=new Date().toISOString(),windowHours=newsWindowHours(prompt),expiresAt=new Date(Date.parse(asOf)+30*60000).toISOString();
   const trace=options.trace||createToolTrace(progress||(async()=>{}),[config.apiKey]);
@@ -69,13 +81,10 @@ export async function researchHotTopics(config:ModelConfig,prompt:string,progres
     selection=structuredClone(a);return {content:[{type:'text',text:'已确定检索问题，随后实际联网读取来源。'}],details:a};
   }};
   async function plan(tool:AgentTool,input:string,done:()=>boolean){
-    const agent=getAgent(config,trace.wrap([tool]),skill,true),drain=observeToolErrors(agent,trace);let turns=0;
-    agent.finishTurn=()=>({action:done()||++turns>=3?'end':'continue'});
-    const timer=setTimeout(()=>agent.abort(),180000);
-    try{await agent.prompt(`必须调用 ${tool.name} 提交结果，严格遵守参数中的条数与可选ID；工具校验失败时修正具体错误再提交。\n`+input);}finally{clearTimeout(timer);await drain();}
-    if(!done())throw new Error('热点研究 Agent 未提交经过校验的结果，请重试。');
+    const agent=getAgent(config,trace.wrap([tool]),skill+'\n本轮只执行'+tool.name+'。其他搜索、读取或制作步骤由服务端按阶段执行，无需本轮提供所有下游工具。',true),drain=observeToolErrors(agent,trace);
+    try{await runRequiredTool(agent,input,{name:tool.name,label:tool.label,done,config,secrets:[config.apiKey]});}finally{await drain();}
   }
-  const userDemand=`用户需求：${prompt.slice(0,3000)}\n资料截止UTC ${asOf}；新闻时效窗口${windowHours}小时。用户指定的名称、版本和事件必须锁定，不能换成别的榜单热点。未核实的发布或能力传闻应查证传闻本身和官方状态，保留不确定性，不能当成已发布事实。`;
+  const userDemand=`用户需求：${prompt.slice(0,3000)}\n资料截止UTC ${asOf}；新闻时效窗口${windowHours}小时。用户指定的名称、版本和事件必须锁定，不能换成别的榜单热点。用户要求今天发生时，至少一个核心事件必须确有北京时间今天发生或首次公开的正文依据；今天报道旧事件、下载统计旧日期或无日期页面不能替代，缺少合格候选时补查后保留缺口。只要求今天值得讲或最新热点时，可以选择明确标注日期的近期事件。未核实的发布或能力传闻应查证传闻本身和官方状态，保留不确定性，不能当成已发布事实。`;
   await plan(choose,`${userDemand}\n实际榜单：${JSON.stringify(discovered.signals)}。选择后搜索原始公告和独立报道，不以宽泛年度综述代替新闻。`,()=>Boolean(selection));
   let raw:ResearchResult|undefined;
   const failures=[...discovered.failures],readReferences=new Map<string,ResearchReference>(),searched=new Set<string>();

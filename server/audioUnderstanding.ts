@@ -30,9 +30,14 @@ export function validateTranscript(raw: unknown, duration: number): Omit<Transcr
   if (sentences.length > 200) throw new Error('音频理解句子数超出范围。');
   let priorEnd = 0;
   const range = (r: Record<string, unknown>, low: number, high: number): TimeRange => {
-    if (typeof r.start !== 'number' || typeof r.end !== 'number' || !Number.isFinite(r.start) || !Number.isFinite(r.end) || r.start < low - 0.08 || r.end > high + 0.08 || r.end <= r.start) throw new Error('音频理解时间码越界、倒序或格式无效。');
+    // Some provider responses encode decimal seconds as JSON strings. Parse
+    // only literal decimal values; retain every range/ordering constraint and
+    // never infer a missing time from text or planned narration.
+    const seconds=(v:unknown)=>typeof v==='string'&&/^-?\d+(?:\.\d+)?$/.test(v)?Number(v):v;
+    const start=seconds(r.start),end=seconds(r.end);
+    if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end) || start < low - 0.08 || end > high + 0.08 || end <= start) throw new Error(`音频理解时间码越界、倒序或格式无效：start=${JSON.stringify(r.start)}（${typeof r.start}），end=${JSON.stringify(r.end)}（${typeof r.end}），有效范围${low.toFixed(3)}–${high.toFixed(3)}秒；须满足start≥前词end，end>start且不超出音频。`);
     // Only tolerate encoding/decimal rounding at an edge, never repair drift.
-    return { start: round(Math.max(low, r.start)), end: round(Math.min(high, r.end)) };
+    return { start: round(Math.max(low, start)), end: round(Math.min(high, end)) };
   };
   return sentences.map((item) => {
     if (!item || typeof item !== 'object') throw new Error('音频理解句子格式无效。');

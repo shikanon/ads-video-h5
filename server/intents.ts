@@ -8,13 +8,14 @@ export function wantsConversation(text:string):boolean {
   text=intentText(text);
   if(/^(?:请问)?(?:你|轻剪|这个工具|这个Agent)?(?:能不能|能|可以|支持)(?:制作|生成|做)(?:教学|科普|资讯|新闻)?视频(?:吗)?[?？]?$/.test(text))return true;
   if(/(?:现在|最后|改为|改成|请)\s*(?:不用解释了[，,]?\s*)?直接(?:制作|生成|出片|渲染)/.test(text))return false;
+  if(/(?:请|帮我|帮忙)(?:制作|生成|做)(?!视频(?:吗)?[?？]?$)/.test(text)&&!/(?:只|先)(?:解释|讨论|分析)/.test(text))return false;
   return /只(?:讨论|聊|解释|分析)|(?:如何|怎么|怎样).{0,60}(?:制作|生成|剪辑|做).{0,30}(?:视频|短片)|为什么.{0,70}(?:Agent|回复|脚本|方案)|(?:视频|短片).{0,20}是否.{0,20}(?:需要|素材)|\bhow (?:can|do|to)\b|\b(?:explain|discuss).{0,30}(?:workflow|only|reason)/i.test(text)
     || /(?:先不要|暂不|别|不要).{0,12}(?:制作|生成).{0,12}(?:新视频|科普视频|视频|成片)/.test(text)&&!/(?:脚本|分镜|选题|资料|来源|查证|研究)/.test(text);
 }
 
 export function wantsPlanOnly(text:string):boolean {
   text=intentText(text);
-  const blocks=[...text.matchAll(/(?:只|先).{0,10}(?:方案|脚本|分镜)|(?:方案|脚本|分镜).{0,5}(?:就好|即可)|(?:不要|不用|别|暂不|暂时不|不必|无需)[^，。；,;.!?]{0,10}(?:导出|出片|渲染|生成成片)|(?:成片|视频).{0,5}(?:先别|暂时别|暂不|不要)(?:做|生成|导出)|\b(?:draft|write|plan).{0,20}(?:script|storyboard)\b|\b(?:only).{0,20}(?:script|storyboard)\b|\b(?:do not|don't|no|without)[^,.;!?]{0,16}(?:render|export)\b/gi)].filter(m=>!/(?:不要|别|不是|not)\s*$/i.test(text.slice(Math.max(0,m.index!-6),m.index)));
+  const blocks=[...text.matchAll(/(?:只|先).{0,10}(?:方案|脚本|分镜)|(?:方案|脚本|分镜).{0,5}(?:就好|即可)|(?:不要|不用|别|暂不|暂时不|不必|无需)[^，。；,;.!?]{0,10}(?:导出|出片|渲染|生成成片|生成视频)|(?:成片|视频).{0,5}(?:先别|暂时别|暂不|不要)(?:做|生成|导出)|\b(?:draft|write|plan).{0,20}(?:script|storyboard)\b|\b(?:only).{0,20}(?:script|storyboard)\b|\b(?:do not|don't|no|without)[^,.;!?]{0,16}(?:render|export)\b/gi)].filter(m=>!/(?:不要|别|不是|not)\s*$/i.test(text.slice(Math.max(0,m.index!-6),m.index)));
   const last=blocks.at(-1);if(!last)return false;
   const grants=[...text.matchAll(/直接(?:制作|生成|出片|渲染|导出)|(?:然后|再)(?:渲染|导出|生成成片)|\b(?:then render|then export|generate|make).{0,20}(?:video|film)\b/gi)].filter(m=>!/(?:不要|别|不|do not|don't)[^，。；,.;!?]{0,8}$/i.test(text.slice(Math.max(0,m.index!-14),m.index)));
   return !grants.some(m=>m.index!>last.index!);

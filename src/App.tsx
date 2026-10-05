@@ -56,6 +56,12 @@ type Page =
   | "privacy"
   | "timeline";
 type Locale = "zh-CN" | "en-US";
+const messageTimeFormatters = Object.fromEntries(
+  ["zh-CN", "en-US"].map(locale => [locale, new Intl.DateTimeFormat(locale, {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  })]),
+) as Record<Locale, Intl.DateTimeFormat>;
 type MediaFilter = "all" | MediaKind;
 const mediaAccept: Record<MediaFilter, string> = {
   all: "video/*,image/jpeg,image/png,image/webp,audio/mpeg,audio/wav,audio/x-wav,audio/ogg",
@@ -538,6 +544,8 @@ function Message({
   const attachments = (message.attachmentIds || [])
     .map((id) => state.media.find((x) => x.id === id))
     .filter((x): x is MediaItem => Boolean(x));
+  const createdAt = new Date(message.createdAt);
+  const timestamp = Number.isFinite(createdAt.getTime()) ? messageTimeFormatters[locale].format(createdAt) : null;
   return (
     <article className={`message-row ${message.role}`}>
       {message.role === "assistant" ? (
@@ -559,6 +567,7 @@ function Message({
             ))}
           </div>
         ) : null}
+        {timestamp ? <time className="message-time" dateTime={message.createdAt} title={`${timestamp} (${messageTimeFormatters[locale].resolvedOptions().timeZone})`}>{timestamp}</time> : null}
         {message.research?<HotResearchCard research={message.research}/>:null}
         {message.musicSearch ? (
           <div className="music-search-card">

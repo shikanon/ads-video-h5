@@ -6,13 +6,40 @@ import { Value } from 'typebox/value';
 import { articlePublication, discoverHotTopics, freshness, newsWindowHours, parseBaiduBoard, parseHnItem, verifyNewsPages } from '../server/hotSources';
 import { decodeOpenWebSearch, openWebBase, openWebEngines, searchOpenWeb, usableSearchArticle } from '../server/openWebSearch';
 import { publicAddress, publicResearchUrl, readPublicPage } from '../server/publicResearch';
-import { currentResearchExpired, validateHotBrief, newsPublisher, newsPassages, hydrateHotEvidence, hotBriefParameters } from '../server/hotResearch';
+import { currentResearchExpired, refreshHotTopics, validateHotBrief, newsPublisher, newsPassages, hydrateHotEvidence, hotBriefParameters } from '../server/hotResearch';
+import { mergeResearch } from '../server/narrativeResearch';
 import { classify, lessonRequest, selectedHotVideoRequest, wantsCurrentResearchOnly } from '../server/intents';
 import { lessonSettings } from '../server/lessonSpec';
 import type { HotResearchBrief, ResearchReference } from '../src/types';
 
 const now=Date.parse('2026-10-02T04:00:00Z'),at=new Date(now).toISOString();
 const board='<!--s-data:'+JSON.stringify({data:{cards:[{component:'hotList',content:[{word:'置顶宣传',url:'https://www.baidu.com/s?wd=1',isTop:true,hotScore:'900'},{word:'真实热搜',url:'https://www.baidu.com/s?wd=2',hotScore:'800',index:0}]}]}})+'-->';
+
+test('additional research preserves source IDs and rebases summaries and news evidence to the actual URLs',()=>{
+  const ref=(id:string,url:string,excerpt:string)=>({id,url,title:url,verification:'news-page' as const,excerpt});
+  const previous={summary:'原稿引用ref-1',queries:[],references:[ref('ref-1','https://official.example/news','旧正文')]};
+  const next={summary:'新稿引用ref-1，官方更新ref-2',queries:[],references:[ref('ref-1','https://report.example/news','独立报道正文'),ref('ref-2','https://official.example/news','已重读官方正文')],current:{asOf:'2026-10-05T00:00:00Z',expiresAt:'2026-10-05T00:30:00Z',windowHours:24,signals:[],failures:[],topics:[{title:'主题',hook:'钩子',angle:'角度',visualPlan:'示意',signalIds:[],uncertainties:[],facts:[{text:'事实',evidence:[{referenceId:'ref-1',quote:'独立报道正文'},{referenceId:'ref-2',quote:'已重读官方正文'}]}]}]}};
+  const result=mergeResearch(previous,next);
+  assert.equal(result.references.find(r=>r.id==='ref-1')!.url,'https://official.example/news');
+  assert.equal(result.references.find(r=>r.id==='ref-1')!.excerpt,'已重读官方正文');
+  assert.match(result.summary,/新稿引用ref-2，官方更新ref-1/);
+  assert.deepEqual(result.current!.topics[0].facts[0].evidence.map(e=>e.referenceId),['ref-2','ref-1']);
+  assert.equal(previous.references[0].excerpt,'旧正文');
+  const search=mergeResearch(previous,{summary:'搜索摘要ref-1',queries:[],references:[{...previous.references[0],verification:'search-cited',excerpt:'只搜索未读'}]});
+  assert.equal(search.references[0].verification,'news-page');assert.equal(search.references[0].excerpt,'旧正文');
+});
+
+test('expired news refresh re-reads the selected sources and keeps the event and evidence IDs',async()=>{
+  const quote='本次报道讨论模型的语音入口，演示能力与正式发布状态需要分别核对。';
+  const references=['https://official.example/news','https://report.example/news'].map((url,i)=>({id:'r'+i,url,title:'已选新闻',verification:'news-page' as const,excerpt:quote.repeat(10),freshness:'fresh' as const}));
+  const previous={summary:'初次研究',queries:[],references,current:{asOf:new Date(Date.now()-3600000).toISOString(),expiresAt:new Date(Date.now()-1800000).toISOString(),windowHours:24,signals:[],failures:[],topics:[{title:'已选新闻',hook:'事件影响',angle:'核对来源',visualPlan:'示意',signalIds:[],uncertainties:[],facts:[{text:'语音入口报道',evidence:references.map(r=>({referenceId:r.id,quote}))}]}]}};
+  const read:string[]=[];
+  const page=(body:string)=>`<title>已选新闻</title><meta property="article:published_time" content="${new Date(Date.now()-600000).toISOString()}"><article>${body.repeat(10)}</article>`;
+  const result=await refreshHotTopics(previous,'制作今日大模型新闻视频',{read:async url=>{read.push(url);return {url,text:page(quote),contentType:'text/html'};}});
+  assert.deepEqual(read,references.map(r=>r.url));assert.equal(currentResearchExpired(result),false);assert.equal(result.current!.topics[0].title,'已选新闻');assert.deepEqual(result.references.map(r=>r.id),['r0','r1']);assert.ok(result.references.every(r=>Date.parse(r.retrievedAt!)>Date.parse(previous.current.asOf)));
+  await assert.rejects(()=>refreshHotTopics(previous,'今日新闻',{read:async url=>({url,text:page('本次页面已改为介绍其他事情，原来引用的那条报道不再出现。'),contentType:'text/html'})}),/逐字证据和交叉来源/);
+  await assert.rejects(()=>refreshHotTopics(previous,'今日新闻',{read:async url=>{if(url.includes('report.example'))throw new Error('HTTP 403');return {url,text:page(quote),contentType:'text/html'};}}),/交叉来源/);
+});
 const article='<html><title>最新发布</title><meta property="article:published_time" content="2026-10-02T09:00:00+08:00"><article>'+('今日正式发布了新功能，用户可以通过设置打开它。'.repeat(20))+'</article></html>';
 test('current research is distinct from generated news video and academic history',()=>{
   const prompt='生成一个讲解今日AI热点的视频';

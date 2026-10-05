@@ -8,7 +8,7 @@ import { executionDiagnostics } from './toolTrace';
 
 export interface RequestEvaluationCase {
   id:string;family:string;prompt:string;context?:LessonReport;
-  expected:{mode:CreativeRequest['mode'];export:boolean;topic?:string;seconds?:number;format?:Format;mood?:'urgent'|'neutral';bgm?:boolean};
+  expected:{mode:CreativeRequest['mode'];export:boolean;topic?:string;topicAliases?:string[];seconds?:number;format?:Format;mood?:'urgent'|'neutral';bgm?:boolean};
 }
 export function requestCaseHash(c:RequestEvaluationCase) {
   return createHash('sha256').update(JSON.stringify({prompt:c.prompt,context:c.context,expected:c.expected})).digest('hex');
@@ -23,7 +23,7 @@ export function checkRequestContract(c:RequestEvaluationCase,route:CreationRoute
   const add=(name:string,expected:unknown,actual:unknown)=>checks.push({name,passed:expected===actual,expected,actual});
   add('mode',c.expected.mode,route.mode);add('export',c.expected.export,route.export);
   if('requiresFootage'in route)add('requiresFootage',c.expected.mode==='footage',route.requiresFootage);
-  if(c.expected.topic){const normalize=(s:string)=>intentText(s).replace(/\s/g,'').toLowerCase();add('topic-preserved',true,normalize(route.topic||prompt).includes(normalize(c.expected.topic)));}
+  if(c.expected.topic){const normalize=(s:string)=>intentText(s).replace(/\s/g,'').toLowerCase();add('topic-preserved',true,[c.expected.topic,...(c.expected.topicAliases||[])].some(topic=>normalize(route.topic||prompt).includes(normalize(topic))));}
   if(c.expected.seconds!==undefined)add('duration',c.expected.seconds,settings.requestedSeconds);
   if(c.expected.format!==undefined)add('format',c.expected.format,settings.format);
   if(c.expected.mood!==undefined)add('mood',c.expected.mood,presentation.mood);

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 3,
   "cases": [
     {
       "id": "news-original",
@@ -826,6 +826,301 @@
         "export": true,
         "mood": "neutral",
         "bgm": false
+      }
+    },
+    {
+      "id": "general-product-thermos",
+      "family": "general-creation",
+      "prompt": "给我制作30秒竖屏保温杯产品介绍视频，解释真空隔热原理，画面自行绘制，别编造具体品牌性能。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "保温杯",
+        "seconds": 30,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-product-note",
+      "family": "general-creation",
+      "prompt": "能把轻剪的“语音识别后执行视频指令”功能做成30秒横屏介绍视频吗？用界面示意，不需要真人素材。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "轻剪",
+        "seconds": 30,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-product-coffee",
+      "family": "general-creation",
+      "prompt": "一条45秒竖屏咖啡滤杯介绍视频，讲清楚结构和用途，不要杜撰销量或用户评价。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "咖啡",
+        "seconds": 45,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-product-english",
+      "family": "general-creation",
+      "prompt": "Create a 30-second vertical product explainer video about how a vacuum flask keeps drinks warm. Use diagrams; I have no footage.",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "vacuum flask",
+        "seconds": 30,
+        "format": "9:16",
+        "topicAliases": [
+          "保温杯"
+        ]
+      }
+    },
+    {
+      "id": "general-tutorial-fold",
+      "family": "general-creation",
+      "prompt": "做一条30秒竖屏的T恤收纳教程视频，分步骤图解，配音字幕一起完成。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "T恤",
+        "seconds": 30,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-tutorial-rag",
+      "family": "general-creation",
+      "prompt": "帮我生成45秒横屏的RAG入门操作教程视频，说明准备文档、检索、回答，界面用示意。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "RAG",
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-tutorial-chart",
+      "family": "general-creation",
+      "prompt": "主题：如何读懂柱状图\n画面：程序绘制\n请做45秒横屏视频，配音和字幕。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "柱状图",
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-tutorial-filler",
+      "family": "general-creation",
+      "prompt": "呃，给我做个30秒的视频吧，竖屏，教大家整理书桌，步骤动画你来设计。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "书桌",
+        "seconds": 30,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-campaign-reading",
+      "family": "general-creation",
+      "prompt": "做一个30秒竖屏读书活动宣传视频，用图解和旁白突出每天读一点，不需要实拍。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "读书",
+        "seconds": 30,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-campaign-saving",
+      "family": "general-creation",
+      "prompt": "来一条30秒横屏节约用水公益宣传视频，用示意动画讲清楚可做的行动，不要编造统计数字。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "节约用水",
+        "seconds": 30,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-campaign-recruit",
+      "family": "general-creation",
+      "prompt": "帮忙制作30秒竖屏社团招新视频，主题是摄影兴趣交流，不虚构活动时间和地点，用插画示意。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "摄影",
+        "seconds": 30,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-campaign-english",
+      "family": "general-creation",
+      "prompt": "Make a 30-second horizontal video encouraging a daily reading habit, with animated diagrams, narration and captions. No uploaded footage.",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "reading",
+        "seconds": 30,
+        "format": "16:9",
+        "topicAliases": [
+          "读书",
+          "阅读"
+        ]
+      }
+    },
+    {
+      "id": "general-story-metaphor",
+      "family": "general-creation",
+      "prompt": "用种树的比喻讲坚持，把它做成30秒竖屏故事视频，画面由你设计，并注明是寓言示意。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "坚持",
+        "seconds": 30,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-story-history",
+      "family": "general-creation",
+      "prompt": "制作45秒横屏介绍印刷术的历史视频，先核实史实，再用时间线图解和旁白出片。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "印刷术",
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-travel-overview",
+      "family": "general-creation",
+      "prompt": "做一条45秒横屏杭州城市介绍视频，用地图示意与旁白，不要假冒实拍，也不推荐具体消费项目。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "杭州",
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-food-process",
+      "family": "general-creation",
+      "prompt": "请制作30秒竖屏咖啡手冲流程讲解视频，画面用步骤示意，参数有依据才说。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "咖啡",
+        "seconds": 30,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-explain-space",
+      "family": "general-creation",
+      "prompt": "没有图片，也没有视频。讲清楚日食和月食的区别，做成45秒横屏视频。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "日食",
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-explain-literacy",
+      "family": "general-creation",
+      "prompt": "给小朋友做一条30秒竖屏科普视频，主题是蜜蜂为什么会传粉，用图解和统一旁白。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "蜜蜂",
+        "seconds": 30,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-explain-polite",
+      "family": "general-creation",
+      "prompt": "可以帮我把电池怎么储存能量讲成45秒横屏视频吗？直接制作，示意画面即可。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "电池",
+        "seconds": 45,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-explain-multiline",
+      "family": "general-creation",
+      "prompt": "请制作：\n30秒竖屏视频\n主题是影子为什么变长\n不要背景音乐，旁白和字幕需要同步。",
+      "expected": {
+        "mode": "explainer",
+        "export": true,
+        "topic": "影子",
+        "seconds": 30,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-product-script",
+      "family": "general-creation",
+      "prompt": "做30秒横屏的保温杯介绍短片，先写分镜和旁白，暂时不要渲染成片。",
+      "expected": {
+        "mode": "explainer",
+        "export": false,
+        "topic": "保温杯",
+        "seconds": 30,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-tutorial-script",
+      "family": "general-creation",
+      "prompt": "先做45秒竖屏的整理书桌教程视频分镜，查证方法即可，不要合成配音和视频。",
+      "expected": {
+        "mode": "explainer",
+        "export": false,
+        "topic": "书桌",
+        "seconds": 45,
+        "format": "9:16"
+      }
+    },
+    {
+      "id": "general-campaign-script",
+      "family": "general-creation",
+      "prompt": "请写30秒横屏读书活动宣传视频的完整脚本和图解分镜，暂不出片。",
+      "expected": {
+        "mode": "explainer",
+        "export": false,
+        "topic": "读书",
+        "seconds": 30,
+        "format": "16:9"
+      }
+    },
+    {
+      "id": "general-story-script",
+      "family": "general-creation",
+      "prompt": "帮我制作45秒横屏印刷术历史视频的分镜脚本，先核实，确认之前不要生成视频。",
+      "expected": {
+        "mode": "explainer",
+        "export": false,
+        "topic": "印刷术",
+        "seconds": 45,
+        "format": "16:9"
       }
     }
   ]

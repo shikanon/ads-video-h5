@@ -57,6 +57,11 @@ test('reject hallucinated, unordered, inconsistent or out-of-bounds transcript t
   assert.throws(() => validateTranscript({ sentences: [{ ...raw.sentences[0], text: '完全不同' }] }, 1), /不一致/);
   assert.throws(() => validateTranscript({ sentences: [{ ...raw.sentences[0], words: [{ start: 0.8, end: 0.4, text: '你好' }] }] }, 1), /时间码/);
 });
+test('literal decimal time strings keep provider timings while malformed and drifting values remain rejected',()=>{
+  const raw={sentences:[{start:'1.72',end:'1.88',complete:true,text:'好',words:[{start:'1.72',end:'1.88',text:'好'}]}]},before=structuredClone(raw);
+  const actual=validateTranscript(raw,4.5)[0];assert.equal(actual.start,1.72);assert.equal(actual.end,1.88);assert.deepEqual(actual.words,[{start:1.72,end:1.88,text:'好'}]);assert.deepEqual(raw,before);
+  for(const end of ['9.88','1.71','1+2','',null])assert.throws(()=>validateTranscript({sentences:[{...raw.sentences[0],end,words:[{...raw.sentences[0].words[0],end}]}]},4.5),/时间码/);
+});
 test('fine cut refuses to cut through a spoken sentence', () => {
   assert.equal(validatePlan(plan, [fixture]).targetSeconds, 2);
   assert.throws(() => validatePlan({ ...plan, clips: [{ ...plan.clips[0], start: 1.7 }] }, [fixture]), /完整句子/);

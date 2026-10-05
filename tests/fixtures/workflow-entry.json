@@ -1,0 +1,81 @@
+{
+  "version": 3,
+  "cases": [
+    {
+      "id": "news-spoken-llm",
+      "prompt": "帮我生成一个最新新闻的一个口播视频，介绍今天发生的事情。呃，你在选择新闻的时候先啊，深度思考一下，为什么选这篇新闻的原因，我希望和大模型相关的。然后的热点。"
+    },
+    {
+      "id": "news-llm-select",
+      "prompt": "今天大模型圈有什么值得讲的新闻？你来选一个，说明选它的依据，直接做成45秒口播视频。"
+    },
+    {
+      "id": "news-llm-voice",
+      "prompt": "我没有素材，帮我查一下今天的大模型热点，选最相关的一条，核实来源后配音出片。"
+    },
+    {
+      "id": "news-named-urgent",
+      "prompt": "制作一个实时新闻资讯视频，视频内容讲述Fable5.5，渲染紧张迫切氛围。"
+    },
+    {
+      "id": "news-question",
+      "prompt": "能帮我把最新的大模型新闻做成一条口播视频吗？你自行搜索、核实并选题。"
+    },
+    {
+      "id": "news-reordered",
+      "prompt": "氛围要紧张迫切，主题是Fable5.5的最新动态，给我制作一条新闻视频。"
+    },
+    {
+      "id": "news-filler",
+      "prompt": "呃，那个，给我来条新闻短视频吧，要最新的大模型热点。你先查清楚消息，再说为什么选它，配音和画面也一起做。"
+    },
+    {
+      "id": "news-multiline",
+      "prompt": "大模型最新资讯\n自行选一条有出处的新闻\n核对来源，说明选题理由，制作45秒竖屏口播视频"
+    },
+    {
+      "id": "news-no-assets",
+      "prompt": "没有现成图片或视频，你自行搜索最近的AI新闻，用示意画面和旁白制作成片。"
+    },
+    {
+      "id": "news-english",
+      "prompt": "Create a 45-second narrated video about the latest large-language-model news. Choose a relevant story, verify its sources and explain why you chose it. I have no footage."
+    },
+    {
+      "id": "teaching-no-footage",
+      "prompt": "没有真人素材也没关系，制作一个从浅入深讲解损失函数变迁史的教学视频。"
+    },
+    {
+      "id": "general-product-thermos",
+      "prompt": "给我制作30秒竖屏保温杯产品介绍视频，解释真空隔热原理，画面自行绘制，别编造具体品牌性能。"
+    },
+    {
+      "id": "general-tutorial-fold",
+      "prompt": "做一条30秒竖屏的T恤收纳教程视频，分步骤图解，配音字幕一起完成。"
+    },
+    {
+      "id": "general-campaign-reading",
+      "prompt": "做一个30秒竖屏读书活动宣传视频，用图解和旁白突出每天读一点，不需要实拍。"
+    },
+    {
+      "id": "general-story-history",
+      "prompt": "制作45秒横屏介绍印刷术的历史视频，先核实史实，再用时间线图解和旁白出片。"
+    },
+    {
+      "id": "general-travel-overview",
+      "prompt": "做一条45秒横屏杭州城市介绍视频，用地图示意与旁白，不要假冒实拍，也不推荐具体消费项目。"
+    },
+    {
+      "id": "general-food-process",
+      "prompt": "请制作30秒竖屏咖啡手冲流程讲解视频，画面用步骤示意，参数有依据才说。"
+    },
+    {
+      "id": "general-explain-space",
+      "prompt": "没有图片，也没有视频。讲清楚日食和月食的区别，做成45秒横屏视频。"
+    },
+    {
+      "id": "general-explain-literacy",
+      "prompt": "给小朋友做一条30秒竖屏科普视频，主题是蜜蜂为什么会传粉，用图解和统一旁白。"
+    }
+  ]
+}
