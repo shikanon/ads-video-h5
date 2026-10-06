@@ -1,0 +1,12 @@
+<view class="screen auth-screen">
+  <view class="brand">轻剪<text class="brand-dot">.</text></view><view class="subtitle">好视频，从一句话开始。</view>
+  <view class="auth-intro"><view class="auth-title">{{register ? '创建轻剪账号' : '欢迎回来'}}</view><view class="subtitle">与 H5 使用同一账号，灵感和作品随你同行。</view></view>
+  <view wx:if="{{register}}" class="notice">注册即送 2,000 积分，开始你的第一支视频。</view>
+  <view wx:if="{{register}}"><view class="label">显示名称</view><input class="input" value="{{displayName}}" data-field="displayName" bindinput="input" placeholder="怎么称呼你" maxlength="40" /></view>
+  <view class="label">邮箱地址</view><input class="input" value="{{email}}" data-field="email" bindinput="input" placeholder="name@example.com" maxlength="254" />
+  <view wx:if="{{register}}"><view class="label">邮箱验证码</view><view class="row"><input class="input grow" type="number" value="{{code}}" data-field="code" bindinput="input" placeholder="6 位验证码" maxlength="6" /><button class="small-button" disabled="{{busy || resend > 0}}" bindtap="code">{{resend ? resend + ' 秒后重发' : '发送验证码'}}</button></view></view>
+  <view class="label">密码</view><input class="input" password value="{{password}}" data-field="password" bindinput="input" placeholder="{{register ? '至少 10 位密码' : '输入密码'}}" maxlength="256" />
+  <view wx:if="{{error}}" class="error">{{error}}</view><button class="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="submit">{{register ? '注册并开始' : '登录，继续创作'}}</button>
+  <button class="auth-switch" bindtap="toggle">{{register ? '已有账号？直接登录' : '新朋友？创建账号'}}</button>
+  <view class="quiet">素材与对话保存在轻剪服务端；制作请求会发送到所配置的模型服务。</view><view class="row auth-legal"><button bindtap="legal" data-type="terms">用户协议</button><button bindtap="legal" data-type="privacy">隐私说明</button></view>
+</view><privacy-dialog id="privacy" />

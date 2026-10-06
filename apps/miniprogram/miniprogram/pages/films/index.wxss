@@ -1,0 +1,2 @@
+@import '../library/index.wxss';
+.running-card { margin-top: 25rpx; }.running-card progress { margin: 18rpx 0 12rpx; }.empty .secondary { margin: 28rpx auto 0; width: 220rpx; }.media-info .row { margin-top: 8rpx; }

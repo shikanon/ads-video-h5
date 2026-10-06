@@ -1,0 +1,1 @@
+.session { width: 100%; text-align: left; }.session .title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 500rpx; }.session.selected { border-color: #e7b49a; background: #fff7f0; }

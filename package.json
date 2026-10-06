@@ -11,6 +11,7 @@
     "dev:admin": "pnpm --filter @qingjian/admin dev",
     "build:h5": "tsc --noEmit && vite build",
     "build:admin": "pnpm --filter @qingjian/admin build",
+    "build:mini": "pnpm --filter @qingjian/miniprogram build",
     "build": "pnpm build:h5 && pnpm build:admin && node tooling/package-frontends.mjs",
     "start": "tsx server/index.ts",
     "eval:requests": "node --import tsx tooling/evaluate-requests.ts",

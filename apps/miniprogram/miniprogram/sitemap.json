@@ -1,0 +1,9 @@
+{
+  "desc": "轻剪体验版本",
+  "rules": [
+    {
+      "action": "disallow",
+      "page": "*"
+    }
+  ]
+}

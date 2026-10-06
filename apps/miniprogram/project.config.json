@@ -1,0 +1,10 @@
+{
+  "appid": "touristappid",
+  "projectname": "AI了吗-轻剪",
+  "description": "轻剪微信小程序开发测试版，共用 H5 账号与视频制作服务",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "miniprogram/",
+  "libVersion": "latest",
+  "setting": { "urlCheck": true, "es6": true, "enhance": true, "minified": true, "postcss": true, "compileHotReLoad": true },
+  "packOptions": { "ignore": [] }
+}

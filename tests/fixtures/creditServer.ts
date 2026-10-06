@@ -20,7 +20,8 @@ export async function startCreditServer() {
     if (providerState.fail) { response.writeHead(400, { 'Content-Type': 'application/json' }); response.end('{"error":{"message":"fixture failure"}}'); return; }
     if (providerState.delay) await new Promise(r => setTimeout(r, providerState.delay));
     if (response.destroyed) return;
-    const usage = { prompt_tokens: 1000, completion_tokens: providerState.outputTokens, prompt_tokens_details: { cached_tokens: 500 } };
+    const audioRequest = body.messages.some((message: any) => Array.isArray(message.content) && message.content.some((part: any) => part.type === 'input_audio'));
+    const usage = { prompt_tokens: 1000, completion_tokens: providerState.outputTokens, prompt_tokens_details: { cached_tokens: 500, ...(audioRequest ? { audio_tokens: 1000, audio_cached_tokens: 500 } : {}) } };
     if (!body.stream) { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ id, usage, choices: [{ message: { content: '{"text":"用一句话介绍功能"}' } }] })); return; }
     const reply = !providerState.multiTurn || body.messages.some((m: any) => m.role === 'assistant');
     const delta = reply ? { role: 'assistant', tool_calls: [{ index: 0, id: 'call-' + id, type: 'function', function: { name: 'reply', arguments: JSON.stringify({ sections: [], summary: '测试任务已完成。' }) } }] } : { role: 'assistant', content: '继续完成指令。' };

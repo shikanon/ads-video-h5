@@ -8,6 +8,7 @@ import { getModelConfig, type ModelConfig } from './modelRegistry';
 import { userOf } from './auth';
 import { CreditError, type Credits } from './credits';
 import { withCreditUsage } from './creditUsage';
+import { binaryMediaType } from './nativeUpload';
 
 export const MAX_VOICE_BYTES = 8 * 1024 * 1024;
 export const MAX_VOICE_SECONDS = 60;
@@ -92,13 +93,14 @@ export function mountVoiceInputRoutes(app: Express, tmpDir: string, recognize = 
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_VOICE_BYTES, files: 1, fields: 1, fieldSize: 8000 }, fileFilter: (_request, file, done) => {
     const type = file.mimetype.split(';')[0].toLowerCase();
     const allowed = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3'];
-    if (allowed.includes(type)) done(null, true);
-    else done(new VoiceInputError(415, 'UNSUPPORTED_AUDIO', '录音格式不受支持，请换一个浏览器重试。'));
+    if (type === 'application/octet-stream' || allowed.includes(type)) done(null, true);
+    else done(new VoiceInputError(415, 'UNSUPPORTED_AUDIO', '录音格式不受支持，请重新录制。'));
   } });
   app.post('/api/voice/transcribe', (request, response) => {
     upload.single('audio')(request, response, async error => {
       if (error) return response.status(error instanceof VoiceInputError ? error.status : error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: error instanceof VoiceInputError ? error.message : error.code === 'LIMIT_FILE_SIZE' ? '录音文件过大，请缩短录音。' : '请只上传一段录音。', code: error instanceof VoiceInputError ? error.code : 'INVALID_UPLOAD' });
       if (!request.file?.size) return response.status(400).json({ error: '请先录制语音。', code: 'MISSING_AUDIO' });
+      if (request.file.mimetype === 'application/octet-stream' && !['audio/wav', 'audio/ogg', 'audio/mpeg', 'video/mp4', 'video/webm'].includes(binaryMediaType(request.file.buffer) || '')) return response.status(415).json({ error: '无法读取录音格式，请重新录制。', code: 'UNSUPPORTED_AUDIO' });
       const prefix = request.body?.prefix ?? '';
       if (typeof prefix !== 'string' || prefix.length > 2000 || Object.keys(request.body ?? {}).some(key => key !== 'prefix')) return response.status(400).json({ error: '语音输入中的文字过长或格式无效。', code: 'INVALID_PREFIX' });
       const controller = new AbortController();

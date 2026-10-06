@@ -29,6 +29,7 @@ import { runNarrativeWorkflow, voiceReferenceAuthorized } from './narrativeWorkf
 import { inspectScene, verifySceneQuotes } from './sceneUnderstanding';
 import { mapLimited } from './taskPool';
 import { MAX_MEDIA_UPLOAD_BYTES } from '../src/uploadLimits';
+import { uploadMediaType } from './nativeUpload';
 import { updateReply, recordWorkflowReply } from './replies';
 import { runLessonWorkflow } from './lessonWorkflow';
 import { sessionSources } from './sourceSelection';
@@ -769,7 +770,7 @@ mountAvatarRoutes(app,{
     message.jobId=job.id;session.messages.push(message);state.jobs.push(job);session.updatedAt=timestamp;
   },process:()=>void processQueue(),
 });
-const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: MAX_MEDIA_UPLOAD_BYTES, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
+const upload = multer({ storage: multer.diskStorage({ destination: tmpDir, filename: (_request, _file, done) => done(null, randomUUID()) }), limits: { fileSize: MAX_MEDIA_UPLOAD_BYTES, files: 6 }, fileFilter: (_request, file, done) => done(null, file.mimetype === 'application/octet-stream' || file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/')) });
 function musicErrorResponse(response: Response, error: unknown) {
   if (error instanceof MusicSourceError) {
     const clientError = error.code.startsWith('INVALID_');
@@ -853,12 +854,12 @@ app.post('/api/media', upload.array('files', 6), async (request, response) => {
   try {
     const items: MediaItem[] = [];
     for (const file of files) {
-      let mimeType = file.mimetype; let duration: number | undefined; let hasAudio: boolean | undefined; let kind: MediaItem['kind'];
-      if (file.mimetype.startsWith('image/')) { const detected = detectImage(await readFile(file.path)); if (!detected) throw new Error('图片格式仅支持 PNG、JPEG 或 WebP。'); mimeType = detected; }
-      else if (file.mimetype.startsWith('video/')) { const probed = await probeVideo(file.path); duration = probed.duration; hasAudio = probed.hasAudio; }
-      else if (file.mimetype.startsWith('audio/')) { if (!['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg'].includes(mimeType)) throw new Error('音频仅支持 MP3、WAV 或 OGG。'); duration = await probeAudio(file.path); }
+      let mimeType = await uploadMediaType(file.path, file.mimetype); let duration: number | undefined; let hasAudio: boolean | undefined; let kind: MediaItem['kind'];
+      if (mimeType.startsWith('image/')) { const detected = detectImage(await readFile(file.path)); if (!detected) throw new Error('图片格式仅支持 PNG、JPEG 或 WebP。'); mimeType = detected; }
+      else if (mimeType.startsWith('video/')) { const probed = await probeVideo(file.path); duration = probed.duration; hasAudio = probed.hasAudio; }
+      else if (mimeType.startsWith('audio/')) { if (!['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg'].includes(mimeType)) throw new Error('音频仅支持 MP3、WAV 或 OGG。'); duration = await probeAudio(file.path); }
       else throw new Error('仅支持视频、图片和音频素材。');
-      kind = file.mimetype.startsWith('video/') ? 'video' : file.mimetype.startsWith('audio/') ? 'audio' : 'image';
+      kind = mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : 'image';
       const shots = kind === 'video' ? await detectShots(file.path, duration!, file.filename) : undefined;
       if (shots?.length) {
         for (const [index, shot] of shots.entries()) {
@@ -878,7 +879,7 @@ app.post('/api/media', upload.array('files', 6), async (request, response) => {
       }
       items.push({ id: file.filename, ownerId: user.id, name: shortName(file.originalname), mimeType, kind, ...(duration ? { duration } : {}), ...(hasAudio !== undefined ? { hasAudio } : {}), ...(shots ? { shots } : {}), url: `/api/media/${file.filename}`, createdAt: now(), origin: 'upload' });
     }
-    state.media.push(...items); await saveState(); response.json(await publicState(user));
+    state.media.push(...items); await saveState(); response.json({ ...await publicState(user), uploadedMediaIds: items.map(item => item.id) });
   } catch (error) {
     await Promise.all([...files.map((file) => file.path), ...moved].map((file) => rm(file, { force: true })));
     if (oss) await Promise.allSettled(stored.map((id) => id.startsWith('shots/') ? oss.remove(user.id, 'shots', id.slice(6)) : oss.remove(user.id, 'media', id)));

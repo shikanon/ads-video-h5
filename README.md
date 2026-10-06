@@ -92,6 +92,12 @@ pnpm dev
 音乐站点浏览器抓包、接口示例与重放边界见 [BGM 来源调查](docs/BGM_SOURCE_RESEARCH.md)。可运行 `node scripts/probe-bgm-sources.mjs` 检查当前网络下的站点状态；探测不复用个人浏览器 Cookie，也不绕过站点防护。
 
 
+## 微信小程序
+
+原生小程序位于 [apps/miniprogram](apps/miniprogram/README.md)，展示名称暂用「AI了吗」。与 H5 共用账号、素材、会话、Agent 任务、成片、积分和模型设置，支持手机换行、长按语音先识别后执行、每日签到奖励卡片。模型切换只在设置中展示。
+
+运行 `pnpm build:mini` 生成可导入微信开发者工具的项目与测试 ZIP；`node tooling/preview-miniprogram.mjs` 可查看使用示例数据的本地组件预览。小程序 AppID、合法域名、隐私指引、上传和体验成员配置见小程序目录说明。开发包、组件预览与已发布体验版有明确区分。
+
 ## 自定义作者形象
 
 菜单打开“作者形象”，上传单张 Q 版原图，点击“生成序列帧动画”。使用后台的 Seedream 5.0 Pro / Flash 或对应 Endpoint；透明 PNG 原图生成透明 PNG，不透明原图采用绿幕抠图。也可导入已经生成好的透明 PNG 网格：填写列数、行数、有效帧数和 fps（默认 4×2、8 帧、6 fps）。

@@ -18,8 +18,8 @@
 | `POST /api/sessions/:id/activate` | `{}` | `AppState`，切换历史会话 |
 | `PATCH /api/sessions/:id/model` | `{modelId}`（模型配置条目的 `id`） | `AppState`，仅切换当前帐号该会话的文本模型，保留历史；不可用模型返回 `400`，会话有排队、执行或停止中的任务返回 `409` |
 | `POST /api/chat` | `{sessionId, message, attachmentIds?}` | `AppState`，先持久化用户消息与异步任务，不等待耗时生成 |
-| `POST /api/voice/transcribe` | 已登录，`multipart/form-data` 字段 `audio` | `{text,duration}`；先识别录音，不创建消息或 Agent 任务 |
-| `POST /api/media` | `multipart/form-data`，字段 `files` | `AppState`，支持视频、图片和 MP3/WAV/OGG 音频；视频自动检测最多 8 段分镜 |
+| `POST /api/voice/transcribe` | 已登录，`multipart/form-data` 字段 `audio`，可带文字 `prefix` | `{text,duration,creditTicket}`；先识别录音，不创建消息或 Agent 任务；后续 `/api/chat` 传 `voiceTicket: creditTicket`，与完整文字绑定的单次凭证支持已受理语音任务在积分耗尽后继续 |
+| `POST /api/media` | `multipart/form-data`，字段 `files` | `AppState` 加 `uploadedMediaIds`，仅标识本次上传文件；支持视频、图片和 MP3/WAV/OGG 音频；视频自动检测最多 8 段分镜。原生客户端的通用二进制上传按文件内容识别，随后仍需格式/解码校验 |
 | `DELETE /api/media/:id` | 无 | `AppState`，删除素材前由前端提示关联影响 |
 | `GET /api/media/:id` | 无 | 对应视频/图片/音频文件 |
 | `POST /api/media/:id/analyze` | `{}` | 创建或复用当前帐号的原声音频理解任务，返回 `AppState` |
@@ -39,6 +39,8 @@
 音乐接口使用本次浏览器抓到的路由、请求体及常见浏览器头重放，不会复用个人 Cookie 或绕过 Cloudflare。上游拒绝时返回可识别的错误；见 [抓包记录及限制](BGM_SOURCE_RESEARCH.md)。
 
 除健康状态、注册、登录与登录状态查询外，普通 `/api` 接口都要求登录 Cookie。会话、素材、任务、成片及其应用内文件接口按帐号校验归属；跨帐号 ID 返回 404。公开读 OSS 直链是独立访问路径，持有链接的人无需 Cookie 即可读取对象。服务端拒绝来源不符的跨站写请求。管理后台使用独立 admin 账号与短期 Bearer 会话，支持 Authenticator 双因素验证，不使用普通帐号 Cookie。
+
+微信小程序使用相同的邮箱账号认证接口，在自己的 `wx.request` 响应中读取登录 Cookie，后续只向轻剪 API 域名发送该凭证。受保护文件通过 `wx.downloadFile` 的请求头授权后加载临时文件；公开 OSS 地址不携带账号 Cookie，凭证也不进入 URL。无需从 H5 导出 Cookie，不使用客户端 AppSecret，且保留服务端现有的跨站写入保护。
 
 需要复用测试浏览器会话时，使用 `scripts/music-browser-client.js` 中的 `window.qingjianMusicBrowser` 方法，并在对应站点原页面上下文运行；`fetch` 由 Chrome 自动附带同源凭据，脚本不读取 Cookie。服务端 `/api/music/*` 与浏览器上下文方法是两条不同传输路径，当前网络仅浏览器会话路径已完成 24bit 的搜索到音频流读取验证。
 

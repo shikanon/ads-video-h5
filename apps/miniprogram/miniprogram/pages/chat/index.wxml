@@ -1,0 +1,31 @@
+<view class="chat-screen">
+  <view class="chat-header"><view class="brand">轻剪<text class="brand-dot">.</text></view><view class="row"><button class="small-button" bindtap="newSession">＋ 新对话</button><button class="small-button" bindtap="history">会话历史</button></view></view>
+  <scroll-view class="thread" scroll-y scroll-into-view="{{scrollTarget}}" scroll-with-animation>
+    <view class="thread-inner">
+      <view wx:if="{{empty}}" class="welcome"><view class="welcome-mark">✦</view><view class="welcome-title">好视频，从一句话开始。</view><view class="subtitle">说出主题、风格和时长，轻剪为你开始制作。</view><view class="suggestions"><button bindtap="suggestion" data-text="制作一段 30 秒的人工智能新闻口播视频，先搜索并核验近期事件。">今天 AI 圈发生了什么？<text>→</text></button><button bindtap="suggestion" data-text="制作一个 45 秒的科普视频，用日常例子解释什么是大模型。">把一个知识点讲明白<text>→</text></button><button bindtap="suggestion" data-text="把我选择的素材剪成 20 秒短片，节奏轻快，配字幕和音乐。">把素材剪成故事<text>→</text></button></view></view>
+      <button wx:if="{{hasOlder}}" class="small-button older" bindtap="older">查看更早的消息</button>
+      <button wx:if="{{hasNewer}}" class="small-button older" bindtap="latest">返回最新消息 ↓</button>
+      <view wx:for="{{messages}}" wx:key="id" class="message {{item.role}}">
+        <view class="message-role">{{item.role === 'user' ? '你' : '✦ 轻剪'}}</view><view class="message-bubble"><text selectable>{{item.text}}</text></view>
+        <button wx:if="{{item.partCount || item.long}}" class="process-toggle" bindtap="expand" data-id="{{item.id}}">{{item.open ? '收起过程 ↑' : '处理过程 · ' + item.partCount + ' 段 ↓'}}</button>
+        <view wx:if="{{item.open}}" class="commentary"><view wx:for="{{item.parts}}" wx:for-item="part" wx:key="id"><text selectable>{{part.text}}</text></view></view>
+        <view wx:if="{{item.job}}" class="job panel"><view class="row spread"><text class="title">{{item.job.label}}</text><text class="tag">{{item.job.progress}}%</text></view><view class="muted">{{item.job.stage}}</view><progress wx:if="{{item.job.active}}" percent="{{item.job.progress}}" stroke-width="3" activeColor="#ed815f" backgroundColor="#f5eee7" />
+          <view wx:if="{{item.open}}" class="tool-list"><view class="quiet">实际工具调用与结果，不包含模型内部推理。</view><view wx:for="{{item.job.workflow}}" wx:for-item="step" wx:key="id"><text class="tool-name">{{step.tool}} · {{step.status}}{{step.seconds ? ' · ' + step.seconds + '秒' : ''}}</text><text class="muted tool-detail" selectable>{{step.detail}}</text></view></view>
+          <view wx:if="{{item.job.error}}" class="error">{{item.job.error}}</view><button wx:if="{{item.job.failed}}" class="secondary" bindtap="retry" data-id="{{item.job.id}}">重试制作</button>
+        </view>
+        <button wx:for="{{item.artifacts}}" wx:for-item="work" wx:key="id" class="artifact-link" bindtap="play" data-id="{{work.id}}"><text>▷ {{work.name}}</text><text class="quiet">{{work.duration}} · {{work.status}}</text></button>
+        <text class="date">{{item.date}}</text>
+      </view><view id="thread-end" class="thread-end" />
+    </view>
+  </scroll-view>
+  <view class="composer-wrap">
+    <view wx:if="{{error}}" class="error">{{error}}</view><view wx:if="{{insufficient && !voiceReady}}" class="credit-warning" bindtap="credits">积分不足，去签到领取 →</view>
+    <view wx:if="{{uploading}}" class="quiet">{{uploadText}}</view><view wx:if="{{voice !== 'idle'}}" class="voice-status {{voice === 'recording' ? 'live' : ''}}">{{voiceLabel}}</view>
+    <scroll-view wx:if="{{attached.length}}" class="attachments" scroll-x><view wx:for="{{attached}}" wx:key="id" class="attachment"><text>{{item.name}}</text><button bindtap="removeAttachment" data-id="{{item.id}}">×</button></view></scroll-view>
+    <view class="composer"><textarea value="{{prompt}}" bindinput="input" bindblur="blur" placeholder="说说你想怎么剪…" maxlength="2000" auto-height confirm-type="return" show-confirm-bar="{{false}}" cursor-spacing="24" cursor="{{cursor}}" focus="{{focus}}" disabled="{{sending || uploading || voice !== 'idle'}}" />
+      <view class="composer-actions"><view class="row"><button class="icon-button" bindtap="pick" disabled="{{uploading || sending || voice !== 'idle'}}">＋</button><button class="newline" bindtap="newline" disabled="{{sending || voice !== 'idle'}}">↵ 换行</button></view><view class="row"><button wx:if="{{running}}" class="stop-button" bindtap="stop">■ 停止</button><button class="voice-button" bindtouchstart="voiceHold" bindlongpress="voiceStart" bindtouchend="voiceRelease" bindtouchcancel="voiceCancel" catchtouchmove="voiceMove"><text wx:if="{{voice === 'recording'}}" class="record-dot">●</text><view wx:else class="mic-mark"><view class="mic-capsule"/><view class="mic-arc"/><view class="mic-stand"/></view><text>按住说</text></button><button class="send-button" loading="{{sending}}" disabled="{{sending || uploading || voice !== 'idle' || (insufficient && !voiceReady)}}" bindtap="send">↑</button></view></view>
+    </view><view class="composer-note quiet">{{voice === 'idle' ? voiceLabel : '识别成功后才会执行指令'}} · 结果发布前请核验</view>
+  </view>
+</view>
+<view wx:if="{{pick}}" class="picker-mask" bindtap="closePick"><view class="picker-sheet" catchtap="noop"><view class="page-heading"><text>选择素材</text><button class="small-button" bindtap="closePick">完成</button></view><view class="row"><button class="secondary grow" bindtap="upload">相册 / 拍摄</button><button class="secondary grow" bindtap="upload" data-audio="yes">聊天文件 / 音频</button></view><scroll-view scroll-y class="source-list"><view wx:if="{{!sources.length}}" class="empty"><text class="muted">还没有素材，可以先上传，也可以直接说出视频需求。</text></view><button wx:for="{{sources}}" wx:key="id" class="source-row {{item.selected ? 'selected' : ''}}" bindtap="select" data-id="{{item.id}}"><text>{{item.name}}</text><text class="tag">{{item.selected ? '已选' : item.kind === 'video' ? '视频' : item.kind === 'image' ? '图片' : '音频'}}</text></button></scroll-view><view class="quiet">已选 {{attachmentIds.length}} / 6</view></view></view>
+<privacy-dialog id="privacy" />
