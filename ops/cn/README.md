@@ -8,18 +8,18 @@
 - pnpm 11.25.0：`/opt/qingjian-cn/pnpm/node_modules/.bin/pnpm`。
 - 不可变源码与构建：`/opt/qingjian-cn/releases/<40位Git提交号>`；`current` 为当前版本软链接。
 - 运行用户 `qingjian-cn`，构建用户 `qingjian-cn-build`；运行进程只监听 `127.0.0.1:8787`。
-- 持久数据 `/data/qingjian-cn`；配置和模型密钥不进入源码包，构建用户不能读取此目录。
+- 正式持久数据 `/data/qingjian`，运行用户主目录也使用此路径，兼容迁移数据的既有绝对文件路径；配置和模型密钥不进入源码包，构建用户不能读取此目录。
 - `qingjian-cn.service` 为运行服务；`/etc/qingjian-cn/server.env` 可存放服务器私有设置。
 - Nginx 仅新增 `video.tensorbytes.com` 专用站点；证书位于 `/etc/letsencrypt/live/video.tensorbytes.com`。
 
-国内 H5 与小程序使用同一服务和数据目录。海外 H5 的历史账号、积分和任务是否迁移需单独确认；两个运行实例不能直接共写 JSON 数据文件，也不能用周期复制冒充实时共用。
+用户已确认原 H5 与小程序实时共用。国内 H5 与小程序使用同一服务和数据目录，原 H5 通过 HTTPS 网关访问国内后端；须执行 [`SHARED_DATA_CUTOVER.md`](SHARED_DATA_CUTOVER.md) 的历史迁移和共用验收。两个运行实例不能直接共写 JSON 数据文件，也不能用周期复制冒充实时共用。
 
 ## 安装与激活
 
 1. 创建两个系统用户、独立目录，安装 Node 与仓库指定的 pnpm；Node 下载包按官方 SHA-256 核验。已存在的应用、运行时及 Nginx 站点不覆盖。
 2. 用 `git archive <sha>` 导出已提交版本并上传，核对包哈希；`ops/release-revision.txt` 的 `export-subst` 将提交号带入构建源。
 3. 在独立目录以构建用户执行 `pnpm install --frozen-lockfile` 和 `VITE_BASE_PATH=/qingjian/ pnpm build`。环境不传入模型、OSS、邮件密钥，构建后将发布目录改为 root 拥有、只读。
-4. 将轻剪现有的加密 `provider-models.json` 和匹配的 `admin-token` 放入持久目录，权限 `0600`。它们只用于服务端模型配置；管理员登录采用独立密码。`oss.env`、`resend.env` 也放在该私有目录，由服务端加载。不要复制其他应用的凭证或测试账号数据。
+4. 按共用切换方案，从原生产服务的一致性快照迁移完整账号、账本、媒体和私有配置。`provider-models.json` 与匹配的 `admin-token`、管理员认证密钥保持 `0600`，OSS/邮件配置按原服务实际设置恢复。不要用本机开发数据替代生产快照，也不要只复制模型配置便公开空库。
 5. 将 [`qingjian-cn.service`](qingjian-cn.service) 和 [`activate-release`](activate-release) 安装到 systemd 与 `/usr/local/sbin/qingjian-cn-activate`。执行 `systemctl daemon-reload` 后，运行 `qingjian-cn-activate /opt/qingjian-cn/releases/<sha>`；脚本检查发布号、H5、后台和未登录 401，失败恢复前一版本。
 6. 先配置 HTTP ACME 验证站点，再用服务器现有 Certbot 账号获取本域名证书。安装 [`video.tensorbytes.com.conf`](../nginx/video.tensorbytes.com.conf)，执行 `nginx -t` 后重载。证书自动续期后需 nginx reload hook。
 7. 从公网检查 `/qingjian/api/health` 的实际 SHA、`/qingjian/release.json`、未登录状态 401，再使用隔离验收账号验证签到、上传、原生识别和 Agent。检查原有站点仍健康。
@@ -36,9 +36,9 @@
 
 ```bash
 cd /opt/qingjian-cn/current
-QINGJIAN_DATA_DIR=/data/qingjian-cn \
-QINGJIAN_MINI_QA_CREDENTIALS=/data/qingjian-cn/deploy-qa-credentials.json \
-QINGJIAN_MINI_QA_REPORT=/data/qingjian-cn/deploy-qa-report.json \
+QINGJIAN_DATA_DIR=/data/qingjian \
+QINGJIAN_MINI_QA_CREDENTIALS=/data/qingjian/deploy-qa-credentials.json \
+QINGJIAN_MINI_QA_REPORT=/data/qingjian/deploy-qa-report.json \
 QINGJIAN_MINI_QA_VOICE=1 \
 /opt/qingjian-cn/node/bin/node --import tsx tooling/smoke-miniprogram.mjs
 ```
