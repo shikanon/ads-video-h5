@@ -16,7 +16,7 @@ interface AvatarRoutesContext {
   save: () => Promise<void>; publicState: (user: PublicUser) => Promise<AppState>;
   settings: (user: PublicUser) => Promise<AppSettings>;
   session: (id: string, ownerId: string) => Session | undefined;
-  generate: (session: Session, source: MediaItem) => void;
+  generate: (session: Session, source: MediaItem) => void | Promise<void>;
   process: () => void;
 }
 const execFileAsync=promisify(execFile);
@@ -57,7 +57,7 @@ export function mountAvatarRoutes(app: Express, ctx: AvatarRoutesContext) {
     const user=userOf(request),source=ctx.media().find(m=>m.id===request.params.id&&m.ownerId===user.id&&m.character?.role==='reference');
     const session=ctx.session(String(request.body?.sessionId||''),user.id);
     if(!source||!session)return response.status(404).json({error:'形象原图或会话不存在。'});
-    ctx.generate(session,source);await ctx.save();response.status(202).json(await ctx.publicState(user));ctx.process();
+    await ctx.generate(session,source);await ctx.save();response.status(202).json(await ctx.publicState(user));ctx.process();
   });
   app.post('/api/avatars/active',async(request,response)=>{
     const user=userOf(request),id=request.body?.mediaId;

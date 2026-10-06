@@ -5,6 +5,9 @@ import path from 'node:path';
 import { runFFmpeg } from './core';
 import { jobFetch, runWithJobSignal } from './jobExecution';
 import { getModelConfig, type ModelConfig } from './modelRegistry';
+import { userOf } from './auth';
+import { CreditError, type Credits } from './credits';
+import { withCreditUsage } from './creditUsage';
 
 export const MAX_VOICE_BYTES = 8 * 1024 * 1024;
 export const MAX_VOICE_SECONDS = 60;
@@ -85,8 +88,8 @@ export async function recognizeVoice(bytes: Buffer, tmpDir: string) {
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
-export function mountVoiceInputRoutes(app: Express, tmpDir: string, recognize = recognizeVoice) {
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_VOICE_BYTES, files: 1, fields: 0 }, fileFilter: (_request, file, done) => {
+export function mountVoiceInputRoutes(app: Express, tmpDir: string, recognize = recognizeVoice, credits?: Credits) {
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_VOICE_BYTES, files: 1, fields: 1, fieldSize: 8000 }, fileFilter: (_request, file, done) => {
     const type = file.mimetype.split(';')[0].toLowerCase();
     const allowed = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3'];
     if (allowed.includes(type)) done(null, true);
@@ -96,15 +99,24 @@ export function mountVoiceInputRoutes(app: Express, tmpDir: string, recognize = 
     upload.single('audio')(request, response, async error => {
       if (error) return response.status(error instanceof VoiceInputError ? error.status : error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: error instanceof VoiceInputError ? error.message : error.code === 'LIMIT_FILE_SIZE' ? '录音文件过大，请缩短录音。' : '请只上传一段录音。', code: error instanceof VoiceInputError ? error.code : 'INVALID_UPLOAD' });
       if (!request.file?.size) return response.status(400).json({ error: '请先录制语音。', code: 'MISSING_AUDIO' });
+      const prefix = request.body?.prefix ?? '';
+      if (typeof prefix !== 'string' || prefix.length > 2000 || Object.keys(request.body ?? {}).some(key => key !== 'prefix')) return response.status(400).json({ error: '语音输入中的文字过长或格式无效。', code: 'INVALID_PREFIX' });
       const controller = new AbortController();
       const disconnected = () => { if (!response.writableFinished) controller.abort(); };
       response.once('close', disconnected);
       try {
         const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)]);
-        const result = await runWithJobSignal(signal, () => recognize(request.file!.buffer, tmpDir));
-        if (!controller.signal.aborted) response.json(result);
+        const userId = credits ? userOf(request).id : undefined;
+        const taskId = credits ? await credits.admit(userId!) : undefined;
+        const execute = () => runWithJobSignal(signal, () => recognize(request.file!.buffer, tmpDir));
+        const result = credits ? await withCreditUsage(credits, userId!, taskId!, execute) : await execute();
+        const instruction = [prefix.trim(), result.text.trim()].filter(Boolean).join('\n');
+        if (instruction.length > 2000) throw new VoiceInputError(422, 'TOO_LONG', '文字与语音指令合计过长，请分成两次发送。');
+        const creditTicket = credits ? await credits.voiceTicket(userId!, taskId!, instruction) : undefined;
+        if (!controller.signal.aborted) response.json({ ...result, ...(creditTicket ? { creditTicket } : {}) });
       } catch (cause) {
-        if (!controller.signal.aborted) response.status(cause instanceof VoiceInputError ? cause.status : 503).json({ error: cause instanceof VoiceInputError ? cause.message : '语音识别暂时失败，请重新录制或使用文字输入。', code: cause instanceof VoiceInputError ? cause.code : 'RECOGNITION_FAILED' });
+        const known = cause instanceof VoiceInputError || cause instanceof CreditError;
+        if (!controller.signal.aborted) response.status(known ? cause.status : 503).json({ error: known ? cause.message : '语音识别暂时失败，请重新录制或使用文字输入。', code: known ? cause.code : 'RECOGNITION_FAILED' });
       } finally { response.off('close', disconnected); }
     });
   });

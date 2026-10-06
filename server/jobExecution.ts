@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { creditFetch } from './creditUsage';
 
 const execution = new AsyncLocalStorage<AbortSignal>();
 
@@ -38,7 +39,8 @@ export const jobFetch: typeof fetch = async (input, init) => {
   const inherited = init?.signal ?? (input instanceof Request ? input.signal : undefined);
   const combined = signal && inherited ? AbortSignal.any([signal, inherited]) : signal || inherited;
   try {
-    const response = await fetch(input, { ...init, ...(combined ? { signal: combined } : {}) });
+    const response = await creditFetch(input, { ...init, ...(combined ? { signal: combined } : {}) });
+    if (signal?.aborted) await response.body?.cancel();
     throwIfJobCancelled(signal);
     return response;
   } catch (error) { throwIfJobCancelled(signal); throw error; }

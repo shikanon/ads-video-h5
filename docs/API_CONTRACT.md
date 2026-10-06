@@ -140,3 +140,33 @@ HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说�
 ## 文本输入换行
 
 触摸设备的输入框使用 `enterkeyhint="enter"`，回车保留为换行，发送由输入栏的发送按钮完成。触摸设备还提供“换行”按钮，在光标处插入换行或替换选中文字，保留焦点和光标位置；输入框随换行展开，最多显示五行。桌面保留 Enter 发送、Shift+Enter 换行；中文输入法组合输入及 Safari 的 229 键码不触发发送。换行操作不会创建消息或 Agent 任务；发送后的 `/api/chat` 文本保留换行。
+
+### 用户积分
+
+`AppState.credits` 返回 `{balance,dailyGrant,pointValueRmb,special,lastGrantDate,nextGrantAt,totalSpent}`。每日北京时间 00:00 赠送 1000 积分，余额可累计；离线期间的每日赠送在下次访问时补记。1 积分等于 0.001 元。余额和扣费最多精确到六位小数，内部按整数微积分记账。
+
+所有新指令入口（聊天、手动重试、原声分析、作者动画、语音识别）在接受前检查余额；余额 ≤ 0 返回 `402 {error:"积分不足，请等待每日免费积分到账后再发送指令。",code:"INSUFFICIENT_CREDITS"}`，不保存新消息或任务。已接收的任务使用服务端冻结的所属账户与 `Job.creditTaskId`；其多轮规划、研究、审查、自动修复继续计费，即使余额变负也不中断。停止任务、浏览和上传素材不受积分准入限制。管理员能力评测使用隔离的评测身份，不扣普通用户积分。
+
+`GET /api/credits?offset=0&limit=20` 只返回当前登录用户的 `{wallet,entries,total}`，单页上限 100。记录包含每日赠送、特殊额度、模型调用与用量待核对；模型调用保存请求 ID、任务 ID、实际输入/输出/缓存/音频 token 和当时价格。用量缺失或无效时记录为待核对，不以文案长度估算。账本单独原子保存到持久化目录 `credits.json`，损坏时拒绝启动，不自动清空。
+
+`POST /api/voice/transcribe` 可附带文字字段 `prefix`，与识别原文合计最多 2000 字。返回 `{text,duration,creditTicket}`。客户端将完整文字加识别原文作为 `message`，并将 `creditTicket` 传给 `POST /api/chat`；同一条语音指令只准入一次，识别耗尽积分仍可执行。凭证绑定账户和完整指令，15 分钟有效且只能使用一次；修改、跨账户或重复使用返回 `409 INVALID_VOICE_TICKET`。
+
+后台以下接口使用独立管理员会话鉴权，普通用户 Cookie 无权访问：
+
+| 接口 | 输入 / 返回 |
+| --- | --- |
+| `GET /api/admin/credits` | 用户安全信息、钱包、模型价格与赠送政策 |
+| `PATCH /api/admin/credits/users/:id` | `{special:boolean}`；仅允许已存在的用户 |
+| `GET /api/admin/credits/users/:id/ledger` | 分页查看指定用户账本 |
+| `PUT /api/admin/credits/prices/:modelId` | `{input,cachedInput,output,audioInput?,cachedAudioInput?}`，单位元 / 百万 token，最多三位小数 |
+
+首次上线仅将已存在且唯一匹配 `shikanon` 邮箱前缀或昵称的账户设为特殊账户，绑定其用户 ID；之后同名注册不会获得额度。特殊账户初始总额度为 1000000（1000 每日赠送加 999000 一次补足），历史消费保留；后台开关不会重复发放。新模型调用冻结价格，后续改价不修改历史记录。默认按[火山方舟官方价格](https://docs.volcengine.com/docs/ark/model-pricing?lang=zh)的普通在线推理价格配置，核对于 2026-10-06：
+
+| 模型 | 输入 | 缓存输入 | 输出 | 音频输入 / 缓存音频输入 |
+| --- | ---: | ---: | ---: | ---: |
+| doubao-seed-2-1-pro-260915 | 6 | 1.2 | 30 | — |
+| deepseek-v4-pro-ga-260813 | 9 | 0.3 | 27 | — |
+| glm-5-3-flash-260828 | 0.8 | 0.23 | 2.8 | — |
+| doubao-seed-2-1-lite-260915 | 0.8 | 0.16 | 2.7 | 12 / 2.4 |
+
+缓存 token 是输入 token 的子集，音频缓存同时是缓存和音频输入的子集，不重复计费；输出 token 已包含推理 token。当前计费覆盖返回 token 用量的 Chat/Responses 模型调用，图片按张、TTS 按字符、搜索工具的独立费用不按 token 扣分。未配置价格的新 token 模型停止调用并提示管理员配置。

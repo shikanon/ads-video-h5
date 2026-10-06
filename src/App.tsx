@@ -41,6 +41,8 @@ import { MAX_MEDIA_UPLOAD_BYTES } from "./uploadLimits";
 import AssistantReply from "./AssistantReply";
 import HotResearchCard from "./HotResearchCard";
 import VoiceInput from './VoiceInput';
+import CreditPanel, { fetchCredits } from './CreditPanel';
+import { formatPoints } from '../shared/creditFormat';
 import { isActiveJob } from './jobStatus';
 const AvatarPanel = lazy(() => import('./AvatarPanel'));
 
@@ -211,7 +213,7 @@ async function getState(response: Response): Promise<AppState> {
     /* handled below */
   }
   if (!response.ok)
-    throw new Error(json?.error || `请求失败 (${response.status})`);
+    throw Object.assign(new Error(json?.error || `请求失败 (${response.status})`), { status: response.status });
   if (!json?.sessions || !json?.media)
     throw new Error("服务返回的数据不完整。");
   return json;
@@ -636,6 +638,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   );
   const drafts = useRef<Record<string, { prompt: string; attachments: string[] }>>({});
   const stateRef = useRef<AppState | null>(null);
+  const voiceAdmission = useRef<{ ticket: string; message: string; sessionId: string } | null>(null);
   const jobPollInFlight = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const pickerKind = useRef<MediaFilter>("all");
@@ -663,6 +666,21 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useEffect(() => {
+    if (!state?.credits) return;
+    const controller = new AbortController();
+    const update = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const result = await fetchCredits(apiPath('/api/credits'), controller.signal);
+        if (stateRef.current && !controller.signal.aborted) apply({ ...stateRef.current, credits: result.wallet });
+      } catch { /* Keep the last balance; the server still enforces admission. */ }
+    };
+    const timer = window.setTimeout(() => void update(), Math.max(1000, Date.parse(state.credits.nextGrantAt) - Date.now() + 1000));
+    const foreground = () => void update();
+    window.addEventListener('focus', foreground); document.addEventListener('visibilitychange', foreground);
+    return () => { controller.abort(); window.clearTimeout(timer); window.removeEventListener('focus', foreground); document.removeEventListener('visibilitychange', foreground); };
+  }, [state?.credits?.nextGrantAt, apply]);
   useEffect(() => {
     if (
       !state?.jobs.some((j) => j.status === "queued" || j.status === "running")
@@ -749,6 +767,9 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "操作失败，请重试。");
+      if ((cause as { status?: number })?.status === 402) {
+        try { const credits = await fetchCredits(apiPath('/api/credits')); if (stateRef.current) apply({ ...stateRef.current, credits: credits.wallet }); } catch { /* Keep the insufficient-credit message. */ }
+      }
       return false;
     } finally {
       setPending(false);
@@ -827,7 +848,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
     xhr.send(form);
     if (fileInput.current) fileInput.current.value = "";
   }
-  async function send(voiceText?: string) {
+  async function send(voiceText?: string, creditTicket?: string) {
     const message = voiceText === undefined ? prompt.trim() : [prompt.trim(), voiceText.trim()].filter(Boolean).join('\n');
     if (
       !message ||
@@ -838,14 +859,18 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
     )
       return false;
     if (voiceText !== undefined) setPrompt(message);
+    if (creditTicket) voiceAdmission.current = { ticket: creditTicket, message, sessionId: state.activeSessionId };
+    const ticket = voiceAdmission.current?.message === message && voiceAdmission.current.sessionId === state.activeSessionId ? voiceAdmission.current.ticket : undefined;
     if (
       await mutate("/api/chat", "POST", {
         sessionId: state.activeSessionId,
         message,
         attachmentIds: attachments,
+        ...(ticket ? { voiceTicket: ticket } : {}),
       })
     ) {
       delete drafts.current[state.activeSessionId];
+      voiceAdmission.current = null;
       setPrompt("");
       setAttachments([]);
       requestAnimationFrame(() =>
@@ -1209,6 +1234,10 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                 </div>
               ) : null}
               <div className="composer">
+                {state?.credits ? <button type="button" className={`credit-chip${state.credits.balance <= 0 ? ' is-low' : ''}`} onClick={() => nav('settings')}>
+                  {locale === 'zh-CN' ? `积分 ${formatPoints(state.credits.balance)}` : `${formatPoints(state.credits.balance)} points`}
+                  {state.credits.balance <= 0 ? locale === 'zh-CN' ? ' · 积分不足，已开始任务继续完成' : ' · Low balance; accepted tasks continue' : ''}
+                </button> : null}
                 {attachments.length ? (
                   <div className="composer-attachments">
                     {attachments.map((id) => {
@@ -1295,9 +1324,10 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                     key={state?.activeSessionId}
                     locale={locale}
                     endpoint={apiPath('/api/voice/transcribe')}
-                    disabled={pending || uploadProgress !== null || !state}
+                    prefix={prompt}
+                    disabled={pending || uploadProgress !== null || !state || !!state.credits && state.credits.balance <= 0}
                     onBusyChange={setVoiceBusy}
-                    onRecognized={async text => { if (!(await send(text))) throw new Error(locale === 'zh-CN' ? '指令未发送，识别文字已保留在输入框，请重试。' : 'Instruction not sent. The transcript is kept in the input. Please retry.'); }}
+                    onRecognized={async (text, ticket) => { if (!(await send(text, ticket))) throw new Error(locale === 'zh-CN' ? '指令未发送，识别文字已保留在输入框，请查看提示后重试。' : 'Instruction not sent. The transcript is kept in the input. Please check the notice and retry.'); }}
                   />
                   <button
                     type="submit"
@@ -1525,6 +1555,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
         ) : null}
         {page === "settings" ? (
           <section className="subpage-content settings-page">
+            {state?.credits ? <CreditPanel wallet={state.credits} endpoint={apiPath('/api/credits')} locale={locale} /> : null}
             <div className="setting-group">
               <h2>{t.model}</h2>
               <select

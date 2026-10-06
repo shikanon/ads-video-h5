@@ -1,4 +1,4 @@
-import { spawnForJob as spawn, currentJobSignal, onJobAbort, throwIfJobCancelled } from './jobExecution';
+import { spawnForJob as spawn, currentJobSignal, onJobAbort, throwIfJobCancelled, jobFetch } from './jobExecution';
 import ffmpegPath from 'ffmpeg-static';
 import { Agent, type AgentTool } from '@earendil-works/pi-agent-core';
 import { createModels, createProvider, type Model } from '@earendil-works/pi-ai';
@@ -147,7 +147,7 @@ export function getAgent(config: ModelConfig, tools: AgentTool[], systemPrompt: 
       throwIfJobCancelled(signal);
       return result;
     } })) },
-    streamFn: models.streamSimple.bind(models),
+    streamFn: (model, messages, options) => models.streamSimple(model, messages, { ...options, fetch: jobFetch }),
     // GLM 5.3 Flash only supports thinking=enabled. Pi replays its reasoning
     // with tool results; answerWithPi publishes only the reply tool's fields.
     onPayload: (payload) => payload && typeof payload === 'object' ? { ...payload, ...(ark ? { thinking: textThinking(config) } : {}), ...(requireTools ? { tool_choice: 'required' } : {}) } : undefined,

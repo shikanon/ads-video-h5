@@ -45,6 +45,9 @@ import { createToolTrace } from './toolTrace';
 import { isActiveJob } from '../src/jobStatus';
 import { planCreationRoute } from './creativeRequest';
 import { mountVoiceInputRoutes } from './voiceInput';
+import { createCredits, CreditError } from './credits';
+import { withCreditUsage } from './creditUsage';
+import { mountCreditRoutes, mountCreditAdminRoutes } from './creditRoutes';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -137,9 +140,9 @@ const shortName = (name: string) => path.basename(name).replace(/[\u0000-\u001f/
 const extFor = (mime: string) => mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : mime === 'image/png' ? 'png' : mime === 'audio/mpeg' ? 'mp3' : mime === 'audio/wav' || mime === 'audio/x-wav' ? 'wav' : mime === 'audio/ogg' ? 'ogg' : 'bin';
 
 async function publicState(user: PublicUser): Promise<AppState> {
-  const [models, profile] = await Promise.all([listPublicModels(), profileOf(user)]);
+  const [models, profile, wallet] = await Promise.all([listPublicModels(), profileOf(user), credits.snapshot(user.id)]);
   const textConfig = await getModelConfig('text', getSession(profile.activeSessionId, user.id)?.modelId);
-  return { activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.coverUrl ? { coverUrl: assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
+  return { credits: wallet, activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.coverUrl ? { coverUrl: assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
 }
 
 function addReply(session: Session, job: Job, text: string, artifactId?: string) {
@@ -630,7 +633,9 @@ async function processQueue() {
           }
           job.textModel = models.text ? { id: models.text.id, name: models.text.name, modelId: models.text.modelId } : undefined;
           await saveState();
-          return withModelSnapshot(models, () => performJob(job));
+          if (!isEvaluationOwner(job.ownerId) && !auth.listUsers().some(user => user.id === job.ownerId)) throw new CreditError('任务所属账户不存在，无法记录积分用量。', 'CREDIT_OWNER_MISSING', 409);
+          const execute = () => withModelSnapshot(models!, () => performJob(job));
+          return isEvaluationOwner(job.ownerId) ? execute() : withCreditUsage(credits, job.ownerId!, job.creditTaskId ?? job.id, execute);
         });
         job.status = 'succeeded'; job.progress = 100;
       }
@@ -642,7 +647,7 @@ async function processQueue() {
         } else {
           job.status = 'failed'; job.progress = undefined;
           const message = error instanceof Error ? error.message : '处理失败';
-          job.error = error instanceof ProviderError
+          job.error = error instanceof CreditError ? error.message : error instanceof ProviderError
             ? `${error.message}（${error.code}${error.status ? ` / HTTP ${error.status}` : ''}）`
             : /API Key|模型尚未配置|会话或消息|素材|剪辑方案|Pi Agent|对话回复|图片描述|口播文案|BGM|Pixabay|音频超过|音频文件|音频理解|语义分句|字幕|分句|特效|重构工作流未完成|教学工作流未完成|教学研究|教学视频|热点研究|形象|动画/.test(message)
               ? message : '生成失败，请检查模型配置、素材格式或网络后重试。';
@@ -658,10 +663,12 @@ async function processQueue() {
   } finally { processing = false; }
 }
 
-function enqueueAgentMessage(session: Session, text: string, attachmentIds: string[]): Job {
+async function enqueueAgentMessage(session: Session, text: string, attachmentIds: string[], voiceTicket?: string): Promise<Job> {
+  const creditTaskId = isEvaluationOwner(session.ownerId) ? undefined : await credits.admit(session.ownerId!, text, voiceTicket);
   const createdAt = now();
   const message: ChatMessage = { id: randomUUID(), role: 'user', text, createdAt, attachmentIds };
   const job: Job = { id: randomUUID(), ownerId: session.ownerId, sessionId: session.id, messageId: message.id, kind: classify(text), status: 'queued', createdAt, updatedAt: createdAt, progress: 0 };
+  job.creditTaskId = creditTaskId;
   // Freeze the selected asset when the request is accepted, so a UI switch
   // during a long render cannot change this job's author identity.
   job.authorAvatarId=state.profiles[session.ownerId!]?.settings.authorAvatarId||null;
@@ -704,7 +711,7 @@ const evaluations = createEvaluations({
       for (const text of test.messages) {
         if (context.signal.aborted) throw new EvaluationError('评测已停止。');
         if (wantsScheduleManagement(text)) throw new EvaluationError('视频评测不执行定时任务管理，请填写研究、剪辑或视频制作指令。');
-        const job = enqueueAgentMessage(session, text, sourceIds); jobs.push(job); evaluationJobModels.set(job.id, context.models);
+        const job = await enqueueAgentMessage(session, text, sourceIds); jobs.push(job); evaluationJobModels.set(job.id, context.models);
         await saveState(); await context.progress({ jobs }); void processQueue();
         while (['queued','running','stopping'].includes(job.status)) {
           if (context.signal.aborted) onAbort();
@@ -730,10 +737,15 @@ await evaluations.init();
 const app = express();
 app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
+const auth = createAuth(dataDir, publicBase);
+await auth.load();
+const credits = createCredits(dataDir);
+await credits.load(auth.listUsers());
 const adminAuth = createAdminAuth(dataDir);
 await adminAuth.load();
 adminAuth.mount(app);
 mountAdminRoutes(app, effects, adminAuth, publicBase, evaluations);
+mountCreditAdminRoutes(app, credits, adminAuth, auth.listUsers);
 app.get('/api/effects', (_request, response) => response.json({ effects: effects.list().filter((item) => item.enabled).map(({ id, name, description, duration, width, height }) => ({ id, name, description, duration, width, height })) }));
 app.get('/api/effects/assets/:id', async (request, response) => {
   const asset = effects.getAsset(request.params.id);
@@ -741,18 +753,19 @@ app.get('/api/effects/assets/:id', async (request, response) => {
   try { response.type(asset.mimeType).sendFile(await effects.ensureAsset(asset)); }
   catch { response.status(404).json({ error: '素材文件不存在。' }); }
 });
-const auth = createAuth(dataDir, publicBase);
-await auth.load();
 auth.mount(app);
-mountVoiceInputRoutes(app, tmpDir);
+mountCreditRoutes(app, credits);
+mountVoiceInputRoutes(app, tmpDir, undefined, credits);
 mountAvatarRoutes(app,{
   media:()=>state.media,mediaDir,tmpDir,save:saveState,publicState,
   settings:async user=>(await profileOf(user)).settings,session:getSession,
-  generate(session,source){
+  async generate(session,source){
     const busy=state.jobs.find(j=>j.ownerId===session.ownerId&&j.kind==='avatar'&&j.avatarSourceId===source.id&&['queued','running','stopping'].includes(j.status));
     if(busy)return;
+    const creditTaskId = await credits.admit(session.ownerId!);
     const timestamp=now(),message:ChatMessage={id:randomUUID(),role:'user',text:`为「${source.name}」生成透明作者动画`,createdAt:timestamp,attachmentIds:[source.id]};
     const job:Job={id:randomUUID(),ownerId:session.ownerId,sessionId:session.id,messageId:message.id,kind:'avatar',avatarSourceId:source.id,status:'queued',createdAt:timestamp,updatedAt:timestamp,progress:0};
+    job.creditTaskId = creditTaskId;
     message.jobId=job.id;session.messages.push(message);state.jobs.push(job);session.updatedAt=timestamp;
   },process:()=>void processQueue(),
 });
@@ -827,7 +840,8 @@ app.post('/api/chat', async (request, response) => {
   if (!text) return response.status(400).json({ error: '请输入想让轻剪完成的内容。' });
   const attachments = Array.isArray(request.body?.attachmentIds) ? request.body.attachmentIds : [];
   if (attachments.length > 6 || attachments.some((id: unknown) => typeof id !== 'string' || !state.media.some((item) => item.id === id && owned(item, user.id)))) return response.status(400).json({ error: '附件不存在或一次添加过多。' });
-  enqueueAgentMessage(session, text, attachments);
+  if (request.body?.voiceTicket !== undefined && (typeof request.body.voiceTicket !== 'string' || request.body.voiceTicket.length > 100)) return response.status(400).json({ error: '语音指令凭证格式无效。' });
+  await enqueueAgentMessage(session, text, attachments, request.body?.voiceTicket);
   await saveState(); response.json(await publicState(user)); void processQueue();
 });
 app.post('/api/media', upload.array('files', 6), async (request, response) => {
@@ -878,9 +892,11 @@ app.post('/api/media/:id/analyze', async (request, response) => {
   if (item.kind === 'image') return response.status(400).json({ error: '请选择音频或视频素材。' });
   const busy = state.jobs.find((j) => j.ownerId === user.id && j.kind === 'understanding' && ['queued','running'].includes(j.status) && state.sessions.some((s) => s.messages.some((m) => m.jobId === j.id && m.attachmentIds?.includes(item.id))));
   if (busy) return response.status(202).json(await publicState(user));
+  const creditTaskId = await credits.admit(user.id);
   const timestamp = now(); const id = randomUUID();
   const message: ChatMessage = { id, role: 'user', text: `转写「${item.name}」的原声音频`, createdAt: timestamp, attachmentIds: [item.id] };
   const job: Job = { id: randomUUID(), ownerId: user.id, sessionId: session.id, messageId: id, kind: 'understanding', status: 'queued', createdAt: timestamp, updatedAt: timestamp, progress: 0 };
+  job.creditTaskId = creditTaskId;
   message.jobId = job.id; session.messages.push(message); session.updatedAt = timestamp; state.jobs.push(job);
   await saveState(); response.status(202).json(await publicState(user)); void processQueue();
 });
@@ -937,6 +953,7 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   const candidate=state.artifacts.find(a=>a.id===job.artifactId&&owned(a,user.id));
   const needsLessonRepair=job.status==='succeeded'&&candidate?.plan?.lesson&&candidate.review?.status==='needs-review';
   if (job.status !== 'failed'&&!needsLessonRepair) return response.status(409).json({ error: '只有失败的任务或未通过审查的教学成片可以重试。' });
+  job.creditTaskId = await credits.admit(user.id);
   // An unavailable auditor has no content correction to make. Recheck the
   // existing artifact instead of restarting today's research and rendering.
   if(needsLessonRepair&&candidate?.review)job.kind=reviewNeedsContentRepair(candidate.review)?'export':'review';
@@ -986,7 +1003,7 @@ app.patch('/api/settings', async (request, response) => {
   if ('chatBackground' in body) profile.settings.chatBackground = body.chatBackground!;
   await saveState(); response.json(await publicState(user));
 });
-app.use(((error, request, response, _next) => { if (error instanceof multer.MulterError) { response.status(400).json({ error: request.path.startsWith('/api/avatars') ? (error.code === 'LIMIT_FILE_SIZE' ? '形象图片不能超过 20 MB。' : '每次只能上传一张形象图片。') : error.code === 'LIMIT_FILE_SIZE' ? '单个文件不能超过 100 MB，请先压缩。' : '一次最多上传 6 个文件。' }); return; } response.status(500).json({ error: '处理请求时出错，请重试。' }); }) satisfies ErrorRequestHandler);
+app.use(((error, request, response, _next) => { if (error instanceof CreditError) { response.status(error.status).json({ error: error.message, code: error.code }); return; } if (error instanceof multer.MulterError) { response.status(400).json({ error: request.path.startsWith('/api/avatars') ? (error.code === 'LIMIT_FILE_SIZE' ? '形象图片不能超过 20 MB。' : '每次只能上传一张形象图片。') : error.code === 'LIMIT_FILE_SIZE' ? '单个文件不能超过 100 MB，请先压缩。' : '一次最多上传 6 个文件。' }); return; } response.status(500).json({ error: '处理请求时出错，请重试。' }); }) satisfies ErrorRequestHandler);
 mountFrontendRoutes(app, path.join(root, 'dist'), publicBase);
 app.listen(port, '127.0.0.1', () => console.log(`轻剪 API listening on http://127.0.0.1:${port}`));
 void processQueue();

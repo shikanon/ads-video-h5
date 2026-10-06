@@ -1,0 +1,18 @@
+.credit-admin { display: grid; gap: 20px; }
+.credit-admin .admin-heading { margin-bottom: 0; }
+.credit-admin-policy { margin: 0; color: #776b63; font-size: 14px; line-height: 1.8; }
+.credit-table-wrap { overflow-x: auto; }
+.credit-admin table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.credit-admin th { text-align: left; color: #85786e; font-weight: 500; white-space: nowrap; }
+.credit-admin th, .credit-admin td { padding: 12px 10px; border-bottom: 1px solid #eee7e1; vertical-align: top; }
+.credit-admin td { font-variant-numeric: tabular-nums; }
+.credit-admin td small { display: block; color: #8c8177; margin-top: 5px; font-size: 11px; }
+.credit-admin td code { word-break: break-all; }
+.credit-admin button { border: 1px solid #e5dcd3; background: #fffaf5; border-radius: 6px; padding: 6px 10px; cursor: pointer; color: #705747; }
+.credit-admin button:disabled { opacity: .5; cursor: default; }
+.credit-negative { color: #b44433; }
+.credit-search { max-width: 240px; min-width: 0; border: 1px solid #e5dcd3; border-radius: 8px; padding: 8px 10px; }
+.credit-price-form { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 20px; align-items: end; }
+.credit-price-form label { display: grid; gap: 6px; font-size: 13px; max-width: 240px; }
+.credit-price-form input { min-width: 0; width: 100%; box-sizing: border-box; border: 1px solid #e5dcd3; border-radius: 6px; padding: 9px; }
+@media (max-width: 600px) { .credit-search { width: 150px; } .credit-admin td { min-width: 70px; } .credit-admin td:first-child { min-width: 150px; } }

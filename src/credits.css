@@ -1,0 +1,12 @@
+.credit-chip { align-self: flex-start; border: 0; border-radius: 8px; background: #fbf3ed; color: #866b5e; font-size: 12px; line-height: 1.6; padding: 3px 9px; margin-bottom: 7px; cursor: pointer; text-align: left; }
+.credit-chip.is-low { color: #b24834; }
+.credit-amount { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.credit-amount strong { font-size: 28px; font-variant-numeric: tabular-nums; }
+.credit-amount small { color: #a07354; background: #fbf1e7; border-radius: 6px; padding: 3px 6px; }
+.credit-history summary { cursor: pointer; color: #6c605a; margin-top: 12px; }
+.credit-history ul { list-style: none; padding: 0; margin: 8px 0; }
+.credit-history li { display: flex; gap: 16px; justify-content: space-between; border-bottom: 1px solid #f0e9e5; padding: 12px 0; font-size: 13px; }
+.credit-history li div { display: grid; gap: 4px; min-width: 0; }
+.credit-history time, .credit-history small { color: #978c86; font-size: 11px; }
+.credit-history li > span { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.credit-plus { color: #53755c; }

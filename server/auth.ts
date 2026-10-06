@@ -221,7 +221,7 @@ export function createAuth(dataDir: string, publicBase: string) {
     app.patch('/api/auth/password', mutationGuard, requireAuth, (request, response, next) => { void changePassword(request, response).catch(next); });
     app.use('/api', mutationGuard, requireAuth);
   }
-  return { load, mount, currentUser };
+  return { load, mount, currentUser, listUsers: () => store.users.map(safeUser) };
 }
 
 export function userOf(request: Request): PublicUser { return (request as Request & { user: PublicUser }).user; }

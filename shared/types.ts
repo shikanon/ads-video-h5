@@ -268,6 +268,7 @@ export interface Artifact {
 }
 
 export interface Job {
+  creditTaskId?: string;
   textModel?: Pick<PublicModel, 'id' | 'name' | 'modelId'>;
   avatarSourceId?: string;
   authorAvatarId?: string | null;
@@ -317,6 +318,7 @@ export interface AppSettings {
 }
 
 export interface AppState {
+  credits?: import('./creditTypes').CreditWallet;
   activeSessionId: string;
   sessions: Session[];
   media: MediaItem[];

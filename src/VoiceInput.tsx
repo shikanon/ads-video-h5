@@ -7,8 +7,9 @@ interface Props {
   disabled: boolean;
   locale: string;
   endpoint: string;
+  prefix?: string;
   onBusyChange: (busy: boolean) => void;
-  onRecognized: (text: string) => Promise<void>;
+  onRecognized: (text: string, creditTicket?: string) => Promise<void>;
 }
 const MAX_SECONDS = 60;
 const FORMATS = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'];
@@ -37,13 +38,14 @@ export default function VoiceInput(props: Props) {
     const timeout = setTimeout(() => abort.abort(), 95_000);
     try {
       const form = new FormData(); form.append('audio', blob, blob.type.includes('mp4') ? 'voice.mp4' : blob.type.includes('ogg') ? 'voice.ogg' : 'voice.webm');
+      if (current.current.prefix?.trim()) form.append('prefix', current.current.prefix);
       const response = await fetch(current.current.endpoint, { method: 'POST', body: form, signal: abort.signal });
-      const result = await response.json() as { text?: unknown; error?: string };
+      const result = await response.json() as { text?: unknown; error?: string; creditTicket?: string };
       if (!response.ok) throw new Error(result.error || (zh ? '语音识别失败，请重录。' : 'Transcription failed. Please try again.'));
       if (typeof result.text !== 'string' || !result.text.trim()) throw new Error(zh ? '没有识别到清晰语音，请重新说一次。' : 'No clear speech detected. Please try again.');
       if (!alive.current || token !== generation.current) return;
       setNotice((zh ? '识别为：' : 'Recognized: ') + result.text.trim()); change('sending');
-      await current.current.onRecognized(result.text.trim());
+      await current.current.onRecognized(result.text.trim(), result.creditTicket);
       if (alive.current && token === generation.current) setNotice('');
     } catch (error) {
       if (alive.current && token === generation.current) setNotice(error instanceof Error && error.name !== 'AbortError' ? error.message : zh ? '语音识别超时，请重录。' : 'Transcription timed out. Please try again.');
