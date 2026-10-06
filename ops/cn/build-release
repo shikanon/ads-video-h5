@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 022
+
+release=${1:?Usage: build-release /opt/qingjian-cn/releases/<40-character-SHA>}
+[[ "$release" =~ ^/opt/qingjian-cn/releases/[0-9a-f]{40}$ && -d "$release" && ! -L "$release" ]]
+[[ $(id -un) == qingjian-cn-build ]]
+export HOME=/var/cache/qingjian-cn/build-home
+export XDG_CACHE_HOME=$HOME/.cache
+export PATH=/opt/qingjian-cn/node/bin:/opt/qingjian-cn/pnpm/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
+export NODE_OPTIONS=--max-old-space-size=384
+export HYPERFRAMES_SKIP_SKILLS=1
+exec 9>"$HOME/build.lock"
+flock -n 9 || { echo 'Another Qingjian build is running.' >&2; exit 1; }
+cd "$release"
+
+# The host supplies Ubuntu FFmpeg. Avoid dependency installers downloading a
+# second binary; esbuild's platform package is verified by the frontend build.
+test -x /usr/bin/ffmpeg
+test -x /usr/bin/ffprobe
+pnpm install --frozen-lockfile --ignore-scripts --network-concurrency=2 --child-concurrency=1
+ffmpeg_binary=$(node -p 'require("path").join(require("path").dirname(require.resolve("ffmpeg-static/package.json")),"ffmpeg")')
+if [[ ! -e "$ffmpeg_binary" ]]; then ln -s /usr/bin/ffmpeg "$ffmpeg_binary"; fi
+"$ffmpeg_binary" -version >/dev/null
+node -e 'require("esbuild").transformSync("const checked = true", {loader:"js"})'
+VITE_BASE_PATH=/qingjian/ pnpm build
+node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("dist/release.json"));if(r.revision!==process.argv[1])process.exit(1)' "${release##*/}"

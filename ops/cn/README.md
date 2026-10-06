@@ -18,7 +18,7 @@
 
 1. 创建两个系统用户、独立目录，安装 Node 与仓库指定的 pnpm；Node 下载包按官方 SHA-256 核验。已存在的应用、运行时及 Nginx 站点不覆盖。
 2. 用 `git archive <sha>` 导出已提交版本并上传，核对包哈希；`ops/release-revision.txt` 的 `export-subst` 将提交号带入构建源。
-3. 在独立目录以构建用户执行 `pnpm install --frozen-lockfile` 和 `VITE_BASE_PATH=/qingjian/ pnpm build`。环境不传入模型、OSS、邮件密钥，构建后将发布目录改为 root 拥有、只读。
+3. 安装 [`build-release`](build-release) 至 `/usr/local/libexec/qingjian-cn-build-release`，以构建用户在有资源限制的 systemd 临时单元中运行。它跳过依赖安装脚本，使用 Ubuntu 已有 FFmpeg，再验证 esbuild、构建 H5/后台并核对提交号。环境不传入模型、OSS、邮件密钥，构建后将发布目录改为 root 拥有、只读。
 4. 按共用切换方案，从原生产服务的一致性快照迁移完整账号、账本、媒体和私有配置。`provider-models.json` 与匹配的 `admin-token`、管理员认证密钥保持 `0600`，OSS/邮件配置按原服务实际设置恢复。不要用本机开发数据替代生产快照，也不要只复制模型配置便公开空库。
 5. 将 [`qingjian-cn.service`](qingjian-cn.service) 和 [`activate-release`](activate-release) 安装到 systemd 与 `/usr/local/sbin/qingjian-cn-activate`。执行 `systemctl daemon-reload` 后，运行 `qingjian-cn-activate /opt/qingjian-cn/releases/<sha>`；脚本先检查原账号、积分和会话 JSON 已导入且运行用户可读取解析，拒绝空库或不完整导入，再检查发布号、H5、后台和未登录 401，失败恢复前一版本。
 6. 先配置 HTTP ACME 验证站点，再用服务器现有 Certbot 账号获取本域名证书。安装 [`video.tensorbytes.com.conf`](../nginx/video.tensorbytes.com.conf)，执行 `nginx -t` 后重载。证书自动续期后需 nginx reload hook。
@@ -26,7 +26,7 @@
 
 服务配置变更不由代码推送自动安装；本部署不启用海外站点的 CD 定时器。更新时重复导出、构建、校验和激活步骤，保留旧版本供回滚，不替换持久数据目录。
 
-服务器内存较小时，安装依赖先使用 `NODE_OPTIONS=--max-old-space-size=384 pnpm install --frozen-lockfile --network-concurrency=2 --child-concurrency=1`，构建单独执行并观察内存。安装过程连接中断时先核查原进程和服务器负载，再决定续装；不要同时启动重复安装或重启整台共享服务器。
+服务器内存较小时，构建 Node 堆限制为 384 MiB，安装并发为 2，禁止重复构建。当前国内服务器系统盘为 `/dev/vda`，临时构建单元使用 `MemoryHigh=450M`、`MemoryMax=640M`、`MemorySwapMax=0`、`CPUQuota=75%`，磁盘读写分别限制为 8 MiB/s、4 MiB/s 与各 200 IOPS，并设置 `OOMPolicy=kill` 和 15 分钟运行上限。这样即使构建超过限额，也只结束构建单元，保留 SSH 与原业务的资源。其他主机需先核对实际块设备再设置 I/O 限额。连接中断时先核查原进程和服务器负载，再决定续装；不要同时启动重复安装或重启整台共享服务器。
 
 ## 原生接口验收脚本
 
