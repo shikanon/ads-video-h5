@@ -20,7 +20,7 @@
 2. 用 `git archive <sha>` 导出已提交版本并上传，核对包哈希；`ops/release-revision.txt` 的 `export-subst` 将提交号带入构建源。
 3. 在独立目录以构建用户执行 `pnpm install --frozen-lockfile` 和 `VITE_BASE_PATH=/qingjian/ pnpm build`。环境不传入模型、OSS、邮件密钥，构建后将发布目录改为 root 拥有、只读。
 4. 按共用切换方案，从原生产服务的一致性快照迁移完整账号、账本、媒体和私有配置。`provider-models.json` 与匹配的 `admin-token`、管理员认证密钥保持 `0600`，OSS/邮件配置按原服务实际设置恢复。不要用本机开发数据替代生产快照，也不要只复制模型配置便公开空库。
-5. 将 [`qingjian-cn.service`](qingjian-cn.service) 和 [`activate-release`](activate-release) 安装到 systemd 与 `/usr/local/sbin/qingjian-cn-activate`。执行 `systemctl daemon-reload` 后，运行 `qingjian-cn-activate /opt/qingjian-cn/releases/<sha>`；脚本检查发布号、H5、后台和未登录 401，失败恢复前一版本。
+5. 将 [`qingjian-cn.service`](qingjian-cn.service) 和 [`activate-release`](activate-release) 安装到 systemd 与 `/usr/local/sbin/qingjian-cn-activate`。执行 `systemctl daemon-reload` 后，运行 `qingjian-cn-activate /opt/qingjian-cn/releases/<sha>`；脚本先检查原账号、积分和会话 JSON 已导入且运行用户可读取解析，拒绝空库或不完整导入，再检查发布号、H5、后台和未登录 401，失败恢复前一版本。
 6. 先配置 HTTP ACME 验证站点，再用服务器现有 Certbot 账号获取本域名证书。安装 [`video.tensorbytes.com.conf`](../nginx/video.tensorbytes.com.conf)，执行 `nginx -t` 后重载。证书自动续期后需 nginx reload hook。
 7. 从公网检查 `/qingjian/api/health` 的实际 SHA、`/qingjian/release.json`、未登录状态 401，再使用隔离验收账号验证签到、上传、原生识别和 Agent。检查原有站点仍健康。
 
