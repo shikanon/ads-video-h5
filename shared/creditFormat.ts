@@ -1,1 +1,6 @@
-export const formatPoints = (points: number) => new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(points);
+const pointsFormatter = new Intl.NumberFormat('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+export const formatPoints = (points: number) => pointsFormatter.format(points);
