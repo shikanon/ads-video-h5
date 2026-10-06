@@ -107,8 +107,9 @@ try {
     assert.equal(uploaded.uploadedMediaIds.length, 1);
     const media = uploaded.media.find(m => m.id === uploaded.uploadedMediaIds[0]);
     assert.equal(media.kind, kind);
-    assert.deepEqual(await readFile(await client.download(media.url)), await readFile(file));
-    assert.deepEqual(await readFile(await secondClient.download(media.url)), await readFile(file));
+    const protectedPath = apiPath + '/media/' + media.id;
+    assert.deepEqual(await readFile(await client.download(protectedPath)), await readFile(file));
+    assert.deepEqual(await readFile(await secondClient.download(protectedPath)), await readFile(file));
     if (kind === 'video') videoId = media.id;
   }
   record('nativeBinaryUploadsAndAuthenticatedDownloads', 'PNG, MP4, MP3 passed');

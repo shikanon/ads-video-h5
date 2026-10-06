@@ -22,7 +22,8 @@ test -x /usr/bin/ffprobe
 # The package store and release must share a filesystem for hardlinks. Copying
 # hundreds of packages can retain large native buffers on a host without swap.
 [[ $(stat -c %d "$release") == $(stat -c %d "$HOME") ]]
-pnpm install --frozen-lockfile --ignore-scripts --network-concurrency=2 --child-concurrency=1 --package-import-method=hardlink
+# Each pnpm worker has its own V8 heap; cap installation separately from tsc.
+NODE_OPTIONS=--max-old-space-size=192 pnpm install --frozen-lockfile --ignore-scripts --network-concurrency=2 --child-concurrency=1 --package-import-method=hardlink
 ffmpeg_binary=$(node -p 'require("path").join(require("path").dirname(require.resolve("ffmpeg-static/package.json")),"ffmpeg")')
 if [[ ! -e "$ffmpeg_binary" ]]; then ln -s /usr/bin/ffmpeg "$ffmpeg_binary"; fi
 "$ffmpeg_binary" -version >/dev/null
