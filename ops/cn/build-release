@@ -27,6 +27,6 @@ NODE_OPTIONS=--max-old-space-size=192 pnpm install --frozen-lockfile --ignore-sc
 ffmpeg_binary=$(node -p 'require("path").join(require("path").dirname(require.resolve("ffmpeg-static/package.json")),"ffmpeg")')
 if [[ ! -e "$ffmpeg_binary" ]]; then ln -s /usr/bin/ffmpeg "$ffmpeg_binary"; fi
 "$ffmpeg_binary" -version >/dev/null
-node -e 'require("esbuild").transformSync("const checked = true", {loader:"js"})'
+node -e 'require("node:module").createRequire(require.resolve("tsx/package.json"))("esbuild").transformSync("const checked = true", {loader:"js"})'
 VITE_BASE_PATH=/qingjian/ pnpm build
 node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("dist/release.json"));if(r.revision!==process.argv[1])process.exit(1)' "${release##*/}"
