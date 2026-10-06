@@ -11,7 +11,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 // credentials or cookies. This verifies native transport, not WeChat devices.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(root, 'apps/miniprogram/package.json'));
-const config = require('./miniprogram/config.js');
+const shippedConfig = require('./miniprogram/config.js');
+const isolatedApi = process.env.QINGJIAN_MINI_QA_ISOLATED_API;
+if (isolatedApi) assert.match(isolatedApi, /^http:\/\/127\.0\.0\.1:\d+\/api$/, 'Isolated QA must use a loopback-only backend.');
+const config = isolatedApi ? { ...shippedConfig, apiBase: isolatedApi, allowLocal: true } : shippedConfig;
 const project = JSON.parse(await readFile(path.join(root, 'apps/miniprogram/project.config.json')));
 const credentialsFile = process.env.QINGJIAN_MINI_QA_CREDENTIALS;
 if (!credentialsFile) throw new Error('Set QINGJIAN_MINI_QA_CREDENTIALS to a private JSON file for a dedicated QA account.');
@@ -21,12 +24,13 @@ assert.match(credentials.email, /^mini-deploy-[^@]+@example\.invalid$/);
 assert.equal(typeof credentials.password, 'string');
 assert.ok(credentials.password.length >= 24);
 const base = new URL(config.apiBase).origin;
-const h5Origin = process.env.QINGJIAN_MINI_QA_H5_ORIGIN || 'https://video.shikanon.com';
-assert.ok([base, 'https://video.shikanon.com'].includes(h5Origin), 'H5 QA must use a known Qingjian domain.');
+const h5Origin = process.env.QINGJIAN_MINI_QA_H5_ORIGIN || (isolatedApi ? base : 'https://video.shikanon.com');
+assert.ok((isolatedApi ? [base] : [base, 'https://video.shikanon.com']).includes(h5Origin), 'H5 QA must use the isolated backend or a known Qingjian domain.');
+const apiPath = new URL(config.apiBase).pathname;
 const expected = JSON.parse(await readFile(path.join(root, 'dist/release.json'))).revision;
 const { createClient } = require('./miniprogram/utils/api.js');
 const directory = await mkdtemp(path.join(tmpdir(), 'qingjian-mini-smoke-'));
-const report = { at: new Date().toISOString(), expectedRevision: expected, appid: project.appid, apiBase: config.apiBase, h5Origin, checks: {}, nativeDevice: 'not-tested' };
+const report = { at: new Date().toISOString(), environment: isolatedApi ? 'isolated-loopback' : h5Origin === base ? 'domestic-public' : 'shared-production', expectedRevision: expected, appid: project.appid, apiBase: config.apiBase, h5Origin, checks: {}, nativeDevice: 'not-tested' };
 const record = (key, value) => { report.checks[key] = value; console.log(JSON.stringify({ check: key, result: value })); };
 const deadline = ms => AbortSignal.timeout(ms);
 
@@ -65,15 +69,15 @@ function platform(origin = base, h5 = false) {
 }
 
 const client = createClient(platform(), config);
-const secondClient = createClient(platform(h5Origin, true), { ...config, apiBase: h5Origin + '/qingjian/api' });
+const secondClient = createClient(platform(h5Origin, true), { ...config, apiBase: h5Origin + apiPath });
 try {
   const health = await fetch(config.apiBase + '/health', { signal: deadline(15000) }).then(r => r.json());
   assert.equal(health.ok, true); assert.equal(health.revision, expected);
   assert.equal((await fetch(config.apiBase + '/state', { signal: deadline(15000) })).status, 401);
   assert.equal((await fetch(config.apiBase + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://invalid.example' }, body: '{}', signal: deadline(15000) })).status, 403);
-  const h5Health = await fetch(h5Origin + '/qingjian/api/health', { signal: deadline(15000) }).then(r => r.json());
+  const h5Health = await fetch(h5Origin + apiPath + '/health', { signal: deadline(15000) }).then(r => r.json());
   assert.equal(h5Health.revision, expected);
-  record('httpsRevisionAndUnauthenticatedIsolation', 'passed');
+  record(isolatedApi ? 'loopbackRevisionAndUnauthenticatedIsolation' : 'httpsRevisionAndUnauthenticatedIsolation', 'passed');
   const login = { email: credentials.email, password: credentials.password };
   const nativeLogin = await client.request('/api/auth/login', login), h5Login = await secondClient.request('/api/auth/login', login);
   assert.equal(h5Login.user.id, nativeLogin.user.id);
@@ -83,7 +87,7 @@ try {
   assert.equal((await secondClient.request('/api/state')).activeSessionId, state.activeSessionId);
   const fromH5 = await secondClient.request('/api/sessions', {});
   state = await client.request('/api/state'); assert.equal(state.activeSessionId, fromH5.activeSessionId);
-  record(h5Origin === base ? 'domesticOnlySessionSync' : 'existingH5AndNativeBidirectionalSessionSync', 'passed');
+  record(isolatedApi ? 'isolatedClientSessionSync' : h5Origin === base ? 'domesticOnlySessionSync' : 'existingH5AndNativeBidirectionalSessionSync', 'passed');
   const before = await client.request('/api/credits');
   const claim = await client.request('/api/credits/check-in', { date: before.wallet.checkInDate });
   const duplicate = await secondClient.request('/api/credits/check-in', { date: before.wallet.checkInDate });
@@ -103,8 +107,8 @@ try {
     assert.equal(uploaded.uploadedMediaIds.length, 1);
     const media = uploaded.media.find(m => m.id === uploaded.uploadedMediaIds[0]);
     assert.equal(media.kind, kind);
-    assert.deepEqual(await readFile(await client.download('/qingjian/api/media/' + media.id)), await readFile(file));
-    assert.deepEqual(await readFile(await secondClient.download('/qingjian/api/media/' + media.id)), await readFile(file));
+    assert.deepEqual(await readFile(await client.download(media.url)), await readFile(file));
+    assert.deepEqual(await readFile(await secondClient.download(media.url)), await readFile(file));
     if (kind === 'video') videoId = media.id;
   }
   record('nativeBinaryUploadsAndAuthenticatedDownloads', 'PNG, MP4, MP3 passed');

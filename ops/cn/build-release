@@ -10,6 +10,7 @@ export XDG_CACHE_HOME=$HOME/.cache
 export PATH=/opt/qingjian-cn/node/bin:/opt/qingjian-cn/pnpm/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
 export NODE_OPTIONS=--max-old-space-size=384
 export HYPERFRAMES_SKIP_SKILLS=1
+export PNPM_MAX_WORKERS=1
 exec 9>"$HOME/build.lock"
 flock -n 9 || { echo 'Another Qingjian build is running.' >&2; exit 1; }
 cd "$release"
@@ -18,7 +19,10 @@ cd "$release"
 # second binary; esbuild's platform package is verified by the frontend build.
 test -x /usr/bin/ffmpeg
 test -x /usr/bin/ffprobe
-pnpm install --frozen-lockfile --ignore-scripts --network-concurrency=2 --child-concurrency=1
+# The package store and release must share a filesystem for hardlinks. Copying
+# hundreds of packages can retain large native buffers on a host without swap.
+[[ $(stat -c %d "$release") == $(stat -c %d "$HOME") ]]
+pnpm install --frozen-lockfile --ignore-scripts --network-concurrency=2 --child-concurrency=1 --package-import-method=hardlink
 ffmpeg_binary=$(node -p 'require("path").join(require("path").dirname(require.resolve("ffmpeg-static/package.json")),"ffmpeg")')
 if [[ ! -e "$ffmpeg_binary" ]]; then ln -s /usr/bin/ffmpeg "$ffmpeg_binary"; fi
 "$ffmpeg_binary" -version >/dev/null
