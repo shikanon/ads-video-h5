@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { createCipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -37,13 +37,16 @@ export async function startCreditServer() {
   const apiKeyCiphertext = [iv, cipher.getAuthTag(), encrypted].map(v => v.toString('base64url')).join('.');
   const users = [{ id: 'ordinary', email: 'ordinary@example.test', displayName: '普通用户' }, { id: 'special', email: 'shikanon@example.test', displayName: 'shikanon' }];
   const passwordHash = await hashPassword(password), createdAt = new Date().toISOString();
+  // Pre-seeded verification exercises real registration without sending email.
+  const registrationEmail = 'new@example.test', verificationCode = '123456', verificationSalt = randomBytes(16).toString('hex');
+  const verification = { email: registrationEmail, salt: verificationSalt, hash: scryptSync(verificationCode, Buffer.from(verificationSalt, 'hex'), 32).toString('hex'), sentAt: Date.now(), expiresAt: Date.now() + 10 * 60_000, attempts: 0 };
   const models = [{ id: 'text', name: 'QA text', kind: 'text', provider: 'ark', modelId: defaultTokenPrices()[0].modelId, baseUrl: providerBase, apiKeyCiphertext, enabled: true }, { id: 'understanding', name: 'QA ASR', kind: 'understanding', provider: 'ark', modelId: defaultTokenPrices()[3].modelId, baseUrl: providerBase, apiKeyCiphertext, enabled: true }];
   const session = { id: 'ordinary-session', ownerId: 'ordinary', title: '新会话', modelId: 'text', createdAt, updatedAt: createdAt, messages: [{ id: 'failed-message', role: 'user', text: '你好', attachmentIds: [], jobId: 'failed-job', createdAt }], plan: null };
   const seeded = { sessions: [session], activeSessionId: session.id, media: [{ id: 'video-fixture', ownerId: 'ordinary', name: '视频', kind: 'video', mimeType: 'video/mp4', url: '/api/media/video-fixture', createdAt }, { id: 'avatar-fixture', ownerId: 'ordinary', name: '作者', kind: 'image', mimeType: 'image/png', url: '/api/media/avatar-fixture', createdAt, character: { role: 'reference' } }], artifacts: [], jobs: [{ id: 'failed-job', ownerId: 'ordinary', sessionId: session.id, messageId: 'failed-message', kind: 'chat', status: 'failed', createdAt, updatedAt: createdAt }], settings: { language: 'zh-CN', chatBackground: null }, profiles: { ordinary: { activeSessionId: session.id, settings: { language: 'zh-CN', chatBackground: null, defaultModelId: 'text' } } }, artifactFiles: {}, narrationBySession: {}, bgmBySession: {} };
   await Promise.all([
     writeFile(path.join(directory, 'admin-token'), modelToken, { mode: 0o600 }),
     writeFile(path.join(directory, 'provider-models.json'), JSON.stringify({ version: 1, textModelPresetsVersion: 1, defaultTextModelId: 'text', models }), { mode: 0o600 }),
-    writeFile(path.join(directory, 'auth.json'), JSON.stringify({ users: users.map(u => ({ ...u, passwordHash, createdAt })), sessions: [], verifications: [] }), { mode: 0o600 }),
+    writeFile(path.join(directory, 'auth.json'), JSON.stringify({ users: users.map(u => ({ ...u, passwordHash, createdAt })), sessions: [], verifications: [verification] }), { mode: 0o600 }),
     writeFile(path.join(directory, 'app-state.json'), JSON.stringify(seeded), { mode: 0o600 }),
   ]);
   const reserve = createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening');
@@ -69,5 +72,5 @@ export async function startCreditServer() {
     provider.closeAllConnections(); await new Promise<void>(r => provider.close(() => r()));
     await rm(directory, { recursive: true, force: true });
   }
-  return { base, directory, child, providerState, password, adminPassword, login, request, close };
+  return { base, directory, child, providerState, password, adminPassword, registrationEmail, verificationCode, login, request, close };
 }

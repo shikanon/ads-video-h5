@@ -2,6 +2,7 @@ import type { TokenPrice, TokenUsage } from '../shared/creditTypes';
 
 export const POINT_MICROS = 1_000_000;
 export const DAILY_POINTS = 1000;
+export const REGISTRATION_POINTS = 2000;
 export const SPECIAL_INITIAL_POINTS = 1_000_000;
 export const POINT_VALUE_RMB = 0.001;
 export const PRICING_SOURCE = 'https://docs.volcengine.com/docs/ark/model-pricing?lang=zh';

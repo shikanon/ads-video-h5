@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  Coins,
   CornerDownLeft,
   Film,
   Image as ImageIcon,
@@ -41,10 +42,13 @@ import { MAX_MEDIA_UPLOAD_BYTES } from "./uploadLimits";
 import AssistantReply from "./AssistantReply";
 import HotResearchCard from "./HotResearchCard";
 import VoiceInput from './VoiceInput';
-import CreditPanel, { fetchCredits } from './CreditPanel';
+import { fetchCredits } from './creditApi';
+import type { CreditWallet } from '../shared/creditTypes';
+import './credits.css';
 import { formatPoints } from '../shared/creditFormat';
 import { isActiveJob } from './jobStatus';
 const AvatarPanel = lazy(() => import('./AvatarPanel'));
+const CreditPage = lazy(() => import('./CreditPage'));
 
 type Page =
   | "chat"
@@ -53,6 +57,7 @@ type Page =
   | "avatars"
   | "films"
   | "settings"
+  | "credits"
   | "profile"
   | "terms"
   | "privacy"
@@ -81,6 +86,7 @@ const labels = {
     avatars: "作者形象",
     films: "成片库",
     settings: "设置",
+    credits: "我的积分",
     profile: "用户中心",
     terms: "用户协议",
     privacy: "隐私政策",
@@ -126,6 +132,7 @@ const labels = {
     avatars: "Author avatar",
     films: "Exports",
     settings: "Settings",
+    credits: "Credits",
     profile: "Profile",
     terms: "Terms",
     privacy: "Privacy",
@@ -171,6 +178,7 @@ const menuPages: Page[] = [
   "avatars",
   "films",
   "history",
+  "credits",
   "profile",
   "settings",
 ];
@@ -655,6 +663,9 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
     stateRef.current = next;
     setState(next);
   }, []);
+  const updateCredits = useCallback((wallet: CreditWallet) => {
+    if (stateRef.current) apply({ ...stateRef.current, credits: wallet });
+  }, [apply]);
   const refresh = useCallback(async () => {
     try {
       apply(await api("/api/state"));
@@ -676,11 +687,11 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
         if (stateRef.current && !controller.signal.aborted) apply({ ...stateRef.current, credits: result.wallet });
       } catch { /* Keep the last balance; the server still enforces admission. */ }
     };
-    const timer = window.setTimeout(() => void update(), Math.max(1000, Date.parse(state.credits.nextGrantAt) - Date.now() + 1000));
+    const timer = window.setTimeout(() => void update(), Math.max(1000, Date.parse(state.credits.nextCheckInAt) - Date.now() + 1000));
     const foreground = () => void update();
     window.addEventListener('focus', foreground); document.addEventListener('visibilitychange', foreground);
     return () => { controller.abort(); window.clearTimeout(timer); window.removeEventListener('focus', foreground); document.removeEventListener('visibilitychange', foreground); };
-  }, [state?.credits?.nextGrantAt, apply]);
+  }, [state?.credits?.nextCheckInAt, apply]);
   useEffect(() => {
     if (
       !state?.jobs.some((j) => j.status === "queued" || j.status === "running")
@@ -1234,9 +1245,9 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                 </div>
               ) : null}
               <div className="composer">
-                {state?.credits ? <button type="button" className={`credit-chip${state.credits.balance <= 0 ? ' is-low' : ''}`} onClick={() => nav('settings')}>
+                {state?.credits ? <button type="button" className={`credit-chip${state.credits.balance <= 0 ? ' is-low' : ''}`} onClick={() => nav('credits')}>
                   {locale === 'zh-CN' ? `积分 ${formatPoints(state.credits.balance)}` : `${formatPoints(state.credits.balance)} points`}
-                  {state.credits.balance <= 0 ? locale === 'zh-CN' ? ' · 积分不足，已开始任务继续完成' : ' · Low balance; accepted tasks continue' : ''}
+                  {state.credits.balance <= 0 ? locale === 'zh-CN' ? ' · 积分不足，查看签到奖励' : ' · Low balance; view daily gift' : ''}
                 </button> : null}
                 {attachments.length ? (
                   <div className="composer-attachments">
@@ -1553,9 +1564,10 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
             ) : null}
           </section>
         ) : null}
+        {page === 'credits' && state?.credits ? <Suspense fallback={<p className="subpage-content">{locale === 'zh-CN' ? '正在打开我的积分…' : 'Opening credits…'}</p>}><CreditPage wallet={state.credits} endpoint={apiPath('/api/credits')} locale={locale} onWallet={updateCredits} /></Suspense> : null}
         {page === "settings" ? (
           <section className="subpage-content settings-page">
-            {state?.credits ? <CreditPanel wallet={state.credits} endpoint={apiPath('/api/credits')} locale={locale} /> : null}
+            {state?.credits ? <button type="button" className="setting-credit-link" onClick={() => nav('credits')}><Coins size={20} /><span><strong>{t.credits}</strong><small>{locale === 'zh-CN' ? '每日签到 · 领取积分 · 查看明细' : 'Daily gifts · balance · history'}</small></span><ChevronRight size={18} /></button> : null}
             <div className="setting-group">
               <h2>{t.model}</h2>
               <select
@@ -1947,6 +1959,7 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
                       <UserRound size={19} />,
                       <Film size={19} />,
                       <Clock3 size={19} />,
+                      <Coins size={19} />,
                       <UserRound size={19} />,
                       <Settings2 size={19} />,
                     ][index]

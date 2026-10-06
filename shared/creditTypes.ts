@@ -1,10 +1,15 @@
 export interface CreditWallet {
   balance: number;
   dailyGrant: number;
+  registrationGrant: number;
   pointValueRmb: number;
   special: boolean;
   lastGrantDate: string;
   nextGrantAt: string;
+  checkInDate: string;
+  canCheckIn: boolean;
+  lastCheckInDate: string | null;
+  nextCheckInAt: string;
   totalSpent: number;
 }
 
@@ -30,7 +35,7 @@ export interface TokenUsage {
 export interface CreditEntry {
   id: string;
   userId: string;
-  kind: 'daily_grant' | 'special_grant' | 'model_usage' | 'usage_pending';
+  kind: 'signup_grant' | 'daily_checkin' | 'daily_grant' | 'special_grant' | 'model_usage' | 'usage_pending';
   at: string;
   points: number;
   balance: number;
@@ -53,6 +58,14 @@ export interface CreditAdminState {
   accounts: CreditAccount[];
   prices: TokenPrice[];
   dailyGrant: number;
+  registrationGrant: number;
   pointValueRmb: number;
   specialInitial: number;
+}
+
+export interface CreditCheckInResult {
+  wallet: CreditWallet;
+  claimed: boolean;
+  points: number;
+  date: string;
 }

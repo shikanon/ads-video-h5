@@ -5,7 +5,7 @@ import { api } from './api';
 import './credits.css';
 
 interface Ledger { wallet: CreditWallet; entries: CreditEntry[]; total: number; }
-const labels = { daily_grant: '每日赠送', special_grant: '特殊账户额度', model_usage: '模型调用', usage_pending: '用量待核对' };
+const labels = { signup_grant: '注册赠送', daily_checkin: '每日签到', daily_grant: '每日赠送', special_grant: '特殊账户额度', model_usage: '模型调用', usage_pending: '用量待核对' };
 const priceFields = { input: '输入', cachedInput: '缓存输入', output: '输出', audioInput: '音频输入', cachedAudioInput: '缓存音频输入' } as const;
 export default function CreditAdmin({ token }: { token: string }) {
   const [state, setState] = useState<CreditAdminState | null>(null), [search, setSearch] = useState(''), [form, setForm] = useState<TokenPrice | null>(null);
@@ -44,8 +44,8 @@ export default function CreditAdmin({ token }: { token: string }) {
     finally { setBusy(false); }
   }
   return <div className="credit-admin">
-    <div className="admin-heading"><div><h1>用户与积分</h1><p>每日免费 {formatPoints(state?.dailyGrant ?? 1000)} 积分 · 1 积分 = ¥0.001 · 余额可累计</p></div></div>
-    <p className="credit-admin-policy">特殊账户初始额度 {formatPoints(state?.specialInitial ?? 1000000)} 积分。余额 ≤ 0 时拦截新指令；已接收任务继续执行，可产生负余额。每日赠送按北京时间到账。</p>
+    <div className="admin-heading"><div><h1>用户与积分</h1><p>注册赠送 {formatPoints(state?.registrationGrant ?? 2000)} · 每日签到领取 {formatPoints(state?.dailyGrant ?? 1000)} 积分 · 1 积分 = ¥0.001</p></div></div>
+    <p className="credit-admin-policy">特殊账户初始额度 {formatPoints(state?.specialInitial ?? 1000000)} 积分。余额 ≤ 0 时拦截新指令；已接收任务继续执行，可产生负余额。每天按北京时间签到并领取一次，未签到的日期不补领；已领取积分可累计。</p>
     {error ? <div className="admin-alert" role="alert">{error}</div> : null}
     {notice ? <div className="admin-notice" role="status">{notice}</div> : null}
     <section className="admin-panel">

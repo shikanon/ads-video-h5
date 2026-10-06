@@ -62,6 +62,7 @@
 .auth-form-visual p{font-size:22px;font-weight:600;margin:10px 0 0}
 .auth-form-section{max-width:410px;width:100%;justify-self:center}
 .auth-form-intro{margin-bottom:34px}
+.auth-welcome-gift{margin-top:16px;padding:10px 14px;border-radius:10px;background:#fff3e5;border:1px solid #f5e2c7;color:#9c6531;font-size:12px;line-height:1.6}
 .auth-form-intro h1{font-size:42px;line-height:1.18;letter-spacing:-.055em;margin:0 0 12px}
 .auth-form-intro p{color:#8c8d96;font-size:16px;margin:0}
 .auth-form{display:flex;flex-direction:column;gap:18px}

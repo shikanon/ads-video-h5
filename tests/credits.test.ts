@@ -36,21 +36,55 @@ test('invalid token metadata and invalid rate configuration cannot fabricate or 
   for (const value of [{ ...price, input: -.1 }, { ...price, cachedInput: 7 }, { ...price, output: .0001 }, { ...price, modelId: '../injected' }, { ...price, cachedAudioInput: 1 }]) assert.throws(() => validateTokenPrice(value));
   assert.throws(() => tokenCostMicros({ ...usage, audioInput: 1 }, price), /音频/);
 });
-test('Beijing midnight grants once, accumulated balance and negative debt survive restart', async t => {
+test('registration grants 2000 once; reads and missed Beijing days never award points automatically', async t => {
   const f = await fixture(t);
-  assert.equal((await f.credits.snapshot('ordinary')).balance, 1000);
-  await f.credits.recordUsage('ordinary', 'accepted', price.modelId, 'big', { ...usage, input: 0, cachedInput: 0, output: 50000 }, price);
+  const initial = await f.credits.snapshot('ordinary');
+  assert.equal(initial.balance, 2000); assert.equal(initial.registrationGrant, 2000);
+  assert.equal(initial.canCheckIn, true); assert.equal(initial.lastCheckInDate, null);
+  assert.equal(initial.checkInDate, '2026-10-06');
+  assert.equal((await f.credits.history('ordinary')).entries[0].kind, 'signup_grant');
+  await f.credits.recordUsage('ordinary', 'accepted', price.modelId, 'big', { ...usage, input: 0, cachedInput: 0, output: 100000 }, { ...price, output: 25 });
   assert.equal((await f.credits.snapshot('ordinary')).balance, -500);
   await assert.rejects(() => f.credits.admit('ordinary'), CreditError);
   f.advance(60000);
+  assert.equal((await f.credits.history('ordinary')).wallet.balance, -500);
+  await assert.rejects(() => f.credits.admit('ordinary'), CreditError);
+  const claimed = await f.credits.checkIn('ordinary', '2026-10-07');
+  assert.equal(claimed.claimed, true); assert.equal(claimed.points, 1000);
   assert.equal((await f.credits.snapshot('ordinary')).balance, 500);
-  assert.equal((await f.credits.snapshot('ordinary')).balance, 500);
-  assert.equal((await f.credits.snapshot('ordinary')).nextGrantAt, '2026-10-08T00:00:00+08:00');
+  assert.equal((await f.credits.snapshot('ordinary')).canCheckIn, false);
+  assert.equal((await f.credits.snapshot('ordinary')).nextCheckInAt, '2026-10-08T00:00:00+08:00');
+  await f.credits.admit('ordinary');
   const restarted = createCredits(f.directory, { now: f.now }); await restarted.load(users);
   assert.equal((await restarted.snapshot('ordinary')).balance, 500);
+  assert.equal((await restarted.checkIn('ordinary', '2026-10-07')).claimed, false);
   f.advance(3 * 86400000);
-  assert.equal((await restarted.snapshot('ordinary')).balance, 3500);
+  assert.equal((await restarted.snapshot('ordinary')).balance, 500);
+  assert.equal((await restarted.snapshot('ordinary')).canCheckIn, true);
+  assert.equal((await restarted.checkIn('ordinary', '2026-10-10')).wallet.balance, 1500);
   assert.equal((await stat(path.join(f.directory, 'credits.json'))).mode & 0o777, 0o600);
+});
+test('parallel claims and a lost receipt retry award one durable daily reward per owner', async t => {
+  const f = await fixture(t);
+  const receipts = await Promise.all(Array.from({ length: 30 }, () => f.credits.checkIn('ordinary', '2026-10-06')));
+  assert.equal(receipts.filter(r => r.claimed).length, 1);
+  assert.equal(receipts.reduce((sum, r) => sum + r.points, 0), 1000);
+  assert.equal((await f.credits.snapshot('ordinary')).balance, 3000);
+  assert.equal((await f.credits.history('ordinary')).entries.filter(e => e.kind === 'daily_checkin').length, 1);
+  assert.equal((await f.credits.snapshot('special')).canCheckIn, true);
+  const restart = createCredits(f.directory, { now: f.now }); await restart.load(users);
+  const retry = await restart.checkIn('ordinary', '2026-10-06');
+  assert.equal(retry.claimed, false); assert.equal(retry.points, 0); assert.equal(retry.wallet.balance, 3000);
+  assert.equal((await restart.checkIn('special', '2026-10-06')).wallet.balance, 1001000);
+});
+test('a card opened before Beijing midnight cannot claim a different day silently', async t => {
+  const f = await fixture(t), cardDate = (await f.credits.snapshot('ordinary')).checkInDate;
+  f.advance(60000);
+  await assert.rejects(() => f.credits.checkIn('ordinary', cardDate), (error: unknown) => error instanceof CreditError && error.status === 409 && error.code === 'CHECK_IN_DAY_CHANGED');
+  assert.equal((await f.credits.snapshot('ordinary')).balance, 2000);
+  assert.equal((await f.credits.checkIn('ordinary', '2026-10-07')).wallet.balance, 3000);
+  f.advance(86400000);
+  assert.equal((await f.credits.checkIn('ordinary', '2026-10-08')).wallet.balance, 4000);
 });
 test('existing shikanon gets exactly one million; toggling special or registering the nickname cannot mint more', async t => {
   const f = await fixture(t);
@@ -63,7 +97,7 @@ test('existing shikanon gets exactly one million; toggling special or registerin
   assert.equal((await f.credits.snapshot('ordinary')).balance, 1000000);
   const restarted = createCredits(f.directory, { now: f.now }); await restarted.load([...users, { id: 'impersonator', displayName: 'shikanon', email: 'another@example.test' }]);
   assert.equal((await restarted.readiness()).initialSpecialAccountApplied, true, 'the uniquely matched email account remains the target');
-  assert.equal((await restarted.snapshot('impersonator')).balance, 1000);
+  assert.equal((await restarted.snapshot('impersonator')).balance, 2000);
   assert.equal((await restarted.snapshot('special')).balance, 999993.4);
 });
 test('bootstrap receipt does not misidentify ambiguous names or grant a later same-name registration', async t => {
@@ -72,11 +106,11 @@ test('bootstrap receipt does not misidentify ambiguous names or grant a later sa
   assert.deepEqual(await credits.readiness(), { ready: true, initialSpecialAccountApplied: false });
   const restart = createCredits(directory); await restart.load([users[1]]);
   assert.equal((await restart.readiness()).initialSpecialAccountApplied, false);
-  assert.equal((await restart.snapshot('special')).balance, 1000);
+  assert.equal((await restart.snapshot('special')).balance, 2000);
 });
 test('an exact zero balance blocks new instructions just like a negative balance', async t => {
   const f = await fixture(t);
-  await f.credits.recordUsage('ordinary', 'task', price.modelId, 'zero', { input: 1000, output: 0, cachedInput: 0, audioInput: 0, cachedAudioInput: 0 }, { ...price, input: 1000 });
+  await f.credits.recordUsage('ordinary', 'task', price.modelId, 'zero', { input: 2000, output: 0, cachedInput: 0, audioInput: 0, cachedAudioInput: 0 }, { ...price, input: 1000 });
   assert.equal((await f.credits.snapshot('ordinary')).balance, 0);
   await assert.rejects(() => f.credits.admit('ordinary'), (error: unknown) => error instanceof CreditError && error.code === 'INSUFFICIENT_CREDITS');
 });
@@ -84,11 +118,11 @@ test('concurrent calls persist exact debits and separate users; repeated provide
   const f = await fixture(t);
   await Promise.all(Array.from({ length: 30 }, (_, i) => f.credits.recordUsage(i % 2 ? 'special' : 'ordinary', 'task', price.modelId, 'request-' + i, usage, price)));
   await f.credits.recordUsage('ordinary', 'other-task', price.modelId, 'request-0', usage, price);
-  assert.equal((await f.credits.snapshot('ordinary')).balance, 901);
+  assert.equal((await f.credits.snapshot('ordinary')).balance, 1901);
   assert.equal((await f.credits.snapshot('special')).balance, 999901);
   assert.equal((await f.credits.history('ordinary')).total, 16);
   const restarted = createCredits(f.directory, { now: f.now }); await restarted.load(users);
-  assert.equal((await restarted.snapshot('ordinary')).balance, 901);
+  assert.equal((await restarted.snapshot('ordinary')).balance, 1901);
 });
 test('frozen model prices preserve historical charges, unknown models stop before upstream', async t => {
   const f = await fixture(t);
@@ -121,7 +155,7 @@ test('SSE parses split UTF-8, CRLF and final cumulative usage without buffering 
       assert.ok(index < raw.length, 'response returns before the final SSE event');
       assert.equal(await response.text(), raw.toString());
     });
-    assert.equal((await f.credits.snapshot('ordinary')).balance, 993.4); assert.equal((await f.credits.history('ordinary')).total, 2);
+    assert.equal((await f.credits.snapshot('ordinary')).balance, 1993.4); assert.equal((await f.credits.history('ordinary')).total, 2);
   } finally { globalThis.fetch = original; }
 });
 test('Responses API final usage is charged and non-model requests stay exempt', async t => {
@@ -132,7 +166,7 @@ test('Responses API final usage is charged and non-model requests stay exempt', 
       await (await jobFetch('https://provider.test/responses', { method: 'POST', body: JSON.stringify({ model: price.modelId }) })).text();
       await (await jobFetch('https://provider.test/search', { method: 'POST', body: '{}' })).text();
     });
-    assert.equal((await f.credits.snapshot('ordinary')).balance, 993.4);
+    assert.equal((await f.credits.snapshot('ordinary')).balance, 1993.4);
   } finally { globalThis.fetch = original; }
 });
 test('missing usage and unpartitioned audio are flagged, never estimated from text; failed requests do not debit', async t => {
@@ -142,7 +176,7 @@ test('missing usage and unpartitioned audio are flagged, never estimated from te
   try {
     await call(); response = new Response('{"id":"audio","usage":{"prompt_tokens":1000,"completion_tokens":10}}'); await call(true);
     response = new Response('{"error":"unauthorized"}', { status: 401 }); await call();
-    const history = await f.credits.history('ordinary'); assert.equal(history.wallet.balance, 1000); assert.equal(history.total, 3);
+    const history = await f.credits.history('ordinary'); assert.equal(history.wallet.balance, 2000); assert.equal(history.total, 3);
     assert.equal(history.entries[0].kind, 'usage_pending'); assert.match(history.entries[0].detail!, /音频/);
   } finally { globalThis.fetch = original; }
 });
@@ -153,7 +187,7 @@ test('real Pi transport charges every tool turn, completes after balance becomes
     const payload = JSON.parse(String(init?.body)); assert.equal(payload.stream_options.include_usage, true);
     const name = ++calls === 1 ? 'lookup' : 'submit';
     const base = { id: 'pi-' + calls, model: price.modelId, object: 'chat.completion.chunk', created: 1 };
-    const events = [{ ...base, choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call-' + calls, type: 'function', function: { name, arguments: '{}' } }] }, finish_reason: null }] }, { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 1000, completion_tokens: 40000, prompt_tokens_details: { cached_tokens: 500 } } }];
+    const events = [{ ...base, choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call-' + calls, type: 'function', function: { name, arguments: '{}' } }] }, finish_reason: null }] }, { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 1000, completion_tokens: 80000, prompt_tokens_details: { cached_tokens: 500 } } }];
     return new Response(events.map(e => 'data: ' + JSON.stringify(e) + '\n\n').join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
   };
   try {
@@ -165,13 +199,14 @@ test('real Pi transport charges every tool turn, completes after balance becomes
       agent.finishTurn = () => submitted ? { action: 'end' } : undefined;
       await agent.prompt('执行任务');
     });
-    assert.equal(submitted, true); assert.equal(calls, 2); assert.equal((await f.credits.snapshot('ordinary')).balance, -1407.2);
+    assert.equal(submitted, true); assert.equal(calls, 2); assert.equal((await f.credits.snapshot('ordinary')).balance, -2807.2);
     await assert.rejects(() => f.credits.admit('ordinary'), (e: unknown) => e instanceof CreditError && e.status === 402);
   } finally { globalThis.fetch = original; }
 });
 test('voice admission survives a negative balance but cannot be stolen, changed, replayed or used after expiry', async t => {
   const f = await fixture(t), taskId = await f.credits.admit('ordinary');
-  await f.credits.recordUsage('ordinary', taskId, price.modelId, 'voice-cost', { ...usage, input: 0, cachedInput: 0, output: 50000 }, price);
+  await f.credits.recordUsage('ordinary', taskId, price.modelId, 'voice-cost', { ...usage, input: 0, cachedInput: 0, output: 100000 }, price);
+  assert.equal((await f.credits.snapshot('ordinary')).balance, -1000);
   const ticket = await f.credits.voiceTicket('ordinary', taskId, '制作新闻视频');
   await assert.rejects(() => f.credits.admit('special', '制作新闻视频', ticket), /凭证/);
   await assert.rejects(() => f.credits.admit('ordinary', '制作另一个视频', ticket), /凭证/);
@@ -188,7 +223,55 @@ test('corrupt ledger cannot reset balances and failed atomic writes do not advan
   await rm(file); await mkdir(file);
   await assert.rejects(() => f.credits.recordUsage('ordinary', 'task', price.modelId, 'failed-write', usage, price));
   await rm(file, { recursive: true }); await writeFile(file, backup);
-  assert.equal((await f.credits.snapshot('ordinary')).balance, 1000);
+  assert.equal((await f.credits.snapshot('ordinary')).balance, 2000);
   await f.credits.recordUsage('ordinary', 'task', price.modelId, 'failed-write', usage, price);
-  assert.equal((await f.credits.snapshot('ordinary')).balance, 993.4);
+  assert.equal((await f.credits.snapshot('ordinary')).balance, 1993.4);
+});
+test('failed persistence does not mark a check-in claimed or lose its retry', async t => {
+  const f = await fixture(t), file = path.join(f.directory, 'credits.json');
+  const backup = await readFile(file, 'utf8'); await rm(file); await mkdir(file);
+  await assert.rejects(() => f.credits.checkIn('ordinary', '2026-10-06'));
+  await rm(file, { recursive: true }); await writeFile(file, backup);
+  const before = await f.credits.snapshot('ordinary');
+  assert.equal(before.balance, 2000); assert.equal(before.canCheckIn, true);
+  assert.equal((await f.credits.checkIn('ordinary', '2026-10-06')).wallet.balance, 3000);
+});
+test('v1 migration preserves balances, usage deduplication, prices and already-granted days without offline backfill', async t => {
+  const f = await fixture(t), file = path.join(f.directory, 'credits.json');
+  await f.credits.recordUsage('ordinary', 'existing-job', price.modelId, 'existing-response', usage, price);
+  await f.credits.setPrice({ ...price, output: 20 });
+  const saved = JSON.parse(await readFile(file, 'utf8'));
+  saved.version = 1;
+  saved.wallets = Object.fromEntries(Object.entries(saved.wallets).map(([id, value]) => {
+    const w = value as any;
+    return [id, { balanceMicros: id === 'ordinary' ? 993.4 * POINT_MICROS : w.balanceMicros, spentMicros: w.spentMicros, special: w.special, specialGranted: w.specialGranted, lastGrantDate: '2026-10-06' }];
+  }));
+  saved.entries = saved.entries.map((e: any) => e.kind === 'signup_grant' ? { ...e, kind: 'daily_grant', points: 1000, balance: 1000 } : e.kind === 'special_grant' ? { ...e, points: 999000 } : e.userId === 'ordinary' ? { ...e, balance: e.balance - 1000 } : e);
+  await writeFile(file, JSON.stringify(saved));
+  const migrated = createCredits(f.directory, { now: f.now }); await migrated.load(users);
+  assert.equal((await migrated.snapshot('ordinary')).balance, 993.4);
+  assert.equal((await migrated.checkIn('ordinary', '2026-10-06')).claimed, false);
+  assert.equal((await migrated.snapshot('special')).balance, 1000000);
+  assert.equal((await migrated.price(price.modelId)).output, 20);
+  await migrated.recordUsage('ordinary', 'existing-job', price.modelId, 'existing-response', usage, price);
+  assert.equal((await migrated.snapshot('ordinary')).balance, 993.4);
+  const disk = JSON.parse(await readFile(file, 'utf8'));
+  assert.equal(disk.version, 2); assert.equal(disk.wallets.ordinary.initialGrantPoints, 1000);
+  assert.deepEqual(disk.entries, saved.entries); assert.deepEqual(disk.seen, saved.seen);
+  f.advance(3 * 86400000);
+  assert.equal((await migrated.snapshot('ordinary')).balance, 993.4);
+  assert.equal((await migrated.checkIn('ordinary', '2026-10-09')).wallet.balance, 1993.4);
+  await migrated.setSpecial('ordinary', true);
+  assert.equal((await migrated.snapshot('ordinary')).balance, 1000993.4, 'legacy initial allowance remains 1000 when topping up');
+  await migrated.setSpecial('ordinary', false); await migrated.setSpecial('ordinary', true);
+  assert.equal((await migrated.snapshot('ordinary')).balance, 1000993.4);
+});
+test('invalid persisted check-in dates and registration allowances fail closed', async t => {
+  const f = await fixture(t), file = path.join(f.directory, 'credits.json');
+  const saved = JSON.parse(await readFile(file, 'utf8'));
+  for (const patch of [{ lastCheckInDate: '2026-02-30' }, { lastCheckInDate: 'yesterday' }, { initialGrantPoints: 1_000_000 }]) {
+    const corrupt = structuredClone(saved); Object.assign(corrupt.wallets.ordinary, patch);
+    await writeFile(file, JSON.stringify(corrupt));
+    await assert.rejects(() => createCredits(f.directory).load(users), /积分账本/);
+  }
 });

@@ -142,7 +142,7 @@ export default function Auth() {
       </main> : <main className="auth-form-layout">
         <div className="auth-form-visual"><img src={heroImage} alt="阳光下的地中海海岸风景" /><div><span>轻剪.</span><p>好视频，从一句话开始。</p></div></div>
         <section className="auth-form-section">
-          <div className="auth-form-intro"><h1>{screen === 'login' ? '欢迎回来' : '创建轻剪帐号'}</h1><p>{screen === 'login' ? '继续用对话，剪出好视频。' : '加入轻剪，开启你的创作之旅。'}</p></div>
+          <div className="auth-form-intro"><h1>{screen === 'login' ? '欢迎回来' : '创建轻剪帐号'}</h1><p>{screen === 'login' ? '继续用对话，剪出好视频。' : '加入轻剪，开启你的创作之旅。'}</p>{screen === 'register' ? <div className="auth-welcome-gift">注册即送 2,000 积分，开始你的第一支视频。</div> : null}</div>
           <form onSubmit={submit} className="auth-form">
             {screen === 'register' ? <label><span>显示名称</span><div className="auth-input"><UserRound size={19} /><input autoComplete="name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="怎么称呼你" required maxLength={40} /></div></label> : null}
             <label><span>邮箱地址</span><div className="auth-input"><Mail size={19} /><input type="email" autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setVerificationCode(''); setCodeStatus(''); setResendAt(0); }} placeholder="name@example.com" required maxLength={254} /></div></label>

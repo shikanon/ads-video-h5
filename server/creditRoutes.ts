@@ -13,6 +13,10 @@ export function mountCreditRoutes(app: Express, credits: Credits) {
     const { offset, limit } = pagination(request.query);
     response.set('Cache-Control', 'no-store').json(await credits.history(userOf(request).id, offset, limit));
   });
+  app.post('/api/credits/check-in', async (request, response) => {
+    if (typeof request.body?.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(request.body.date)) return response.status(400).json({ error: '请提供当前签到日期。' });
+    response.set('Cache-Control', 'no-store').json(await credits.checkIn(userOf(request).id, request.body.date));
+  });
 }
 export function mountCreditAdminRoutes(app: Express, credits: Credits, admin: AdminAuth, users: () => PublicUser[]) {
   const router = Router();

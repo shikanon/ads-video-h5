@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import express from 'express';
+import express, { type ErrorRequestHandler } from 'express';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createAdminAuth } from '../server/adminAuth';
-import { createCredits } from '../server/credits';
+import { createCredits, CreditError } from '../server/credits';
 import { mountCreditAdminRoutes, mountCreditRoutes } from '../server/creditRoutes';
 import { mountVoiceInputRoutes } from '../server/voiceInput';
 import { defaultTokenPrices } from '../server/tokenPricing';
@@ -25,6 +25,10 @@ async function fixture(t: any) {
     Object.assign(request, { user }); next();
   });
   mountCreditRoutes(app, credits);
+  app.use(((error, _request, response, _next) => {
+    if (error instanceof CreditError) response.status(error.status).json({ error: error.message, code: error.code });
+    else response.status(500).json({ error: 'fixture error' });
+  }) satisfies ErrorRequestHandler);
   const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   t.after(async () => { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); await rm(directory, { recursive: true, force: true }); });
@@ -38,7 +42,8 @@ test('credit management requires independent admin authentication, existing user
   assert.equal((await f.request('/api/admin/credits')).status, 401);
   assert.equal((await fetch(f.base + '/api/admin/credits', { headers: { 'x-test-owner': 'a', Cookie: 'qingjian_session=ordinary' } })).status, 401);
   const state = await (await f.request('/api/admin/credits', undefined, f.token)).json() as any;
-  assert.equal(state.accounts.length, 2); assert.equal(state.accounts[0].wallet.balance, 1000);
+  assert.equal(state.accounts.length, 2); assert.equal(state.accounts[0].wallet.balance, 2000);
+  assert.equal(state.registrationGrant, 2000); assert.equal(state.dailyGrant, 1000);
   assert.equal((await f.request('/api/admin/credits/users/absent', { special: true }, f.token, 'PATCH')).status, 404);
   assert.equal((await f.request('/api/admin/credits/users/a', { special: 'yes' }, f.token, 'PATCH')).status, 400);
   const special = await (await f.request('/api/admin/credits/users/a', { special: true }, f.token, 'PATCH')).json() as any;
@@ -53,15 +58,33 @@ test('ordinary credit history is authenticated and cannot select another owner t
   const f = await fixture(t); await f.credits.setSpecial('b', true);
   assert.equal((await fetch(f.base + '/api/credits')).status, 401);
   const result = await (await fetch(f.base + '/api/credits?userId=b&limit=9999&offset=-10', { headers: { 'x-test-owner': 'a' } })).json() as any;
-  assert.equal(result.wallet.balance, 1000); assert.equal(result.entries.every((e: any) => e.userId === 'a'), true);
+  assert.equal(result.wallet.balance, 2000); assert.equal(result.entries.every((e: any) => e.userId === 'a'), true);
   assert.ok(!JSON.stringify(result).includes('用户乙'));
+});
+test('check-in requires login and the server day, ignores supplied owners and is idempotent across parallel HTTP calls', async t => {
+  const f = await fixture(t), date = (await f.credits.snapshot('a')).checkInDate;
+  assert.equal((await f.request('/api/credits/check-in', { date })).status, 401);
+  const claim = (body: unknown) => fetch(f.base + '/api/credits/check-in?userId=b', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-test-owner': 'a' }, body: JSON.stringify(body) });
+  assert.equal((await claim({})).status, 400);
+  assert.equal((await claim({ date: 'today' })).status, 400);
+  const stale = await claim({ date: '2020-01-01' });
+  assert.equal(stale.status, 409); assert.equal((await stale.json() as any).code, 'CHECK_IN_DAY_CHANGED');
+  const responses = await Promise.all(Array.from({ length: 12 }, () => claim({ date, userId: 'b', points: 1_000_000 })));
+  assert.equal(responses.every(r => r.status === 200 && r.headers.get('cache-control') === 'no-store'), true);
+  const receipts = await Promise.all(responses.map(r => r.json())) as any[];
+  assert.equal(receipts.filter(r => r.claimed).length, 1);
+  assert.equal((await f.credits.snapshot('a')).balance, 3000);
+  assert.equal((await f.credits.snapshot('b')).balance, 2000);
+  const ledger = await f.credits.history('a');
+  assert.equal(ledger.entries[0].kind, 'daily_checkin'); assert.equal(ledger.entries[0].points, 1000);
+  assert.equal(ledger.entries.every(e => e.userId === 'a'), true);
 });
 test('voice route charges under the user context and preserves the full prefixed instruction after exhausting credits', async t => {
   const f = await fixture(t), original = globalThis.fetch, model = defaultTokenPrices()[3]; let calls = 0;
   globalThis.fetch = async (input, init) => {
     if (String(input).startsWith(f.base)) return original(input, init);
     calls++;
-    return new Response(JSON.stringify({ id: 'voice-' + calls, usage: { prompt_tokens: 100000, completion_tokens: 0, prompt_tokens_details: { audio_tokens: 100000, cached_tokens: 0, audio_cached_tokens: 0 } } }));
+    return new Response(JSON.stringify({ id: 'voice-' + calls, usage: { prompt_tokens: 200000, completion_tokens: 0, prompt_tokens_details: { audio_tokens: 200000, cached_tokens: 0, audio_cached_tokens: 0 } } }));
   };
   t.after(() => { globalThis.fetch = original; });
   mountVoiceInputRoutes(f.app, tmpdir(), async () => {
@@ -71,7 +94,7 @@ test('voice route charges under the user context and preserves the full prefixed
   const upload = () => { const form = new FormData(); form.append('prefix', '制作口播视频'); form.append('audio', new Blob(['fixture'], { type: 'audio/webm' }), 'voice.webm'); return form; };
   const first = await fetch(f.base + '/api/voice/transcribe', { method: 'POST', headers: { 'x-test-owner': 'a' }, body: upload() });
   assert.equal(first.status, 200); const result = await first.json() as any;
-  assert.equal((await f.credits.snapshot('a')).balance, -200); assert.equal(calls, 1);
+  assert.equal((await f.credits.snapshot('a')).balance, -400); assert.equal(calls, 1);
   const combined = '制作口播视频\n介绍今天的大模型新闻';
   const taskId = await f.credits.admit('a', combined, result.creditTicket);
   assert.equal(taskId, (await f.credits.history('a')).entries[0].taskId);

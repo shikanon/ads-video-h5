@@ -753,7 +753,7 @@ app.get('/api/effects/assets/:id', async (request, response) => {
   try { response.type(asset.mimeType).sendFile(await effects.ensureAsset(asset)); }
   catch { response.status(404).json({ error: '素材文件不存在。' }); }
 });
-auth.mount(app, credits.readiness);
+auth.mount(app, credits.readiness, user => credits.snapshot(user.id));
 mountCreditRoutes(app, credits);
 mountVoiceInputRoutes(app, tmpDir, undefined, credits);
 mountAvatarRoutes(app,{

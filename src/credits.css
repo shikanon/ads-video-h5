@@ -1,12 +1,94 @@
 .credit-chip { align-self: flex-start; border: 0; border-radius: 8px; background: #fbf3ed; color: #866b5e; font-size: 12px; line-height: 1.6; padding: 3px 9px; margin-bottom: 7px; cursor: pointer; text-align: left; }
 .credit-chip.is-low { color: #b24834; }
-.credit-amount { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.credit-amount strong { font-size: 28px; font-variant-numeric: tabular-nums; }
-.credit-amount small { color: #a07354; background: #fbf1e7; border-radius: 6px; padding: 3px 6px; }
-.credit-history summary { cursor: pointer; color: #6c605a; margin-top: 12px; }
-.credit-history ul { list-style: none; padding: 0; margin: 8px 0; }
-.credit-history li { display: flex; gap: 16px; justify-content: space-between; border-bottom: 1px solid #f0e9e5; padding: 12px 0; font-size: 13px; }
-.credit-history li div { display: grid; gap: 4px; min-width: 0; }
-.credit-history time, .credit-history small { color: #978c86; font-size: 11px; }
-.credit-history li > span { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.credit-plus { color: #53755c; }
+.setting-credit-link { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; border: 1px solid #eee9e7; border-radius: 16px; background: #fff; color: #b96d48; text-align: left; cursor: pointer; }
+.setting-credit-link > span { display: grid; flex: 1; gap: 5px; }
+.setting-credit-link strong { color: #31343e; font-size: 14px; }
+.setting-credit-link small { color: #8e8b88; font-size: 11px; }
+.credit-page { display: flex; flex-direction: column; gap: 18px; padding-top: 20px; }
+.credit-balance-card { position: relative; flex: none; overflow: hidden; border: 1px solid #f3e2d7; border-radius: 22px; padding: 22px; background: linear-gradient(130deg, #fff6e9, #fff0e9 65%, #ffe6dc); }
+.credit-balance-card::after { content: ''; position: absolute; top: 38px; right: -42px; width: 170px; height: 170px; border: 24px solid #ffccaf33; border-radius: 50%; pointer-events: none; }
+.credit-balance-heading { position: relative; z-index: 1; display: flex; justify-content: space-between; gap: 10px; color: #96684c; font-size: 12px; }
+.credit-balance-heading > span { display: flex; align-items: center; gap: 7px; }
+.credit-balance-heading small { font-size: 10px; border: 1px solid #eac6a3; border-radius: 20px; padding: 2px 7px; }
+.credit-balance { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-top: 14px; }
+.credit-balance strong { font-size: clamp(30px, 8.6vw, 42px); font-weight: 750; line-height: 1.18; letter-spacing: -.045em; font-variant-numeric: tabular-nums; color: #49372f; }
+.credit-balance > span { font-size: 12px; color: #9d7663; }
+.credit-balance-card > p { position: relative; z-index: 1; margin: 11px 0 20px; font-size: 12px; color: #a17b65; }
+.credit-balance-foot { position: relative; z-index: 1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding-top: 14px; border-top: 1px solid #e9cdbc7a; color: #9b7c6b; font-size: 10px; }
+.credit-checkin { flex: none; padding: 20px; border: 1px solid #ece4da; border-radius: 20px; background: #fff; box-shadow: 0 4px 18px #6b492005; }
+.credit-checkin-heading { display: flex; align-items: center; gap: 11px; }
+.credit-checkin-heading > div { flex: 1; }
+.credit-checkin-icon { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 13px; color: #c2833c; background: #fff6e8; }
+.credit-checkin h2 { margin: 0; font-size: 15px; color: #34343d; }
+.credit-checkin-heading p { margin: 5px 0 0; color: #99908a; font-size: 11px; }
+.credit-day-badge { border: 1px solid #ece4db; border-radius: 8px; padding: 5px 8px; font-size: 11px; color: #a39082; }
+.credit-checkin-reward { display: flex; gap: 8px; align-items: baseline; justify-content: center; padding: 26px 0 23px; color: #c98c43; }
+.credit-checkin-reward > svg { align-self: center; margin-right: 4px; }
+.credit-checkin-reward strong { font-size: 30px; line-height: 1; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+.credit-checkin-reward span { font-size: 12px; }
+.credit-primary { display: flex; width: 100%; justify-content: center; align-items: center; gap: 9px; min-height: 47px; border: 0; border-radius: 12px; padding: 10px 14px; color: #fff; background: #f17854; box-shadow: 0 6px 14px #f1785420; font-size: 13px; font-weight: 650; cursor: pointer; transition: background .18s, transform .18s; }
+.credit-primary:hover { background: #e76744; }
+.credit-primary:active { transform: translateY(1px); }
+.credit-primary:disabled { background: #f0ede8; color: #9e978e; box-shadow: none; cursor: default; transform: none; }
+.credit-primary:focus-visible, .credit-reward-close:focus-visible, .setting-credit-link:focus-visible, .credit-more:focus-visible { outline: 3px solid #ed9975; outline-offset: 4px; }
+.credit-checkin-hint { margin: 11px 0 0; color: #a09a92; font-size: 10px; text-align: center; line-height: 1.6; }
+.credit-checkin.is-done .credit-checkin-icon { color: #84977e; background: #f0f5ed; }
+.credit-welcome { display: flex; flex: none; gap: 10px; padding: 2px 4px 0; align-items: flex-start; }
+.credit-welcome > span { color: #c4a177; padding-top: 1px; }
+.credit-welcome strong { color: #867461; font-size: 11px; font-weight: 600; }
+.credit-welcome p { margin: 5px 0 0; color: #a3978a; font-size: 10px; line-height: 1.6; }
+.credit-ledger { flex: none; margin-top: 3px; }
+.credit-ledger-heading { display: flex; justify-content: space-between; align-items: center; padding: 0 3px 12px; }
+.credit-ledger-heading h2 { font-size: 14px; margin: 0; color: #44444e; }
+.credit-ledger-heading > span { font-size: 10px; color: #b0a79f; }
+.credit-ledger ul { list-style: none; padding: 0 16px; margin: 0; background: #fff; border: 1px solid #eee9e3; border-radius: 17px; }
+.credit-ledger li { display: flex; align-items: center; gap: 10px; padding: 15px 0; border-bottom: 1px solid #f3eee9; }
+.credit-ledger li:last-child { border-bottom: 0; }
+.credit-entry-icon { display: grid; place-items: center; width: 33px; height: 33px; flex: none; border-radius: 10px; background: #f6f4f2; color: #aaa096; }
+.credit-entry-icon.is-gift { background: #fff4e3; color: #c79657; }
+.credit-ledger li > div { display: grid; flex: 1; gap: 5px; min-width: 0; }
+.credit-ledger li strong { font-size: 12px; color: #5a544f; font-weight: 600; }
+.credit-ledger time { font-size: 10px; color: #b1a79f; }
+.credit-ledger li small { color: #a59b93; font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
+.credit-entry-amount { flex: none; font-size: 13px; color: #6e655f; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.credit-plus { color: #b98949; }
+.credit-more { display: block; margin: 14px auto 0; border: 0; background: transparent; color: #9b8068; font-size: 11px; cursor: pointer; }
+.credit-loading { margin: 10px 3px; color: #a3978a; font-size: 12px; }
+.credit-page-error { margin: 10px 3px; color: #b54f39; font-size: 12px; line-height: 1.6; }
+.credit-policy { flex: none; margin: 0 3px; color: #aaa198; font-size: 10px; line-height: 1.8; }
+.credit-reward-dialog { width: min(350px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); padding: 0; border: 1px solid #f3dbc0; border-radius: 25px; background: #fff9ee; color: #644326; box-shadow: 0 24px 80px #24190b44; overflow-y: auto; }
+.credit-reward-dialog[open] { animation: credit-card-arrive .3s ease-out both; }
+.credit-reward-dialog::backdrop { background: #30271c72; backdrop-filter: blur(5px); }
+.credit-reward-card { position: relative; overflow: hidden; padding: 31px 24px 23px; text-align: center; background: radial-gradient(ellipse at 50% 33%, #fff2c7, transparent 54%), linear-gradient(#fff9ef, #fff4e7); }
+.credit-reward-close { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: #eac9a321; color: #b59b80; cursor: pointer; z-index: 2; }
+.credit-reward-close:disabled { opacity: .4; cursor: wait; }
+.credit-reward-ribbon { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #ead1a9; border-radius: 20px; padding: 5px 10px; color: #b78d50; font-size: 10px; letter-spacing: .06em; }
+.credit-reward-date { margin: 13px 0 0; font-size: 10px; letter-spacing: .12em; color: #bbab97; }
+.credit-reward-art { position: relative; display: grid; place-items: center; height: 163px; margin: 7px 0 3px; }
+.credit-reward-halo { position: absolute; width: 151px; height: 151px; border: 1px solid #efd29b5c; border-radius: 50%; box-shadow: 0 0 0 16px #f6d59b12, 0 0 0 31px #f6d59b09; }
+.credit-coin { position: absolute; display: grid; place-items: center; border-radius: 50%; color: #ba7a26; background: linear-gradient(145deg, #fff3b6, #f2c26c); border: 5px solid #ffebaa; box-shadow: inset 0 0 0 2px #dbac59, 0 9px 0 #d4a350, 0 16px 25px #9c692229; }
+.credit-coin-front { width: 91px; height: 91px; transform: rotate(-8deg); animation: credit-coin-float 3s ease-in-out infinite; }
+.credit-coin-back { width: 61px; height: 61px; margin: 42px 0 0 110px; transform: rotate(18deg); opacity: .75; }
+.credit-art-spark { position: absolute; color: #d5ad59; }
+.credit-art-spark.one { left: 42px; top: 40px; }
+.credit-art-spark.two { right: 43px; top: 31px; }
+.credit-reward-card h2 { margin: 10px 0 0; color: #77502c; font-size: 16px; line-height: 1.6; font-weight: 650; }
+.credit-reward-value { display: flex; justify-content: center; align-items: baseline; gap: 7px; margin: 13px 0 11px; color: #b7792d; }
+.credit-reward-value strong { font-size: 38px; font-weight: 750; font-variant-numeric: tabular-nums; line-height: 1.1; letter-spacing: -.04em; }
+.credit-reward-value > span { font-size: 12px; }
+.credit-reward-card > p:not(.credit-reward-date) { margin: 0 0 22px; font-size: 11px; color: #ad9378; line-height: 1.7; }
+.credit-reward-card .credit-primary { background: linear-gradient(100deg, #e6af58, #d49445); box-shadow: 0 7px 19px #c68e3929; color: #fffdf5; min-height: 48px; }
+.credit-reward-card .credit-primary:disabled { opacity: .65; cursor: wait; }
+.credit-reward-card > .credit-reward-error { color: #b6543b !important; margin: -5px 0 15px !important; }
+.credit-reward-footnote { display: block; margin-top: 14px; font-size: 9px; color: #bba68d; letter-spacing: .03em; }
+.credit-reward-dialog.is-claimed .credit-coin-front { animation: credit-claim-pop .45s ease-out both; }
+.credit-confetti { position: absolute; inset: 50% auto auto 50%; }
+.credit-confetti i { position: absolute; width: 5px; height: 9px; border-radius: 2px; background: #dbaa58; opacity: 0; animation: credit-confetti 1.2s ease-out var(--spark-delay) both; }
+.credit-confetti i:nth-child(3n) { background: #ef967b; }
+.credit-confetti i:nth-child(3n + 1) { background: #bdc996; }
+@keyframes credit-card-arrive { from { opacity: 0; transform: translateY(14px) scale(.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes credit-coin-float { 0%, 100% { transform: translateY(0) rotate(-8deg); } 50% { transform: translateY(-6px) rotate(-4deg); } }
+@keyframes credit-claim-pop { 0% { transform: scale(.85) rotate(-8deg); } 65% { transform: scale(1.08) rotate(2deg); } 100% { transform: scale(1) rotate(0); } }
+@keyframes credit-confetti { 0% { opacity: 0; transform: translate(0, 0) rotate(0); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--spark-x), var(--spark-y)) rotate(180deg); } }
+@media (max-width: 350px) { .credit-balance-card { padding: 18px; } .credit-checkin { padding: 17px; } .credit-day-badge { padding: 4px 6px; } .credit-ledger ul { padding: 0 12px; } .credit-ledger li { gap: 8px; } .credit-entry-icon { width: 29px; height: 29px; } .credit-reward-card { padding: 29px 20px 20px; } }
+@media (prefers-reduced-motion: reduce) { .credit-reward-dialog[open], .credit-coin-front, .credit-reward-dialog.is-claimed .credit-coin-front, .credit-confetti i { animation: none; } .credit-primary { transition: none; } }

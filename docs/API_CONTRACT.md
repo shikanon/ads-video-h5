@@ -143,11 +143,15 @@ HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说�
 
 ### 用户积分
 
-`AppState.credits` 返回 `{balance,dailyGrant,pointValueRmb,special,lastGrantDate,nextGrantAt,totalSpent}`。每日北京时间 00:00 赠送 1000 积分，余额可累计；离线期间的每日赠送在下次访问时补记。1 积分等于 0.001 元。余额和扣费最多精确到六位小数，内部按整数微积分记账。
+`AppState.credits` 返回 `{balance,dailyGrant,registrationGrant,pointValueRmb,special,checkInDate,canCheckIn,lastCheckInDate,nextCheckInAt,totalSpent}`；兼容保留 `lastGrantDate,nextGrantAt`。首次注册赠送 2000 积分，成功注册的 `201` 响应同时返回已持久化的 `credits`。每天的 1000 积分改为主动签到领取，按服务端北京时间自然日计算，每天最多一次；不自动发放、不补发未签到日期，已领取余额可累计。1 积分等于 0.001 元。页面四舍五入显示两位小数，内部仍按整数微积分精确记账。
 
-所有新指令入口（聊天、手动重试、原声分析、作者动画、语音识别）在接受前检查余额；余额 ≤ 0 返回 `402 {error:"积分不足，请等待每日免费积分到账后再发送指令。",code:"INSUFFICIENT_CREDITS"}`，不保存新消息或任务。已接收的任务使用服务端冻结的所属账户与 `Job.creditTaskId`；其多轮规划、研究、审查、自动修复继续计费，即使余额变负也不中断。停止任务、浏览和上传素材不受积分准入限制。管理员能力评测使用隔离的评测身份，不扣普通用户积分。
+用户从侧栏、输入栏余额或设置入口进入独立的“我的积分”页面。点击“签到，开启今日礼包”仅打开卡片，关闭卡片不改变余额；点击“领取积分”才发送 `POST /api/credits/check-in {date:checkInDate}`。服务端只给当前登录账户发放，忽略客户端提交的账户或积分数量。成功返回 `{wallet,claimed:true,points:1000,date}`；同一天重复请求返回 `{wallet,claimed:false,points:0,date}`，重试、并发或多设备领取都只入账一次。跨北京时间午夜的旧卡片返回 `409 CHECK_IN_DAY_CHANGED`，需刷新日期后重新领取。负数余额可以签到，但领取后余额仍 ≤ 0 时继续拦截新指令。
 
-`GET /api/credits?offset=0&limit=20` 只返回当前登录用户的 `{wallet,entries,total}`，单页上限 100。记录包含每日赠送、特殊额度、模型调用与用量待核对；模型调用保存请求 ID、任务 ID、实际输入/输出/缓存/音频 token 和当时价格。用量缺失或无效时记录为待核对，不以文案长度估算。账本单独原子保存到持久化目录 `credits.json`，损坏时拒绝启动，不自动清空。
+所有新指令入口（聊天、手动重试、原声分析、作者动画、语音识别）在接受前检查余额；余额 ≤ 0 返回 `402 {error:"积分不足，请前往「我的积分」查看余额与签到奖励。",code:"INSUFFICIENT_CREDITS"}`，不保存新消息或任务。已接收的任务使用服务端冻结的所属账户与 `Job.creditTaskId`；其多轮规划、研究、审查、自动修复继续计费，即使余额变负也不中断。停止任务、浏览和上传素材不受积分准入限制。管理员能力评测使用隔离的评测身份，不扣普通用户积分。
+
+`GET /api/credits?offset=0&limit=20` 只返回当前登录用户的 `{wallet,entries,total}`，单页上限 100。记录包含注册赠送（`signup_grant`）、每日签到（`daily_checkin`）、历史每日赠送（`daily_grant`）、特殊额度、模型调用与用量待核对；模型调用保存请求 ID、任务 ID、实际输入/输出/缓存/音频 token 和当时价格。用量缺失或无效时记录为待核对，不以文案长度估算。账本单独原子保存到持久化目录 `credits.json`，损坏时拒绝启动，不自动清空。
+
+账本版本 2 从版本 1 原位迁移，保留原余额、消费、历史记录、价格和用量去重凭据。旧 `lastGrantDate` 作为已领取日期，因此当日已自动发放的 1000 积分不会再领一次；旧账户不追补注册积分，也不补发升级前未访问日期。迁移持久化后，查询余额、登录、刷新、后台查看和跨日都不触发每日赠送。
 
 `POST /api/voice/transcribe` 可附带文字字段 `prefix`，与识别原文合计最多 2000 字。返回 `{text,duration,creditTicket}`。客户端将完整文字加识别原文作为 `message`，并将 `creditTicket` 传给 `POST /api/chat`；同一条语音指令只准入一次，识别耗尽积分仍可执行。凭证绑定账户和完整指令，15 分钟有效且只能使用一次；修改、跨账户或重复使用返回 `409 INVALID_VOICE_TICKET`。
 
@@ -160,7 +164,7 @@ HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说�
 | `GET /api/admin/credits/users/:id/ledger` | 分页查看指定用户账本 |
 | `PUT /api/admin/credits/prices/:modelId` | `{input,cachedInput,output,audioInput?,cachedAudioInput?}`，单位元 / 百万 token，最多三位小数 |
 
-首次上线仅将已存在且唯一匹配 `shikanon` 邮箱前缀或昵称的账户设为特殊账户，绑定其用户 ID；之后同名注册不会获得额度。特殊账户初始总额度为 1000000（1000 每日赠送加 999000 一次补足），历史消费保留；后台开关不会重复发放。新模型调用冻结价格，后续改价不修改历史记录。默认按[火山方舟官方价格](https://docs.volcengine.com/docs/ark/model-pricing?lang=zh)的普通在线推理价格配置，核对于 2026-10-06：
+首次上线仅将已存在且唯一匹配 `shikanon` 邮箱前缀或昵称的账户设为特殊账户，绑定其用户 ID；之后同名注册不会获得额度。特殊账户初始总额度为 1000000（新账户 2000 注册赠送加 998000 一次补足；旧账户沿用 1000 初始赠送加 999000 一次补足），历史消费保留；后台开关不会重复发放。特殊账户也可每日主动签到，签到奖励另行累计。新模型调用冻结价格，后续改价不修改历史记录。默认按[火山方舟官方价格](https://docs.volcengine.com/docs/ark/model-pricing?lang=zh)的普通在线推理价格配置，核对于 2026-10-06：
 
 | 模型 | 输入 | 缓存输入 | 输出 | 音频输入 / 缓存音频输入 |
 | --- | ---: | ---: | ---: | ---: |

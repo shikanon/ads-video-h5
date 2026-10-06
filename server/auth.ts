@@ -4,6 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { sendRegistrationCode } from './resend';
+import type { CreditWallet } from '../shared/creditTypes';
 
 const scrypt = promisify(scryptCallback);
 const sessionLifetime = 30 * 24 * 60 * 60 * 1000;
@@ -141,7 +142,7 @@ export function createAuth(dataDir: string, publicBase: string) {
       response.status(502).json({ error: error instanceof Error ? error.message : '验证码发送失败，请稍后重试。' });
     } finally { sending.delete(email); }
   }
-  async function register(request: Request, response: Response) {
+  async function register(request: Request, response: Response, registrationCredits?: (user: PublicUser) => Promise<CreditWallet>) {
     const email = normalizeEmail(request.body?.email);
     const displayName = typeof request.body?.displayName === 'string' ? request.body.displayName.trim().slice(0, 40) : '';
     const password = request.body?.password;
@@ -176,7 +177,8 @@ export function createAuth(dataDir: string, publicBase: string) {
     failed(ipKey);
     issueSession(response, request, user.id);
     await save();
-    response.status(201).json({ user: safeUser(user) });
+    const credits = await registrationCredits?.(safeUser(user));
+    response.status(201).json({ user: safeUser(user), ...(credits ? { credits } : {}) });
   }
   async function login(request: Request, response: Response) {
     const email = normalizeEmail(request.body?.email);
@@ -211,11 +213,11 @@ export function createAuth(dataDir: string, publicBase: string) {
     await save();
     response.json({ ok: true });
   }
-  function mount(app: Express, creditReadiness?: () => Promise<{ ready: boolean; initialSpecialAccountApplied: boolean }>) {
+  function mount(app: Express, creditReadiness?: () => Promise<{ ready: boolean; initialSpecialAccountApplied: boolean }>, registrationCredits?: (user: PublicUser) => Promise<CreditWallet>) {
     app.get('/api/health', async (_request, response) => response.set('Cache-Control', 'no-store').json({ ok: true, revision: await releaseRevision, ...(creditReadiness ? { credits: await creditReadiness() } : {}) }));
     app.get('/api/auth/me', (request, response) => { const user = currentUser(request); response.status(user ? 200 : 401).json(user ? { user } : { error: '未登录。' }); });
     app.post('/api/auth/send-code', mutationGuard, (request, response, next) => { void sendCode(request, response).catch(next); });
-    app.post('/api/auth/register', mutationGuard, (request, response, next) => { void register(request, response).catch(next); });
+    app.post('/api/auth/register', mutationGuard, (request, response, next) => { void register(request, response, registrationCredits).catch(next); });
     app.post('/api/auth/login', mutationGuard, (request, response, next) => { void login(request, response).catch(next); });
     app.post('/api/auth/logout', mutationGuard, (request, response, next) => { void logout(request, response).catch(next); });
     app.patch('/api/auth/password', mutationGuard, requireAuth, (request, response, next) => { void changePassword(request, response).catch(next); });
