@@ -1,0 +1,28 @@
+[Unit]
+Description=Qingjian domestic H5 and WeChat Mini Program API
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=qingjian-cn
+Group=qingjian-cn
+WorkingDirectory=/opt/qingjian-cn/current
+Environment=PATH=/opt/qingjian-cn/node/bin:/opt/qingjian-cn/pnpm/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
+Environment=PORT=8787
+Environment=PUBLIC_BASE_PATH=/qingjian
+Environment=QINGJIAN_DATA_DIR=/data/qingjian-cn
+Environment=HYPERFRAMES_SKIP_SKILLS=1
+EnvironmentFile=-/etc/qingjian-cn/server.env
+ExecStart=/opt/qingjian-cn/node/bin/node --import tsx server/index.ts
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data/qingjian-cn
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

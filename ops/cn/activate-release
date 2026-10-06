@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 022
+
+# Releases are prepared and built separately. Persistent data is never replaced.
+release=${1:?Usage: activate-release /opt/qingjian-cn/releases/<40-character-SHA>}
+if [[ ! "$release" =~ ^/opt/qingjian-cn/releases/[0-9a-f]{40}$ || ! -d "$release" || -L "$release" ]]; then
+  echo 'Expected a prepared release directory identified by a full Git SHA.' >&2
+  exit 1
+fi
+expected=${release##*/}
+test -f "$release/dist/index.html"
+test -f "$release/dist/admin/index.html"
+test -d "$release/node_modules"
+/opt/qingjian-cn/node/bin/node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync(process.argv[1]));if(r.revision!==process.argv[2])process.exit(1)' "$release/dist/release.json" "$expected"
+
+exec 9>/run/lock/qingjian-cn-deploy.lock
+flock -n 9 || { echo 'Another activation is running.' >&2; exit 1; }
+previous=$(readlink -f /opt/qingjian-cn/current || true)
+switched=0
+finish() {
+  local status=$?
+  trap - EXIT
+  if (( status != 0 && switched == 1 )); then
+    if [[ "$previous" == /opt/qingjian-cn/releases/* && -d "$previous" ]]; then
+      ln -sfn "$previous" /opt/qingjian-cn/current.rollback
+      mv -Tf /opt/qingjian-cn/current.rollback /opt/qingjian-cn/current
+      systemctl restart qingjian-cn || true
+    else
+      systemctl stop qingjian-cn || true
+    fi
+    echo 'Activation failed; restored the previous service release when available.' >&2
+  fi
+  exit "$status"
+}
+trap finish EXIT
+ln -sfn "$release" /opt/qingjian-cn/current.next
+mv -Tf /opt/qingjian-cn/current.next /opt/qingjian-cn/current
+switched=1
+systemctl restart qingjian-cn
+for attempt in $(seq 1 30); do
+  if /opt/qingjian-cn/node/bin/node --input-type=module -e '
+    const base="http://127.0.0.1:8787";
+    const get=path=>fetch(base+path,{signal:AbortSignal.timeout(4000)});
+    const health=await get("/api/health").then(r=>r.json());
+    if(!health.ok||health.revision!==process.argv[1])process.exit(1);
+    for(const path of ["/qingjian/","/admin/"])if(!(await get(path)).ok)process.exit(1);
+    if((await get("/api/state")).status!==401)process.exit(1);
+  ' "$expected"; then
+    switched=0
+    echo "Deployed $expected"
+    exit 0
+  fi
+  sleep 1
+done
+echo 'Release did not pass revision, frontend and authentication checks.' >&2
+exit 1

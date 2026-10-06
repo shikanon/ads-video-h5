@@ -2,7 +2,7 @@
 
 小程序展示名称暂用「AI了吗」。这是原生 WXML/WXSS/JavaScript 客户端，共用轻剪 H5 的账号、素材、会话、Agent 任务、成片、积分和模型设置。
 
-当前代码包不等于已发布的微信体验版。项目中的 `touristappid` 是未绑定账号的开发占位标识；拿到「AI了吗」真实 AppID 后才可真机预览、上传和设为体验版。AppID 是公开标识，客户端不需要 AppSecret 或上传私钥。
+当前代码包不等于已发布的微信体验版。项目已绑定「AI了吗」的 AppID `wxf5dfb5d144bcd684`，服务端域名为 `video.tensorbytes.com`。AppID 是公开标识，客户端不需要 AppSecret 或上传私钥；仍需微信开发者权限、合法域名配置、真机验收和体验版上传。
 
 ## 开发与打包
 
@@ -13,14 +13,14 @@ pnpm install --frozen-lockfile
 pnpm build:mini
 ```
 
-如已获得 AppID，可以通过本机环境变量 `QINGJIAN_MINI_APPID` 传给构建命令，或直接修改本项目的 `project.config.json`。构建验证页面与图标完整性、JS/JSON、官方 WXML/WXSS 编译、主包大小和 HTTPS 接口。生成 `release/qingjian-wechat/` 可导入项目与 `release/qingjian-wechat-test.zip`，清单会明确标出未上传状态和源码哈希。
+项目已写入 AppID；如需切换账号，可以通过本机环境变量 `QINGJIAN_MINI_APPID` 传给构建命令，或修改 `project.config.json`。构建验证页面与图标完整性、JS/JSON、官方 WXML/WXSS 编译、主包大小和 HTTPS 接口。生成 `release/qingjian-wechat/` 可导入项目与 `release/qingjian-wechat-test.zip`，清单会明确标出未上传状态和源码哈希。
 
 微信开发者工具打开 `apps/miniprogram/` 或解压后的 `qingjian-wechat/`。无需 npm 构建、WebView 或客户端密钥。保留合法域名校验，不能用关闭校验代替真机验证。
 
 ## 微信账号配置与体验版发布
 
-1. 绑定「AI了吗」真实 AppID，并给本机微信账号添加开发者权限。
-2. 配置服务器域名：`request` 与 `uploadFile` 为 `https://video.shikanon.com`；`downloadFile` 还需包含 `miniprogram/config.js` 中实际使用的公开 OSS 域名。接口路径为 `/qingjian/api`。服务器必须可达并提供有效 HTTPS 证书。
+1. 确认 AppID 为 `wxf5dfb5d144bcd684`，并给本机微信账号添加开发者权限。
+2. 配置服务器域名：`request` 与 `uploadFile` 为 `https://video.tensorbytes.com`；`downloadFile` 包含该域名及 `miniprogram/config.js` 中实际使用的公开 OSS 域名。接口路径为 `/qingjian/api`。服务器必须可达并提供有效 HTTPS 证书。
 3. 根据实际使用的数据处理方配置微信《用户隐私保护指引》，声明录音、选择相册/聊天文件和保存成片到相册等功能；确认主体、类目与测试成员权限。小程序会在用户点击功能时请求隐私授权，长按期间申请麦克风授权；松手后不会因为弹窗晚完成而突然开始录音。
 4. 轻剪服务端需包含本版二进制上传兼容补丁。先确认 `/qingjian/api/health` 的实际发布版本，再进行真机联调。
 5. 开发者工具点击「预览」，由测试成员扫码完成下列验收；通过后点击「上传」填写版本 `0.1.0`，在微信后台的版本管理中设为体验版并添加体验成员。体验二维码由微信产生，开发包不会伪造二维码。

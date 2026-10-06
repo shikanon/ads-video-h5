@@ -18,5 +18,5 @@ Page({
   },
   credits() { wx.navigateTo({ url: '/pages/credits/index' }); },
   legal(event) { wx.navigateTo({ url: '/pages/legal/index?type=' + event.currentTarget.dataset.type }); },
-  h5() { wx.setClipboardData({ data: 'https://video.shikanon.com/' }); },
+  h5() { wx.setClipboardData({ data: require('../../config').webBase }); },
 });
