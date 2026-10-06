@@ -30,7 +30,7 @@
 
 ## 原生接口验收脚本
 
-[`tooling/smoke-miniprogram.mjs`](../../tooling/smoke-miniprogram.mjs) 使用实际原生客户端的网络封装与公网 API，覆盖发布 SHA、鉴权、同国内 H5 会话同步、签到去重、PNG/MP4/MP3 二进制上传与私有下载、真实 Agent 视频导出和全帧解码。启用语音选项还会用测试文本生成语音，先识别，再提交同一任务；它不是微信设备模拟器。
+[`tooling/smoke-miniprogram.mjs`](../../tooling/smoke-miniprogram.mjs) 使用实际原生客户端网络封装和真实 HTTP，默认同时访问国内小程序 API 与原 `video.shikanon.com`。覆盖两入口发布 SHA、鉴权、同账号双向会话同步、跨入口签到去重、PNG/MP4/MP3 二进制上传与两入口私有下载、真实 Agent 视频导出、全帧解码和同步账本。启用语音选项还会用测试文本生成语音，先识别，再提交同一任务；它不是微信设备模拟器。切换前仅验收国内服务时可设 `QINGJIAN_MINI_QA_H5_ORIGIN=https://video.tensorbytes.com`，报告会明确标为国内单站测试，不能代替原 H5 共用验收。
 
 管理员须先在隔离测试环境准备专用账号。凭证 JSON 仅保存在服务器私有目录，含 `purpose: "qingjian-deployment-qa"`、以 `mini-deploy-` 开头且以 `@example.invalid` 结尾的测试邮箱，以及至少 24 位随机密码。脚本拒绝使用普通生产账号，不会打印凭证或登录 Cookie。以下命令只引用文件路径，不包含密钥值：
 

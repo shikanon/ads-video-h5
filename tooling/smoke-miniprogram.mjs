@@ -21,19 +21,21 @@ assert.match(credentials.email, /^mini-deploy-[^@]+@example\.invalid$/);
 assert.equal(typeof credentials.password, 'string');
 assert.ok(credentials.password.length >= 24);
 const base = new URL(config.apiBase).origin;
+const h5Origin = process.env.QINGJIAN_MINI_QA_H5_ORIGIN || 'https://video.shikanon.com';
+assert.ok([base, 'https://video.shikanon.com'].includes(h5Origin), 'H5 QA must use a known Qingjian domain.');
 const expected = JSON.parse(await readFile(path.join(root, 'dist/release.json'))).revision;
 const { createClient } = require('./miniprogram/utils/api.js');
 const directory = await mkdtemp(path.join(tmpdir(), 'qingjian-mini-smoke-'));
-const report = { at: new Date().toISOString(), expectedRevision: expected, appid: project.appid, apiBase: config.apiBase, checks: {}, nativeDevice: 'not-tested' };
+const report = { at: new Date().toISOString(), expectedRevision: expected, appid: project.appid, apiBase: config.apiBase, h5Origin, checks: {}, nativeDevice: 'not-tested' };
 const record = (key, value) => { report.checks[key] = value; console.log(JSON.stringify({ check: key, result: value })); };
 const deadline = ms => AbortSignal.timeout(ms);
 
-function platform() {
+function platform(origin = base, h5 = false) {
   const storage = new Map();
   const network = async (options, form) => {
-    assert.equal(new URL(options.url).origin, base);
+    assert.equal(new URL(options.url).origin, origin);
     const response = await fetch(options.url, { method: form ? 'POST' : options.method,
-      headers: { Referer: `https://servicewechat.com/${project.appid}/dev/page-frame.html`, ...options.header },
+      headers: { Referer: h5 ? origin + '/' : `https://servicewechat.com/${project.appid}/dev/page-frame.html`, ...(h5 ? { Origin: origin } : {}), ...options.header },
       body: form || (options.data === undefined ? undefined : JSON.stringify(options.data)), signal: deadline(options.timeout) });
     const data = await response.text();
     options.success({ statusCode: response.status, header: Object.fromEntries(response.headers), cookies: response.headers.getSetCookie(), data });
@@ -52,7 +54,7 @@ function platform() {
     },
     downloadFile(options) {
       (async () => {
-        assert.equal(new URL(options.url).origin, base);
+        assert.equal(new URL(options.url).origin, origin);
         const response = await fetch(options.url, { headers: options.header, signal: deadline(options.timeout) });
         const tempFilePath = path.join(directory, randomUUID());
         await writeFile(tempFilePath, Buffer.from(await response.arrayBuffer()), { mode: 0o600 });
@@ -62,23 +64,29 @@ function platform() {
   };
 }
 
-const client = createClient(platform(), config), secondClient = createClient(platform(), config);
+const client = createClient(platform(), config);
+const secondClient = createClient(platform(h5Origin, true), { ...config, apiBase: h5Origin + '/qingjian/api' });
 try {
   const health = await fetch(config.apiBase + '/health', { signal: deadline(15000) }).then(r => r.json());
   assert.equal(health.ok, true); assert.equal(health.revision, expected);
   assert.equal((await fetch(config.apiBase + '/state', { signal: deadline(15000) })).status, 401);
   assert.equal((await fetch(config.apiBase + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://invalid.example' }, body: '{}', signal: deadline(15000) })).status, 403);
+  const h5Health = await fetch(h5Origin + '/qingjian/api/health', { signal: deadline(15000) }).then(r => r.json());
+  assert.equal(h5Health.revision, expected);
   record('httpsRevisionAndUnauthenticatedIsolation', 'passed');
   const login = { email: credentials.email, password: credentials.password };
-  await client.request('/api/auth/login', login); await secondClient.request('/api/auth/login', login);
+  const nativeLogin = await client.request('/api/auth/login', login), h5Login = await secondClient.request('/api/auth/login', login);
+  assert.equal(h5Login.user.id, nativeLogin.user.id);
   let state = await client.request('/api/state'); assert.equal(state.mode, 'pi');
   record('nativeLoginAndConfiguredModels', { mode: state.mode, availableModels: state.models.length });
   state = await client.request('/api/sessions', {});
   assert.equal((await secondClient.request('/api/state')).activeSessionId, state.activeSessionId);
-  record('h5AndNativeSessionSyncOnDomesticService', 'passed');
+  const fromH5 = await secondClient.request('/api/sessions', {});
+  state = await client.request('/api/state'); assert.equal(state.activeSessionId, fromH5.activeSessionId);
+  record(h5Origin === base ? 'domesticOnlySessionSync' : 'existingH5AndNativeBidirectionalSessionSync', 'passed');
   const before = await client.request('/api/credits');
   const claim = await client.request('/api/credits/check-in', { date: before.wallet.checkInDate });
-  const duplicate = await client.request('/api/credits/check-in', { date: before.wallet.checkInDate });
+  const duplicate = await secondClient.request('/api/credits/check-in', { date: before.wallet.checkInDate });
   assert.equal(duplicate.claimed, false); assert.equal(duplicate.wallet.balance, claim.wallet.balance);
   if (before.wallet.canCheckIn) { assert.equal(claim.claimed, true); assert.equal(claim.wallet.balance - before.wallet.balance, 1000); }
   record('dailyCheckInIsIdempotent', { balanceBefore: before.wallet.balance, balanceAfter: claim.wallet.balance });
@@ -96,6 +104,7 @@ try {
     const media = uploaded.media.find(m => m.id === uploaded.uploadedMediaIds[0]);
     assert.equal(media.kind, kind);
     assert.deepEqual(await readFile(await client.download('/qingjian/api/media/' + media.id)), await readFile(file));
+    assert.deepEqual(await readFile(await secondClient.download('/qingjian/api/media/' + media.id)), await readFile(file));
     if (kind === 'video') videoId = media.id;
   }
   record('nativeBinaryUploadsAndAuthenticatedDownloads', 'PNG, MP4, MP3 passed');
@@ -132,6 +141,8 @@ try {
   execFileSync('/usr/bin/ffmpeg', ['-v', 'error', '-i', output, '-f', 'null', '-']);
   record('realAgentVideoExportAndDecode', { jobId: job.id, artifactId: artifact.id, width: picture.width, height: picture.height, duration: Number(probe.format.duration) });
   const ledger = await client.request('/api/credits');
+  const h5Ledger = await secondClient.request('/api/credits');
+  assert.equal(h5Ledger.wallet.balance, ledger.wallet.balance); assert.equal(h5Ledger.wallet.totalSpent, ledger.wallet.totalSpent);
   record('actualTokenBilling', { modelUsageEntries: ledger.entries.filter(e => e.kind === 'model_usage').length, pendingUsageEntries: ledger.entries.filter(e => e.kind === 'usage_pending').length, totalSpent: ledger.wallet.totalSpent });
   report.passed = true;
 } catch (error) {
