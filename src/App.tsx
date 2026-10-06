@@ -647,7 +647,6 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   const drafts = useRef<Record<string, { prompt: string; attachments: string[] }>>({});
   const stateRef = useRef<AppState | null>(null);
   const voiceAdmission = useRef<{ ticket: string; message: string; sessionId: string } | null>(null);
-  const jobPollInFlight = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const pickerKind = useRef<MediaFilter>("all");
   const pickerSource = useRef<"chat" | "library">("chat");
@@ -677,6 +676,8 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  const stateReady = Boolean(state);
+  const hasActiveJobs = state?.jobs.some(isActiveJob) ?? false;
   useEffect(() => {
     if (!state?.credits) return;
     const controller = new AbortController();
@@ -688,33 +689,39 @@ export default function App({ user, onLogout }: { user: PublicUser; onLogout: ()
       } catch { /* Keep the last balance; the server still enforces admission. */ }
     };
     const timer = window.setTimeout(() => void update(), Math.max(1000, Date.parse(state.credits.nextCheckInAt) - Date.now() + 1000));
-    const foreground = () => void update();
-    window.addEventListener('focus', foreground); document.addEventListener('visibilitychange', foreground);
-    return () => { controller.abort(); window.clearTimeout(timer); window.removeEventListener('focus', foreground); document.removeEventListener('visibilitychange', foreground); };
+    return () => { controller.abort(); window.clearTimeout(timer); };
   }, [state?.credits?.nextCheckInAt, apply]);
   useEffect(() => {
-    if (
-      !state?.jobs.some((j) => j.status === "queued" || j.status === "running")
-    )
-      return;
-    const timer = window.setInterval(async () => {
-      if (jobPollInFlight.current) return;
-      const job = stateRef.current?.jobs.find(
-        (j) => j.status === "queued" || j.status === "running",
-      );
-      if (!job) return;
-      jobPollInFlight.current = true;
+    if (!stateReady) return;
+    const controller = new AbortController();
+    let inFlight = false;
+    const sync = async () => {
+      if (document.visibilityState !== 'visible' || inFlight) return;
+      inFlight = true;
       try {
-        const response = await fetch(apiPath(`/api/jobs/${job.id}`));
-        if (response.ok) await refresh();
+        const response = await fetch(apiPath('/api/state'), { signal: controller.signal });
+        if (response.ok) {
+          const next = await response.json() as AppState;
+          if (!controller.signal.aborted) apply(next);
+        }
       } catch {
-        /* next poll */
+        /* Preserve the current view while the connection recovers. */
       } finally {
-        jobPollInFlight.current = false;
+        inFlight = false;
       }
-    }, 2200);
-    return () => window.clearInterval(timer);
-  }, [state?.jobs, refresh]);
+    };
+    // Other clients can start tasks while this H5 view is idle. Keep the
+    // shared account current, and refresh immediately when it returns.
+    const timer = window.setInterval(() => void sync(), hasActiveJobs ? 2200 : 30_000);
+    const foreground = () => void sync();
+    window.addEventListener('focus', foreground);
+    document.addEventListener('visibilitychange', foreground);
+    return () => {
+      controller.abort(); window.clearInterval(timer);
+      window.removeEventListener('focus', foreground);
+      document.removeEventListener('visibilitychange', foreground);
+    };
+  }, [stateReady, hasActiveJobs, user.id, apply]);
   useEffect(() => {
     if (!drawer) return;
     window.history.pushState({ qingjianDrawer: true }, "");
