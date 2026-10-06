@@ -55,14 +55,24 @@ test('Beijing midnight grants once, accumulated balance and negative debt surviv
 test('existing shikanon gets exactly one million; toggling special or registering the nickname cannot mint more', async t => {
   const f = await fixture(t);
   assert.equal((await f.credits.snapshot('special')).balance, 1000000);
+  assert.deepEqual(await f.credits.readiness(), { ready: true, initialSpecialAccountApplied: true });
   await f.credits.recordUsage('special', 'accepted', price.modelId, 'one', usage, price);
   await f.credits.setSpecial('special', false); await f.credits.setSpecial('special', true);
   assert.equal((await f.credits.snapshot('special')).balance, 999993.4);
   await f.credits.setSpecial('ordinary', true);
   assert.equal((await f.credits.snapshot('ordinary')).balance, 1000000);
   const restarted = createCredits(f.directory, { now: f.now }); await restarted.load([...users, { id: 'impersonator', displayName: 'shikanon', email: 'another@example.test' }]);
+  assert.equal((await restarted.readiness()).initialSpecialAccountApplied, true, 'the uniquely matched email account remains the target');
   assert.equal((await restarted.snapshot('impersonator')).balance, 1000);
   assert.equal((await restarted.snapshot('special')).balance, 999993.4);
+});
+test('bootstrap receipt does not misidentify ambiguous names or grant a later same-name registration', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'qj-credit-bootstrap-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const credits = createCredits(directory); await credits.load([{ ...users[0], displayName: 'shikanon' }, { ...users[1], email: 'b@example.test' }]);
+  assert.deepEqual(await credits.readiness(), { ready: true, initialSpecialAccountApplied: false });
+  const restart = createCredits(directory); await restart.load([users[1]]);
+  assert.equal((await restart.readiness()).initialSpecialAccountApplied, false);
+  assert.equal((await restart.snapshot('special')).balance, 1000);
 });
 test('an exact zero balance blocks new instructions just like a negative balance', async t => {
   const f = await fixture(t);

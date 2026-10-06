@@ -211,8 +211,8 @@ export function createAuth(dataDir: string, publicBase: string) {
     await save();
     response.json({ ok: true });
   }
-  function mount(app: Express) {
-    app.get('/api/health', async (_request, response) => response.set('Cache-Control', 'no-store').json({ ok: true, revision: await releaseRevision }));
+  function mount(app: Express, creditReadiness?: () => Promise<{ ready: boolean; initialSpecialAccountApplied: boolean }>) {
+    app.get('/api/health', async (_request, response) => response.set('Cache-Control', 'no-store').json({ ok: true, revision: await releaseRevision, ...(creditReadiness ? { credits: await creditReadiness() } : {}) }));
     app.get('/api/auth/me', (request, response) => { const user = currentUser(request); response.status(user ? 200 : 401).json(user ? { user } : { error: '未登录。' }); });
     app.post('/api/auth/send-code', mutationGuard, (request, response, next) => { void sendCode(request, response).catch(next); });
     app.post('/api/auth/register', mutationGuard, (request, response, next) => { void register(request, response).catch(next); });

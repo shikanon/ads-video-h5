@@ -170,3 +170,5 @@ HTML 特效的管理、草稿预览、渲染和下载接口见 [HTML 特效说�
 | doubao-seed-2-1-lite-260915 | 0.8 | 0.16 | 2.7 | 12 / 2.4 |
 
 缓存 token 是输入 token 的子集，音频缓存同时是缓存和音频输入的子集，不重复计费；输出 token 已包含推理 token。当前计费覆盖返回 token 用量的 Chat/Responses 模型调用，图片按张、TTS 按字符、搜索工具的独立费用不按 token 扣分。未配置价格的新 token 模型停止调用并提示管理员配置。
+
+`GET /api/health` 的 `credits` 字段仅返回 `{ready,initialSpecialAccountApplied}` 两个布尔值，供部署核对账本就绪和默认测试账户的一次性额度是否已应用；不返回账户标识、名单或余额。

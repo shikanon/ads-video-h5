@@ -6,6 +6,8 @@ import type { AppState } from '../shared/types';
 test('full service admits a multi-turn job, completes with a negative balance and blocks all new model entry points', async t => {
   const f = await startCreditServer(); t.after(f.close);
   const cookie = await f.login(), initial = await (await f.request(cookie, '/api/state')).json() as AppState;
+  const health = await (await f.request(cookie, '/api/health')).json() as any;
+  assert.deepEqual(health.credits, { ready: true, initialSpecialAccountApplied: true });
   assert.equal(initial.credits?.balance, 1000);
   f.providerState.outputTokens = 40000; f.providerState.multiTurn = true;
   const accepted = await f.request(cookie, '/api/chat', { sessionId: initial.activeSessionId, message: '用一句话介绍功能' });

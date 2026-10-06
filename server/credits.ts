@@ -21,6 +21,7 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
   const filename = path.join(dataDir, 'credits.json'), now = options.now ?? Date.now;
   let store: Store = { version: 1, initialized: false, specialUsers: [], wallets: {}, entries: [], prices: defaultTokenPrices(), seen: {}, tickets: {} };
   let tail = Promise.resolve();
+  let initialSpecialUserId: string | undefined;
   async function transaction<T>(fn: (draft: Store) => T): Promise<T> {
     const result = tail.then(async () => {
       const draft = structuredClone(store), value = fn(draft), snapshot = JSON.stringify(draft);
@@ -71,14 +72,15 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
     if (store.version !== 1 || typeof store.initialized !== 'boolean' || !Array.isArray(store.entries) || !Array.isArray(store.prices) || !store.wallets || Array.isArray(store.wallets) || !store.seen || !store.tickets || !Array.isArray(store.specialUsers) || store.specialUsers.some(id => typeof id !== 'string')) throw new Error('积分账本格式无效，不能重置余额。');
     for (const w of Object.values(store.wallets)) if (!w || !Number.isSafeInteger(w.balanceMicros) || !Number.isSafeInteger(w.spentMicros) || w.spentMicros < 0 || typeof w.special !== 'boolean' || typeof w.specialGranted !== 'boolean' || !/^\d{4}-\d{2}-\d{2}$/.test(w.lastGrantDate) || !Number.isFinite(dayNumber(w.lastGrantDate)) || new Date(dayNumber(w.lastGrantDate) * 86400000).toISOString().slice(0, 10) !== w.lastGrantDate) throw new Error('积分账本余额或日期无效。');
     for (const p of store.prices) validateTokenPrice(p);
+    const name = options.initialSpecialName ?? 'shikanon';
+    const byEmail = users.filter(u => u.email.toLowerCase().split('@')[0] === name.toLowerCase());
+    const candidates = byEmail.length === 1 ? byEmail : users.filter(u => u.displayName.trim().toLowerCase() === name.toLowerCase());
+    initialSpecialUserId = candidates.length === 1 ? candidates[0].id : undefined;
     await transaction(draft => {
       if (!draft.initialized) {
-        const name = options.initialSpecialName ?? 'shikanon';
         // Bootstrap only an existing, uniquely identified account. Registering
         // this display name later cannot mint a special balance.
-        const byEmail = users.filter(u => u.email.toLowerCase().split('@')[0] === name.toLowerCase());
-        const candidates = byEmail.length === 1 ? byEmail : users.filter(u => u.displayName.trim().toLowerCase() === name.toLowerCase());
-        if (candidates.length === 1) draft.specialUsers.push(candidates[0].id);
+        if (initialSpecialUserId) draft.specialUsers.push(initialSpecialUserId);
         draft.initialized = true;
       }
       for (const user of users) wallet(draft, user.id);
@@ -144,7 +146,13 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
     return { wallet: w, entries: all.slice(offset, offset + limit), total: all.length };
   });
   const adminState = (users: PublicUser[]): Promise<CreditAdminState> => transaction(draft => ({ accounts: users.map(user => ({ ...user, wallet: publicWallet(wallet(draft, user.id)) })), prices: structuredClone(draft.prices), dailyGrant: DAILY_POINTS, pointValueRmb: POINT_VALUE_RMB, specialInitial: SPECIAL_INITIAL_POINTS }));
-  return { load, snapshot, admit, voiceTicket, recordUsage, price, setSpecial, setPrice, history, adminState };
+  async function readiness() {
+    await tail;
+    const initial = initialSpecialUserId ? store.wallets[initialSpecialUserId] : undefined;
+    // A deployment receipt without identifiers, balances or account lists.
+    return { ready: store.initialized, initialSpecialAccountApplied: Boolean(initial?.special && initial.specialGranted) };
+  }
+  return { load, snapshot, admit, voiceTicket, recordUsage, price, setSpecial, setPrice, history, adminState, readiness };
 }
 
 export type Credits = ReturnType<typeof createCredits>;
