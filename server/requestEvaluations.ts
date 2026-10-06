@@ -18,14 +18,17 @@ export function requestEvaluationContext(c:RequestEvaluationCase):CreationContex
 }
 export function checkRequestContract(c:RequestEvaluationCase,route:CreationRoute|CreativeRequest,events:WorkflowEvent[]) {
   const prompt='lessonPrompt' in route&&route.lessonPrompt||c.prompt;
-  const settings=lessonSettings(prompt),presentation=lessonPresentation(prompt);
+  // Footage edits can legitimately be shorter than a topic explainer's 15s
+  // minimum. Only apply lesson settings when that production path is tested.
+  const settings=['news','explainer'].includes(route.mode)||c.expected.seconds!==undefined||c.expected.format!==undefined?lessonSettings(prompt):null;
+  const presentation=lessonPresentation(prompt);
   const checks:Array<{name:string;passed:boolean;expected:unknown;actual:unknown}>=[];
   const add=(name:string,expected:unknown,actual:unknown)=>checks.push({name,passed:expected===actual,expected,actual});
   add('mode',c.expected.mode,route.mode);add('export',c.expected.export,route.export);
   if('requiresFootage'in route)add('requiresFootage',c.expected.mode==='footage',route.requiresFootage);
   if(c.expected.topic){const normalize=(s:string)=>intentText(s).replace(/\s/g,'').toLowerCase();add('topic-preserved',true,[c.expected.topic,...(c.expected.topicAliases||[])].some(topic=>normalize(route.topic||prompt).includes(normalize(topic))));}
-  if(c.expected.seconds!==undefined)add('duration',c.expected.seconds,settings.requestedSeconds);
-  if(c.expected.format!==undefined)add('format',c.expected.format,settings.format);
+  if(c.expected.seconds!==undefined)add('duration',c.expected.seconds,settings?.requestedSeconds);
+  if(c.expected.format!==undefined)add('format',c.expected.format,settings?.format);
   if(c.expected.mood!==undefined)add('mood',c.expected.mood,presentation.mood);
   if(c.expected.bgm!==undefined)add('bgm',c.expected.bgm,presentation.bgm);
   return {passed:checks.every(c=>c.passed),checks,settings,presentation,diagnostics:executionDiagnostics(events)};

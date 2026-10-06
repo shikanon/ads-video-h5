@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 022
+
+# Build from an exact source archive on the operator's machine. Only dependency
+# binaries are selected for Linux; no credentials or production data are read.
+output=${1:?Usage: package-release /absolute/output/directory}
+[[ "$output" == /* ]]
+repo=$(git rev-parse --show-toplevel)
+revision=$(git -C "$repo" rev-parse HEAD)
+[[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+[[ $(pnpm --version) == 11.25.0 ]]
+staging=$(mktemp -d "${TMPDIR:-/tmp}/qingjian-package.XXXXXX")
+temporary=''
+cleanup() { rm -rf -- "$staging"; if [[ -n "$temporary" ]]; then rm -f -- "$temporary"; fi; }
+trap cleanup EXIT
+chmod 0755 "$staging"
+git -C "$repo" archive "$revision" | tar -x -C "$staging"
+cd "$staging"
+export HYPERFRAMES_SKIP_SKILLS=1 PNPM_MAX_WORKERS=1
+pnpm install --frozen-lockfile --ignore-scripts --prefer-offline --network-concurrency=2 --child-concurrency=1
+VITE_BASE_PATH=/qingjian/ pnpm build
+node -e 'if(require("./dist/release.json").revision!==process.argv[1]||require("./dist/admin/release.json").revision!==process.argv[1])process.exit(1)' "$revision"
+# These are newly created staging directories, never an existing checkout.
+rm -rf -- node_modules apps/admin/node_modules apps/miniprogram/node_modules
+pnpm install --frozen-lockfile --ignore-scripts --prefer-offline --os=linux --cpu=x64 --libc=glibc --network-concurrency=2 --child-concurrency=1
+node --input-type=commonjs - "$revision" <<'JS'
+const fs=require('node:fs'),path=require('node:path');
+const ffmpeg=path.join(path.dirname(require.resolve('ffmpeg-static/package.json')),'ffmpeg');
+if(fs.existsSync(ffmpeg))throw Error('Unexpected platform FFmpeg binary');
+fs.symlinkSync('/usr/bin/ffmpeg',ffmpeg);
+const probe=path.join(path.dirname(require.resolve('ffprobe-static/package.json')),'bin');
+fs.rmSync(probe,{recursive:true});fs.mkdirSync(path.join(probe,'linux/x64'),{recursive:true});
+fs.symlinkSync('/usr/bin/ffprobe',path.join(probe,'linux/x64/ffprobe'));
+let addons=0;
+function scan(directory) {
+  for(const entry of fs.readdirSync(directory,{withFileTypes:true})) {
+    const name=path.join(directory,entry.name);
+    if(entry.isDirectory())scan(name);
+    else if(entry.isFile()&&entry.name.endsWith('.node')) {
+      const handle=fs.openSync(name,'r'),header=Buffer.alloc(4);
+      try{fs.readSync(handle,header,0,4,0);}finally{fs.closeSync(handle);}
+      if(!header.equals(Buffer.from([127,69,76,70])))throw Error('Non-Linux native addon: '+name);
+      addons++;
+    }
+  }
+}
+scan('node_modules/.pnpm');
+for(const forbidden of ['data/auth.json','data/credits.json','data/provider-models.json','.git','.env'])
+  if(fs.existsSync(forbidden))throw Error('Private file in release: '+forbidden);
+fs.writeFileSync('BUILD-RECEIPT.json',JSON.stringify({revision:process.argv[2],packagedAt:new Date().toISOString(),buildPlatform:process.platform,dependencyTarget:'linux-x64-glibc',nativeAddons:addons,systemMediaBinaries:['/usr/bin/ffmpeg','/usr/bin/ffprobe'],productionDataIncluded:false},null,2)+'\n');
+JS
+mkdir -p -- "$output"
+archive="$output/qingjian-cn-$revision.tar.gz"
+test ! -e "$archive"
+test ! -e "${archive%.tar.gz}.sha256"
+# Suppress macOS extended attributes, and keep the source directory traversable
+# by the unprivileged Linux service user after extraction.
+temporary=$(mktemp "$output/.qingjian-package.XXXXXX")
+COPYFILE_DISABLE=1 tar --no-xattrs --no-acls -cf - . | gzip -1 > "$temporary"
+node --input-type=module - "$temporary" "$archive" <<'JS'
+import {createReadStream} from 'node:fs';
+import {writeFile,rename} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import path from 'node:path';
+const temporary=process.argv[2],archive=process.argv[3],hash=createHash('sha256');
+for await(const chunk of createReadStream(temporary))hash.update(chunk);
+const digest=hash.digest('hex'),line=digest+'  '+path.basename(archive)+'\n';
+await writeFile(archive.replace(/\.tar\.gz$/,'.sha256'),line,{flag:'wx'});
+await rename(temporary,archive);
+console.log(JSON.stringify({archive,sha256:digest}));
+JS

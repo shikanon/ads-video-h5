@@ -24,7 +24,7 @@ assert.match(credentials.email, /^mini-deploy-[^@]+@example\.invalid$/);
 assert.equal(typeof credentials.password, 'string');
 assert.ok(credentials.password.length >= 24);
 const base = new URL(config.apiBase).origin;
-const h5Origin = process.env.QINGJIAN_MINI_QA_H5_ORIGIN || (isolatedApi ? base : 'https://video.shikanon.com');
+const h5Origin = process.env.QINGJIAN_MINI_QA_H5_ORIGIN || base;
 assert.ok((isolatedApi ? [base] : [base, 'https://video.shikanon.com']).includes(h5Origin), 'H5 QA must use the isolated backend or a known Qingjian domain.');
 const apiPath = new URL(config.apiBase).pathname;
 const expected = JSON.parse(await readFile(path.join(root, 'dist/release.json'))).revision;

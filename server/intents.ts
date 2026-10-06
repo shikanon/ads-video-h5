@@ -2,10 +2,21 @@ import type { ChatMessage, JobKind, LessonReport } from '../src/types';
 
 export const intentText = (text:string) => text.normalize('NFKC').replace(/\s+/g,' ').trim();
 
+// ASR often omits punctuation. An excluded feature immediately followed by a
+// positive action ("不要旁白或音乐直接导出") must not negate that action. Keep
+// exclusions of the export itself, including an intervening video object.
+function operationText(text:string):string {
+  const feature='(?:旁白|配音|口播|背景音乐|音乐|配乐|BGM|字幕|封面|音效|原声|转场|特效)';
+  const exclusion='(?:不要|不用|不加|无需|不必|无须|别(?:加)?|禁止)\\s*(?:再)?(?:添加|加入|加|使用|生成|合成)?\\s*';
+  const list='(?:\\s*(?:或|和|与|、|以及|也不要|也不加|不要|不用)\\s*'+feature+')*';
+  const action='(?:直接(?:制作|生成|出片|渲染|导出)|然后(?:渲染|导出|生成成片)|再(?:渲染|导出|生成成片))';
+  return intentText(text).replace(new RegExp(exclusion+feature+list+'\\s*(?='+action+')','gi'),' ');
+}
+
 // Advice and quoted failures are not authorization to create a movie. A polite
 // production question ("can you make...") still is an executable request.
 export function wantsConversation(text:string):boolean {
-  text=intentText(text);
+  text=operationText(text);
   if(/^(?:请问)?(?:你|轻剪|这个工具|这个Agent)?(?:能不能|能|可以|支持)(?:制作|生成|做)(?:教学|科普|资讯|新闻)?视频(?:吗)?[?？]?$/.test(text))return true;
   if(/(?:现在|最后|改为|改成|请)\s*(?:不用解释了[，,]?\s*)?直接(?:制作|生成|出片|渲染)/.test(text))return false;
   if(/(?:请|帮我|帮忙)(?:制作|生成|做)(?!视频(?:吗)?[?？]?$)/.test(text)&&!/(?:只|先)(?:解释|讨论|分析)/.test(text))return false;
@@ -14,7 +25,7 @@ export function wantsConversation(text:string):boolean {
 }
 
 export function wantsPlanOnly(text:string):boolean {
-  text=intentText(text);
+  text=operationText(text);
   const blocks=[...text.matchAll(/(?:只|先).{0,10}(?:方案|脚本|分镜)|(?:方案|脚本|分镜).{0,5}(?:就好|即可)|(?:不要|不用|别|暂不|暂时不|不必|无需)[^，。；,;.!?]{0,10}(?:导出|出片|渲染|生成成片|生成视频)|(?:成片|视频).{0,5}(?:先别|暂时别|暂不|不要)(?:做|生成|导出)|\b(?:draft|write|plan).{0,20}(?:script|storyboard)\b|\b(?:only).{0,20}(?:script|storyboard)\b|\b(?:do not|don't|no|without)[^,.;!?]{0,16}(?:render|export)\b/gi)].filter(m=>!/(?:不要|别|不是|not)\s*$/i.test(text.slice(Math.max(0,m.index!-6),m.index)));
   const last=blocks.at(-1);if(!last)return false;
   const grants=[...text.matchAll(/直接(?:制作|生成|出片|渲染|导出)|(?:然后|再)(?:渲染|导出|生成成片)|\b(?:then render|then export|generate|make).{0,20}(?:video|film)\b/gi)].filter(m=>!/(?:不要|别|不|do not|don't)[^，。；,.;!?]{0,8}$/i.test(text.slice(Math.max(0,m.index!-14),m.index)));
@@ -26,7 +37,7 @@ export const excludesBgm = (text: string) => /(?:不要|不加|不用|不使用|
 export const excludesHtml = (text: string) => /(?:不要|不用|禁止|取消|去掉).{0,8}(?:HTML|信息图|图解|生成画面)|只(?:用|保留|剪).{0,8}(?:真人|原视频|已有视频)(?!的?(?:声音|音频|音轨|原声|口播|录音))/i.test(text);
 export const wantsCurrentResearch = (text:string) => /热点|热搜|热榜|新闻|资讯|快讯|时事|(?:实时|最新|最近|近期).{0,30}(?:消息|动态|进展|更新|报道)|(?:查证|核实).{0,60}(?:已经发布|是否.{0,5}发布)|今天.{0,12}事件|近期.{0,12}事件|当下.{0,12}爆款|trending|\b(?:news|latest|recent)\b|breaking\s+(?:news|update)/i.test(intentText(text).replace(/(?:不要|不用|别|不加)[^，。；,;.!?]{0,8}(?:新闻式|新闻播报|新闻风格)/g,''));
 export const wantsCurrentVideo = (text:string) => {
-  text=intentText(text);
+  text=operationText(text);
   return wantsCurrentResearch(text)&&!wantsConversation(text)&&!/(?:只|先).{0,8}(?:给|找|搜集|研究|推荐).{0,10}(?:选题|资料)|(?:给|搜集|查找|推荐|整理).{0,20}选题|(?:不要|别).{0,10}(?:生成|制作).{0,8}(?:视频|成片)|不(?:再|需要)?\s*(?:生成|制作).{0,8}(?:视频|成片)|\b(?:do not|don't).{0,12}(?:make|generate|create).{0,12}video/i.test(text)&&/(?:生成|制作|做|剪成|创作|出|来|create|make|generate|deliver).{0,70}(?:视频|短片|成片|video|快讯)/i.test(text);
 };
 export const wantsCurrentResearchOnly = (text:string) => wantsCurrentResearch(text)&&!wantsConversation(text)&&!wantsCurrentVideo(text)&&!/脚本|分镜|script|storyboard/i.test(text)&&/搜集|搜索|检索|查证|核实|选题|研究|资料|推荐|\bresearch\b|list sources/i.test(text);
@@ -75,7 +86,7 @@ export function classify(message: string): JobKind {
   const text = intentText(message);
   if(wantsConversation(text))return 'plan';
   const planOnly = wantsPlanOnly(text);
-  const exportIntent = /重新导出|导出(?:当前|现有)?方案|(?:导出|生成|制作|渲染|剪成|做成|做一|出一|来一|创作).{0,70}(?:成片|视频|mp4)|剪一段.{0,40}(?:快讯|视频|短片)|\bedit.{0,50}into.{0,20}video\b|\b(?:export|render|generate|create|make|deliver).{0,70}(?:video|film|mp4)\b|\b(?:video|film|mp4).{0,24}(?:export|render)\b/i.test(text);
+  const exportIntent = /重新导出|(?:直接|然后|再)(?:导出|出片|渲染)(?:当前|现有)?(?:方案|成片|视频|mp4)?\s*(?:[，。；,;.!?]|$)|导出(?:当前|现有)?方案|(?:导出|生成|制作|渲染|剪成|做成|做一|出一|来一|创作).{0,70}(?:成片|视频|mp4)|剪一段.{0,40}(?:快讯|视频|短片)|\bedit.{0,50}into.{0,20}video\b|\b(?:export|render|generate|create|make|deliver).{0,70}(?:video|film|mp4)\b|\b(?:video|film|mp4).{0,24}(?:export|render)\b/i.test(text);
   const editIntent = /剪辑|精剪|裁剪|剪成|删(?:掉|除)|去重|保留原(?:声|音)|字幕|时间轴|片段|拼接|调整|缩放|转场|画幅|时长|完整句|\b(?:edit|trim|cut|caption|subtitle|zoom|transition|reorder)\b/i.test(text);
   const analyzeIntent = /转写|转录|逐字稿|识别.{0,8}(?:音频|口播|语音)|理解.{0,8}(?:音频|口播)|分析.{0,8}(?:音频|口播|语音)|听(?:一下|懂)|\b(?:transcribe|transcript|asr)\b/i.test(text);
   if (/(审查|审阅|打分|评分|检查成片|\breview\b)/i.test(text) && !exportIntent && !editIntent) return 'review';

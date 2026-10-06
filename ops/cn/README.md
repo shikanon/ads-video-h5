@@ -8,19 +8,19 @@
 - pnpm 11.25.0：`/opt/qingjian-cn/pnpm/node_modules/.bin/pnpm`。
 - 不可变源码与构建：`/opt/qingjian-cn/releases/<40位Git提交号>`；`current` 为当前版本软链接。
 - 运行用户 `qingjian-cn`，构建用户 `qingjian-cn-build`；运行进程只监听 `127.0.0.1:8787`。
-- 正式持久数据 `/data/qingjian`，运行用户主目录也使用此路径，兼容迁移数据的既有绝对文件路径；配置和模型密钥不进入源码包，构建用户不能读取此目录。
+- 正式持久数据 `/data/qingjian`，运行进程 HOME 也使用此路径；配置和模型密钥不进入源码包，构建用户不能读取此目录。
 - `qingjian-cn.service` 为运行服务；`/etc/qingjian-cn/server.env` 可存放服务器私有设置。
 - Nginx 仅新增 `video.tensorbytes.com` 专用站点；证书位于 `/etc/letsencrypt/live/video.tensorbytes.com`。
 
-用户已确认原 H5 与小程序实时共用。国内 H5 与小程序使用同一服务和数据目录，原 H5 通过 HTTPS 网关访问国内后端；须执行 [`SHARED_DATA_CUTOVER.md`](SHARED_DATA_CUTOVER.md) 的历史迁移和共用验收。两个运行实例不能直接共写 JSON 数据文件，也不能用周期复制冒充实时共用。
+用户最新要求：保留原服务器，停止迁移；`video.shikanon.com` 供国外使用，`video.tensorbytes.com` 供国内使用。国内 H5 与国内小程序使用同一服务。国内与原网站的账号、素材和积分是否独立，仍待用户确认；此前的实时共用要求不能因停止迁移便默认撤销。原 [`SHARED_DATA_CUTOVER.md`](SHARED_DATA_CUTOVER.md) 为已停止的历史方案，不再执行。
 
 ## 安装与激活
 
 1. 创建两个系统用户、独立目录，安装 Node 与仓库指定的 pnpm；Node 下载包按官方 SHA-256 核验。已存在的应用、运行时及 Nginx 站点不覆盖。
 2. 当前 2 GiB 共享主机优先使用 [Linux 发布构建](../../.github/workflows/cn-release.yml)：在 Ubuntu 22.04、Node 24.21.0 下安装冻结依赖、运行原生传输回归并构建 H5/后台，生成带完整 Linux 依赖的提交号 tar.gz 和 SHA-256 文件。确认实际工作流成功、提交号和包哈希后，再上传、解包；包不包含生产数据、密钥或 Git 凭证。
-3. 发布目录改为 root 拥有、只读，使用服务器已有 Ubuntu FFmpeg。若在资源更充足的 Linux 主机现场构建，可用 `git archive <sha>` 导出源码并安装 [`build-release`](build-release) 至 `/usr/local/libexec/qingjian-cn-build-release`，以构建用户在有限额的临时单元中运行；它跳过安装脚本并核对产物提交号。构建不传入模型、OSS、邮件密钥。此备用方式在当前主机已触发构建单元 OOM，不能因降低并发而假定适合小内存机器。
-4. 按共用切换方案，从原生产服务的一致性快照迁移完整账号、账本、媒体和私有配置。`provider-models.json` 与匹配的 `admin-token`、管理员认证密钥保持 `0600`，OSS/邮件配置按原服务实际设置恢复。不要用本机开发数据替代生产快照，也不要只复制模型配置便公开空库。
-5. 将 [`qingjian-cn.service`](qingjian-cn.service) 和 [`activate-release`](activate-release) 安装到 systemd 与 `/usr/local/sbin/qingjian-cn-activate`。执行 `systemctl daemon-reload` 后，运行 `qingjian-cn-activate /opt/qingjian-cn/releases/<sha>`；脚本先检查原账号、积分和会话 JSON 已导入且运行用户可读取解析，拒绝空库或不完整导入，再检查发布号、H5、后台和未登录 401，失败恢复前一版本。
+3. 也可在操作者本机执行 [`package-release`](package-release) 导出准确 HEAD、构建 H5/后台、按冻结锁文件安装 Linux x64 依赖并生成包及 SHA-256。打包使用 [pnpm 的目标平台选项](https://pnpm.io/cli/install#--osname)，跳过安装脚本，核对 Linux 原生模块，移除 macOS 扩展属性；构建过程不读取生产数据。上传后核对哈希，并在 Linux 检查 esbuild、Sharp、FFmpeg/ffprobe。解包时用受限临时单元，将提交号目录设为 root 拥有、0755、其他用户不可写。不要在当前小内存服务器现场重装依赖。
+4. 先明确国内与国外的数据关系，再独立配置国内私有模型、OSS 和邮件设置。若采用独立存储，应显式初始化全新国内数据，不能冒充原网站账户；若继续实时共用，应先完成获授权的 API 对接和接口兼容性验收。当前原后端较旧，直接转发缺少签到和原生二进制上传能力。用户已禁止原服务器迁移。
+5. 将 [`qingjian-cn.service`](qingjian-cn.service) 和 [`activate-release`](activate-release) 安装到 systemd 与 `/usr/local/sbin/qingjian-cn-activate`。执行 `systemctl daemon-reload` 后，运行 `qingjian-cn-activate /opt/qingjian-cn/releases/<sha>`；脚本先检查正式账号、积分和会话 JSON 已准备且运行用户可读取解析，拒绝未准备的数据目录，再检查发布号、H5、后台和未登录 401，失败恢复前一版本。
 6. 先配置 HTTP ACME 验证站点，再用服务器现有 Certbot 账号获取本域名证书。安装 [`video.tensorbytes.com.conf`](../nginx/video.tensorbytes.com.conf)，执行 `nginx -t` 后重载。证书自动续期后需 nginx reload hook。
 7. 从公网检查 `/qingjian/api/health` 的实际 SHA、`/qingjian/release.json`、未登录状态 401，再使用隔离验收账号验证签到、上传、原生识别和 Agent。检查原有站点仍健康。
 
@@ -30,11 +30,11 @@
 
 ## 原生接口验收脚本
 
-[`tooling/smoke-miniprogram.mjs`](../../tooling/smoke-miniprogram.mjs) 使用实际原生客户端网络封装和真实 HTTP，默认同时访问国内小程序 API 与原 `video.shikanon.com`。覆盖两入口发布 SHA、鉴权、同账号双向会话同步、跨入口签到去重、PNG/MP4/MP3 二进制上传与两入口私有下载、真实 Agent 视频导出、全帧解码和同步账本。启用语音选项还会用测试文本生成语音，先识别，再提交同一任务；它不是微信设备模拟器。切换前仅验收国内服务时可设 `QINGJIAN_MINI_QA_H5_ORIGIN=https://video.tensorbytes.com`，报告会明确标为国内单站测试，不能代替原 H5 共用验收。
+[`tooling/smoke-miniprogram.mjs`](../../tooling/smoke-miniprogram.mjs) 使用实际原生客户端网络封装和真实 HTTP，默认测试国内小程序 API 与国内 H5。覆盖发布 SHA、鉴权、同账号双向会话同步、签到去重、PNG/MP4/MP3 二进制上传与私有下载、真实 Agent 视频导出、全帧解码和同步账本。启用语音选项还会生成测试语音，先识别，再提交同一任务；它不是微信设备模拟器。只有获授权完成跨站 API 对接后，才可显式设 `QINGJIAN_MINI_QA_H5_ORIGIN=https://video.shikanon.com` 做共用验收，不能将国内单站测试冒充国外数据共用。
 
 管理员须先在隔离测试环境准备专用账号。凭证 JSON 仅保存在服务器私有目录，含 `purpose: "qingjian-deployment-qa"`、以 `mini-deploy-` 开头且以 `@example.invalid` 结尾的测试邮箱，以及至少 24 位随机密码。脚本拒绝使用普通生产账号，不会打印凭证或登录 Cookie。以下命令只引用文件路径，不包含密钥值：
 
-生产数据尚未迁移时，可在独立数据目录、独立端口运行仅监听回环地址的服务，并设置 `QINGJIAN_MINI_QA_ISOLATED_API=http://127.0.0.1:8789/api`。报告明确标记 `isolated-loopback`；此模式拒绝外部 HTTP 地址及混用生产 H5 域名，发布小程序的 HTTPS 配置不变。隔离联调不能代替公网共用和微信真机验收。
+正式数据配置尚未确定时，可在独立数据目录、独立端口运行仅监听回环地址的服务，并设置 `QINGJIAN_MINI_QA_ISOLATED_API=http://127.0.0.1:8789/api`。报告明确标记 `isolated-loopback`；此模式拒绝外部 HTTP 地址及混用生产 H5 域名，发布小程序的 HTTPS 配置不变。隔离联调不能代替公网共用和微信真机验收。
 
 ```bash
 cd /opt/qingjian-cn/current

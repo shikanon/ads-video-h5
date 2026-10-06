@@ -7,6 +7,8 @@ name: Domestic Linux release
     paths:
       - '.github/workflows/cn-release.yml'
       - 'ops/cn/build-release'
+      - 'ops/cn/package-release'
+      - 'ops/cn/activate-release'
       - 'server/**'
       - 'shared/**'
       - 'src/**'
@@ -58,9 +60,9 @@ jobs:
       - name: Check native transport and build H5 and admin
         shell: bash
         run: |
-          bash -n ops/cn/build-release ops/cn/activate-release
+          bash -n ops/cn/build-release ops/cn/package-release ops/cn/activate-release
           node --check tooling/smoke-miniprogram.mjs
-          node --import tsx --test tests/miniprogram.test.ts
+          node --import tsx --test tests/miniprogram.test.ts tests/voiceIntent.test.ts tests/requestRouting.test.ts
           VITE_BASE_PATH=/qingjian/ pnpm build
           node -e 'const r=require("./dist/release.json");if(r.revision!==process.env.GITHUB_SHA)process.exit(1)'
       - name: Package Linux runtime without production data

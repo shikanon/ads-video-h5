@@ -11,6 +11,7 @@ Environment=PATH=/opt/qingjian-cn/node/bin:/opt/qingjian-cn/pnpm/node_modules/.b
 Environment=PORT=8787
 Environment=PUBLIC_BASE_PATH=/qingjian
 Environment=QINGJIAN_DATA_DIR=/data/qingjian
+Environment=HOME=/data/qingjian
 Environment=HYPERFRAMES_SKIP_SKILLS=1
 EnvironmentFile=-/etc/qingjian-cn/server.env
 ExecStart=/opt/qingjian-cn/node/bin/node --import tsx server/index.ts

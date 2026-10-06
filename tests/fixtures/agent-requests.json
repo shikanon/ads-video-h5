@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "cases": [
     {
       "id": "news-original",
@@ -1121,6 +1121,114 @@
         "topic": "印刷术",
         "seconds": 45,
         "format": "16:9"
+      }
+    },
+    {
+      "id": "voice-original-asr",
+      "family": "voice",
+      "prompt": "把附加的视频剪成三秒竖屏成片保留原素材画面不要旁白或音乐直接导出",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "voice-no-narration-export",
+      "family": "voice",
+      "prompt": "把上传视频剪成三秒不要旁白直接生成成片",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "voice-no-bgm-export",
+      "family": "voice",
+      "prompt": "把上传视频做成竖屏不要背景音乐直接生成视频",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "voice-no-caption-export",
+      "family": "voice",
+      "prompt": "用原素材不加字幕直接导出",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "voice-no-voice-generation",
+      "family": "voice",
+      "prompt": "把上传视频剪成三秒不要生成旁白直接导出",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "voice-exclusion-list",
+      "family": "voice",
+      "prompt": "把上传视频剪成三秒不要旁白也不要音乐直接导出",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "voice-exclusion-then",
+      "family": "voice",
+      "prompt": "把上传视频剪成三秒不要字幕不要配乐然后导出",
+      "expected": {
+        "mode": "footage",
+        "export": true
+      }
+    },
+    {
+      "id": "voice-no-direct-export",
+      "family": "voice",
+      "prompt": "把上传视频剪成三秒不要直接导出",
+      "expected": {
+        "mode": "footage",
+        "export": false
+      }
+    },
+    {
+      "id": "voice-no-export-object",
+      "family": "voice",
+      "prompt": "把上传视频剪成三秒不要把这条视频直接导出",
+      "expected": {
+        "mode": "footage",
+        "export": false
+      }
+    },
+    {
+      "id": "voice-double-negative",
+      "family": "voice",
+      "prompt": "把上传视频剪成三秒不要配乐也不要直接导出",
+      "expected": {
+        "mode": "footage",
+        "export": false
+      }
+    },
+    {
+      "id": "voice-plan-only",
+      "family": "voice",
+      "prompt": "把上传视频剪成三秒先给方案不要导出",
+      "expected": {
+        "mode": "footage",
+        "export": false
+      }
+    },
+    {
+      "id": "voice-export-later",
+      "family": "voice",
+      "prompt": "把上传视频剪成三秒不要旁白或音乐但暂时不导出",
+      "expected": {
+        "mode": "footage",
+        "export": false
       }
     }
   ]
