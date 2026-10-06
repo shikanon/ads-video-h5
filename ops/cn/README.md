@@ -26,6 +26,27 @@
 
 服务配置变更不由代码推送自动安装；本部署不启用海外站点的 CD 定时器。更新时重复导出、构建、校验和激活步骤，保留旧版本供回滚，不替换持久数据目录。
 
+服务器内存较小时，安装依赖先使用 `NODE_OPTIONS=--max-old-space-size=384 pnpm install --frozen-lockfile --network-concurrency=2 --child-concurrency=1`，构建单独执行并观察内存。安装过程连接中断时先核查原进程和服务器负载，再决定续装；不要同时启动重复安装或重启整台共享服务器。
+
+## 原生接口验收脚本
+
+[`tooling/smoke-miniprogram.mjs`](../../tooling/smoke-miniprogram.mjs) 使用实际原生客户端的网络封装与公网 API，覆盖发布 SHA、鉴权、同国内 H5 会话同步、签到去重、PNG/MP4/MP3 二进制上传与私有下载、真实 Agent 视频导出和全帧解码。启用语音选项还会用测试文本生成语音，先识别，再提交同一任务；它不是微信设备模拟器。
+
+管理员须先在隔离测试环境准备专用账号。凭证 JSON 仅保存在服务器私有目录，含 `purpose: "qingjian-deployment-qa"`、以 `mini-deploy-` 开头且以 `@example.invalid` 结尾的测试邮箱，以及至少 24 位随机密码。脚本拒绝使用普通生产账号，不会打印凭证或登录 Cookie。以下命令只引用文件路径，不包含密钥值：
+
+```bash
+cd /opt/qingjian-cn/current
+QINGJIAN_DATA_DIR=/data/qingjian-cn \
+QINGJIAN_MINI_QA_CREDENTIALS=/data/qingjian-cn/deploy-qa-credentials.json \
+QINGJIAN_MINI_QA_REPORT=/data/qingjian-cn/deploy-qa-report.json \
+QINGJIAN_MINI_QA_VOICE=1 \
+/opt/qingjian-cn/node/bin/node --import tsx tooling/smoke-miniprogram.mjs
+```
+
+合成测试素材及识别、生成请求会产生正常的模型和存储用量。测试报告必须依据真实执行结果，不能将脚本存在或本地专项测试通过写成线上验收通过。
+
+本次操作状态见 [`DEPLOYMENT_20261006.md`](DEPLOYMENT_20261006.md)。
+
 ## 微信体验版
 
 原生项目已绑定 `wxf5dfb5d144bcd684`。微信域名配置、开发者/体验者权限、隐私指引、开发者工具上传及设为体验版仍由发布者完成；服务器上线与代码包构建不代表微信体验版已发布。具体清单见 [`apps/miniprogram/README.md`](../../apps/miniprogram/README.md)。

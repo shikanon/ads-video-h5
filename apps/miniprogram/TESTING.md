@@ -27,6 +27,6 @@
 - 「AI了吗」AppID 已更新为 `wxf5dfb5d144bcd684`，API 域名已更新为 `video.tensorbytes.com`。未上传微信体验版，没有体验二维码。
 - 本机没有微信开发者工具，尚未进行工具模拟器和 iPhone/Android 真机验收；相册权限、原生录像/播放与完整成片播放到结束，仍需按 README 的真机清单检查。
 - 微信管理后台入口被站点安全策略阻止访问，最后的上传与设为体验版需由发布者完成。
-- 原服务器 `video.shikanon.com` 的 HTTPS 与 SSH 连接仍超时；用户另行指定了国内服务器及域名，国内部署结果需以实际 `/qingjian/api/health` 发布 SHA 和认证联调记录确认。
+- 原服务器 `video.shikanon.com` 的 HTTPS 与 SSH 连接仍超时。国内服务器已安装独立运行时并为 `video.tensorbytes.com` 配置专用有效证书，但依赖安装过程中 SSH/HTTPS 持续超时；构建未确认成功，未激活国内服务，尚无公网健康 SHA 和认证联调验收结果。详细步骤见仓库 `ops/cn/DEPLOYMENT_20261006.md`。
 
 打包目录的 `build-manifest.json` 记录源码提交、客户端内容哈希、AppID 绑定状态及 `not-uploaded` 状态；绑定后仍需微信工具/真机验证和体验版上传。
