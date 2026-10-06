@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+# Explicitly provision a fresh, independent domestic store. Never import or
+# replace another deployment's users, media, balances, sessions, or credentials.
+release=${1:?Usage: init-data /opt/qingjian-cn/releases/<40-character-SHA>}
+[[ $(id -u) == 0 ]]
+[[ "$release" =~ ^/opt/qingjian-cn/releases/[0-9a-f]{40}$ && -d "$release" && ! -L "$release" ]]
+test -f "$release/server/credits.ts"
+test -d "$release/node_modules"
+exec 9>/run/lock/qingjian-cn-data-init.lock
+flock -n 9 || { echo 'Another domestic data initialization is running.' >&2; exit 1; }
+if [[ -e /data/qingjian || -L /data/qingjian ]]; then
+  echo 'Domestic data already exists; refusing to replace it.' >&2
+  exit 1
+fi
+staging=$(mktemp -d /data/.qingjian-cn-init.XXXXXXXX)
+cleanup() { if [[ -n "$staging" ]]; then rm -rf -- "$staging"; fi; }
+trap cleanup EXIT
+chown qingjian-cn:qingjian-cn "$staging"
+cd "$release"
+/usr/sbin/runuser -u qingjian-cn -- /opt/qingjian-cn/node/bin/node --import tsx --input-type=module - "$release" "$staging" <<'JS'
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const [release, dataDir] = process.argv.slice(2);
+const save = (name, value) => writeFile(path.join(dataDir, name), JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+await save('auth.json', { users: [], sessions: [], verifications: [] });
+await save('app-state.json', { sessions: [], media: [], artifacts: [], jobs: [], profiles: {}, artifactFiles: {}, narrationBySession: {}, bgmBySession: {} });
+const { createCredits } = await import(pathToFileURL(path.join(release, 'server/credits.ts')).href);
+await createCredits(dataDir).load([]);
+await save('deployment-data.json', { version: 1, initializedAt: new Date().toISOString(), mode: 'independent-domestic', sharedClients: ['domestic-h5', 'wechat-miniprogram'], domain: 'video.tensorbytes.com', overseasDataImported: false });
+JS
+mv -T "$staging" /data/qingjian
+staging=''
+echo 'Initialized independent domestic accounts, credits and media state.'

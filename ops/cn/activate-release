@@ -10,9 +10,9 @@ if [[ ! "$release" =~ ^/opt/qingjian-cn/releases/[0-9a-f]{40}$ || ! -d "$release
 fi
 expected=${release##*/}
 # Persistent stores must be intentionally provisioned before public activation.
-# A new domestic deployment must not silently substitute for shared accounts.
+# Provisioning is explicit; activation never creates or replaces a store.
 for file in auth.json credits.json app-state.json; do
-  test -f "/data/qingjian/$file" || { echo "Missing production data import: $file" >&2; exit 1; }
+  test -f "/data/qingjian/$file" || { echo "Missing initialized production store: $file" >&2; exit 1; }
 done
 runuser -u qingjian-cn -- /opt/qingjian-cn/node/bin/node -e '
   const fs=require("fs");
