@@ -1,0 +1,84 @@
+name: Domestic Linux release
+
+'on':
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cn-release.yml'
+      - 'ops/cn/build-release'
+      - 'server/**'
+      - 'shared/**'
+      - 'src/**'
+      - 'apps/**'
+      - 'tooling/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cn-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      HYPERFRAMES_SKIP_SKILLS: '1'
+      PNPM_MAX_WORKERS: '1'
+      NODE_OPTIONS: --max-old-space-size=1536
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Install frozen dependencies
+        shell: bash
+        run: |
+          npm install --global --ignore-scripts pnpm@11.25.0
+          pnpm install --frozen-lockfile --ignore-scripts --network-concurrency=2 --child-concurrency=1
+          test -x /usr/bin/ffmpeg
+          ffmpeg_binary=$(node -p 'require("path").join(require("path").dirname(require.resolve("ffmpeg-static/package.json")),"ffmpeg")')
+          ln -s /usr/bin/ffmpeg "$ffmpeg_binary"
+          node -e 'require("esbuild").transformSync("const checked = true", {loader:"js"})'
+      - name: Check native transport and build H5 and admin
+        shell: bash
+        run: |
+          bash -n ops/cn/build-release ops/cn/activate-release
+          node --check tooling/smoke-miniprogram.mjs
+          node --import tsx --test tests/miniprogram.test.ts
+          VITE_BASE_PATH=/qingjian/ pnpm build
+          node -e 'const r=require("./dist/release.json");if(r.revision!==process.env.GITHUB_SHA)process.exit(1)'
+      - name: Package Linux runtime without production data
+        shell: bash
+        run: |
+          staging="$RUNNER_TEMP/qingjian-release"
+          mkdir -p "$staging"
+          git archive "$GITHUB_SHA" | tar -x -C "$staging"
+          cp -a node_modules "$staging/node_modules"
+          cp -a apps/admin/node_modules "$staging/apps/admin/node_modules"
+          cp -a apps/miniprogram/node_modules "$staging/apps/miniprogram/node_modules"
+          cp -a dist "$staging/dist"
+          test ! -e "$staging/data/auth.json"
+          test ! -e "$staging/data/provider-models.json"
+          test ! -e "$staging/.git"
+          mkdir -p release-artifacts
+          tar -czf "release-artifacts/qingjian-cn-$GITHUB_SHA.tar.gz" -C "$staging" .
+          cd release-artifacts
+          sha256sum "qingjian-cn-$GITHUB_SHA.tar.gz" > "qingjian-cn-$GITHUB_SHA.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qingjian-cn-${{ github.sha }}
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0

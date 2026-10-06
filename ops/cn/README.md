@@ -17,8 +17,8 @@
 ## 安装与激活
 
 1. 创建两个系统用户、独立目录，安装 Node 与仓库指定的 pnpm；Node 下载包按官方 SHA-256 核验。已存在的应用、运行时及 Nginx 站点不覆盖。
-2. 用 `git archive <sha>` 导出已提交版本并上传，核对包哈希；`ops/release-revision.txt` 的 `export-subst` 将提交号带入构建源。
-3. 安装 [`build-release`](build-release) 至 `/usr/local/libexec/qingjian-cn-build-release`，以构建用户在有资源限制的 systemd 临时单元中运行。它跳过依赖安装脚本，使用 Ubuntu 已有 FFmpeg，再验证 esbuild、构建 H5/后台并核对提交号。环境不传入模型、OSS、邮件密钥，构建后将发布目录改为 root 拥有、只读。
+2. 当前 2 GiB 共享主机优先使用 [Linux 发布构建](../../.github/workflows/cn-release.yml)：在 Ubuntu 22.04、Node 24.21.0 下安装冻结依赖、运行原生传输回归并构建 H5/后台，生成带完整 Linux 依赖的提交号 tar.gz 和 SHA-256 文件。确认实际工作流成功、提交号和包哈希后，再上传、解包；包不包含生产数据、密钥或 Git 凭证。
+3. 发布目录改为 root 拥有、只读，使用服务器已有 Ubuntu FFmpeg。若在资源更充足的 Linux 主机现场构建，可用 `git archive <sha>` 导出源码并安装 [`build-release`](build-release) 至 `/usr/local/libexec/qingjian-cn-build-release`，以构建用户在有限额的临时单元中运行；它跳过安装脚本并核对产物提交号。构建不传入模型、OSS、邮件密钥。此备用方式在当前主机已触发构建单元 OOM，不能因降低并发而假定适合小内存机器。
 4. 按共用切换方案，从原生产服务的一致性快照迁移完整账号、账本、媒体和私有配置。`provider-models.json` 与匹配的 `admin-token`、管理员认证密钥保持 `0600`，OSS/邮件配置按原服务实际设置恢复。不要用本机开发数据替代生产快照，也不要只复制模型配置便公开空库。
 5. 将 [`qingjian-cn.service`](qingjian-cn.service) 和 [`activate-release`](activate-release) 安装到 systemd 与 `/usr/local/sbin/qingjian-cn-activate`。执行 `systemctl daemon-reload` 后，运行 `qingjian-cn-activate /opt/qingjian-cn/releases/<sha>`；脚本先检查原账号、积分和会话 JSON 已导入且运行用户可读取解析，拒绝空库或不完整导入，再检查发布号、H5、后台和未登录 401，失败恢复前一版本。
 6. 先配置 HTTP ACME 验证站点，再用服务器现有 Certbot 账号获取本域名证书。安装 [`video.tensorbytes.com.conf`](../nginx/video.tensorbytes.com.conf)，执行 `nginx -t` 后重载。证书自动续期后需 nginx reload hook。
@@ -26,7 +26,7 @@
 
 服务配置变更不由代码推送自动安装；本部署不启用海外站点的 CD 定时器。更新时重复导出、构建、校验和激活步骤，保留旧版本供回滚，不替换持久数据目录。
 
-服务器内存较小时，构建 Node 堆限制为 384 MiB，安装时单独限制各 V8 堆为 192 MiB，安装网络并发为 2，pnpm 工作线程上限为 1，禁止重复构建。缓存与发布目录必须位于同一文件系统，依赖采用硬链接导入，避免复制缓冲与磁盘重复读取。当前国内服务器系统盘为 `/dev/vda`，临时构建单元使用 `MemoryHigh=750M`、`MemoryMax=900M`、`MemorySwapMax=0`、`CPUQuota=75%`，磁盘读写分别限制为 8 MB/s、4 MB/s 与各 200 IOPS，并设置 `OOMPolicy=kill` 和 15 分钟运行上限。限额是对单个构建的约束，仍须监测整机和原有业务；不能将软限制设得过低而使代码页面反复回收。其他主机需先核对实际块设备再设置 I/O 限额。连接中断时先核查原进程和服务器负载，再决定续装；不要同时启动重复安装或重启整台共享服务器。
+服务器内存较小时，构建 Node 堆限制为 384 MiB，安装时单独限制各 V8 堆为 192 MiB，安装网络并发为 2，pnpm 工作线程上限为 1，禁止重复构建。缓存与发布目录必须位于同一文件系统，依赖采用硬链接导入，避免复制缓冲与磁盘重复读取。当前国内服务器系统盘为 `/dev/vda`，主机配置 1 GiB 交换文件并设置 `vm.swappiness=10`；临时构建单元使用 `MemoryHigh=infinity`、`MemoryMax=900M`、`MemorySwapMax=512M`、`CPUQuota=75%`，磁盘读写分别限制为 8 MB/s、4 MB/s 与各 200 IOPS，并设置 `OOMPolicy=kill` 和 15 分钟运行上限。限额是对单个构建的约束，仍须监测整机和原有业务；不能将软限制设得过低而使代码页面反复回收。其他主机需先核对实际块设备再设置 I/O 限额。连接中断时先核查原进程和服务器负载，再决定续装；不要同时启动重复安装或重启整台共享服务器。
 
 ## 原生接口验收脚本
 
