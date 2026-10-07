@@ -48,7 +48,7 @@ await cp(source, path.join(destination, 'miniprogram'), { recursive: true });
 await writeFile(path.join(destination, 'project.config.json'), JSON.stringify({ ...config, appid }, null, 2) + '\n');
 await cp(path.join(project, 'README.md'), path.join(destination, 'README.md'));
 await cp(path.join(project, 'TESTING.md'), path.join(destination, 'TESTING.md'));
-const manifest = { version: '0.1.0', sourceRevision: revision, sourceSha256: digest.digest('hex'), appid,
+const manifest = { version: JSON.parse(await readFile(path.join(project, 'package.json'), 'utf8')).version, sourceRevision: revision, sourceSha256: digest.digest('hex'), appid,
   binding: appid === 'touristappid' ? 'awaiting-appid' : 'bound', publication: 'not-uploaded', apiBase: clientConfig.apiBase, bytes, files: files.length,
   checks: { javascript: 'parsed', json: 'parsed', wxml: 'official-compiler', wxss: 'official-compiler' }, generatedAt: new Date().toISOString() };
 await writeFile(path.join(destination, 'build-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');

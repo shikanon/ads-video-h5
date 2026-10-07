@@ -14,6 +14,7 @@ Environment=QINGJIAN_DATA_DIR=/data/qingjian
 Environment=HOME=/data/qingjian
 Environment=HYPERFRAMES_SKIP_SKILLS=1
 EnvironmentFile=-/etc/qingjian-cn/server.env
+EnvironmentFile=-/etc/qingjian-cn/wechat.env
 ExecStart=/opt/qingjian-cn/node/bin/node --import tsx server/index.ts
 Restart=on-failure
 RestartSec=5

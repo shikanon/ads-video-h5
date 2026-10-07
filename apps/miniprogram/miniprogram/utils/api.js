@@ -4,7 +4,9 @@ function createClient(platform, config, onExpired) {
   const base = config.apiBase.replace(/\/$/, '');
   const match = /^(https?:\/\/[^/]+)(\/.*)?$/.exec(base);
   if (!match || !/\/api$/.test(base) || !/^https:\/\//.test(base) && !(config.allowLocal && /^http:\/\/127\.0\.0\.1:\d+\/api$/.test(base))) throw new Error('小程序接口地址无效。');
-  const origin = match[1], storageKey = 'qingjian:session:' + base;
+  const origin = match[1], storageKey = 'qingjian:wechat-session:v1:' + base;
+  // Old releases used email sessions. Never restore those as a WeChat account.
+  platform.removeStorageSync('qingjian:session:' + base);
   const stored = platform.getStorageSync(storageKey);
   let cookie = typeof stored === 'string' && /^qingjian_session=[A-Za-z0-9_-]{32,120}$/.test(stored) ? stored : '', epoch = 0;
   const cache = new Map();
@@ -45,6 +47,20 @@ function createClient(platform, config, onExpired) {
       fail: () => reject(new Error('连接轻剪失败，请检查网络后重试。')),
     }));
   }
+  async function wechatLogin() {
+    clear();
+    const loginEpoch = epoch;
+    const result = await new Promise((resolve, reject) => platform.login({ timeout: 10000, success: resolve,
+      fail: () => reject(new Error('微信登录未完成，请重新点击微信登录。')),
+    }));
+    if (loginEpoch !== epoch) throw new Error('登录状态已改变，请重新操作。');
+    if (!result || typeof result.code !== 'string' || !result.code) throw new Error('微信未返回登录凭证，请重新点击微信登录。');
+    const response = await request('/api/auth/wechat/login', { code: result.code });
+    if (!cookie || !response.user || response.user.authProvider !== 'wechat') {
+      clear(); throw new Error('微信登录验证未完成，请重试。');
+    }
+    return response;
+  }
   function upload(route, filePath, name, formData, progress) {
     const url = endpoint(route), requestEpoch = epoch;
     return new Promise((resolve, reject) => {
@@ -83,6 +99,6 @@ function createClient(platform, config, onExpired) {
     const url = mediaUrl(value);
     return url && !url.startsWith(base + '/') ? url : '';
   };
-  return { request, upload, download, mediaUrl, previewUrl, clear, hasSession: () => Boolean(cookie) };
+  return { request, wechatLogin, upload, download, mediaUrl, previewUrl, clear, hasSession: () => Boolean(cookie) };
 }
 module.exports = { createClient };

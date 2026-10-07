@@ -49,10 +49,10 @@ export default function CreditAdmin({ token }: { token: string }) {
     {error ? <div className="admin-alert" role="alert">{error}</div> : null}
     {notice ? <div className="admin-notice" role="status">{notice}</div> : null}
     <section className="admin-panel">
-      <div className="admin-panel-heading"><h2>用户账户</h2><input className="credit-search" aria-label="搜索用户" placeholder="搜索邮箱或昵称" value={search} onChange={e => setSearch(e.target.value)} /></div>
+      <div className="admin-panel-heading"><h2>用户账户</h2><input className="credit-search" aria-label="搜索用户" placeholder="搜索邮箱、昵称或用户 ID" value={search} onChange={e => setSearch(e.target.value)} /></div>
       <div className="credit-table-wrap"><table><thead><tr><th>用户</th><th>积分余额</th><th>累计消费</th><th>特殊账户</th><th>记录</th></tr></thead><tbody>
-        {state?.accounts.filter(a => `${a.email} ${a.displayName}`.toLowerCase().includes(search.toLowerCase())).map(a => <tr key={a.id}>
-          <td><strong>{a.displayName}</strong><small>{a.email}</small></td><td className={a.wallet.balance <= 0 ? 'credit-negative' : ''}>{formatPoints(a.wallet.balance)}</td><td>{formatPoints(a.wallet.totalSpent)}</td>
+        {state?.accounts.filter(a => `${a.email} ${a.displayName} ${a.id}`.toLowerCase().includes(search.toLowerCase())).map(a => <tr key={a.id}>
+          <td><strong>{a.displayName}</strong><small>{a.authProvider === 'wechat' ? '微信账号' : a.email}</small><small>{a.id}</small></td><td className={a.wallet.balance <= 0 ? 'credit-negative' : ''}>{formatPoints(a.wallet.balance)}</td><td>{formatPoints(a.wallet.totalSpent)}</td>
           <td><input type="checkbox" aria-label={`${a.displayName} 特殊账户`} checked={a.wallet.special} disabled={busy} onChange={() => void special(a)} /></td><td><button type="button" disabled={busy} onClick={() => void records(a)}>查看</button></td>
         </tr>)}
       </tbody></table></div>{!state ? <p>正在读取账户…</p> : null}

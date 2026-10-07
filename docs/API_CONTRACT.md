@@ -10,9 +10,11 @@
 | `GET /api/auth/me` | Cookie | 当前帐号资料；未登录返回 401 |
 | `POST /api/auth/send-code` | `{email}` | 通过 Resend 发送 6 位注册验证码；有效期 10 分钟，至少间隔 60 秒重发 |
 | `POST /api/auth/register` | `{displayName,email,password,verificationCode}` | 校验邮箱验证码后创建帐号并设置登录 Cookie |
-| `POST /api/auth/login` | `{email,password}` | 验证密码并设置登录 Cookie |
+| `POST /api/auth/login` | `{email,password}` | H5 邮箱账号验证密码并设置登录 Cookie |
+| `POST /api/auth/wechat/login` | `{code}`，来自 `wx.login` | 服务端向微信 `code2Session` 交换已验证身份；首次 201、重复 200，返回 `{user,created,credits}` 并设置 Cookie，首次赠送 2000 积分且不重复发放 |
+| `PATCH /api/auth/wechat/profile` | 微信登录 Cookie，`{displayName}` | 更新 1–40 字符的选填昵称；不能改变身份、邮箱或所属用户；邮箱账号调用返回 403 |
 | `POST /api/auth/logout` | Cookie | 撤销当前登录会话并清除 Cookie |
-| `PATCH /api/auth/password` | `{currentPassword,newPassword}` | 更新密码并撤销该帐号的其他会话 |
+| `PATCH /api/auth/password` | `{currentPassword,newPassword}` | 邮箱账号更新密码并撤销其他会话；微信账号返回 403 |
 | `GET /api/state` | 无 | `AppState`，包含当前会话、素材、任务和成片 |
 | `POST /api/sessions` | `{}` | `AppState`，创建并激活新对话 |
 | `POST /api/sessions/:id/activate` | `{}` | `AppState`，切换历史会话 |
@@ -40,7 +42,7 @@
 
 除健康状态、注册、登录与登录状态查询外，普通 `/api` 接口都要求登录 Cookie。会话、素材、任务、成片及其应用内文件接口按帐号校验归属；跨帐号 ID 返回 404。公开读 OSS 直链是独立访问路径，持有链接的人无需 Cookie 即可读取对象。服务端拒绝来源不符的跨站写请求。管理后台使用独立 admin 账号与短期 Bearer 会话，支持 Authenticator 双因素验证，不使用普通帐号 Cookie。
 
-微信小程序使用相同的邮箱账号认证接口，在自己的 `wx.request` 响应中读取登录 Cookie，后续只向轻剪 API 域名发送该凭证。受保护文件通过 `wx.downloadFile` 的请求头授权后加载临时文件；公开 OSS 地址不携带账号 Cookie，凭证也不进入 URL。无需从 H5 导出 Cookie，不使用客户端 AppSecret，且保留服务端现有的跨站写入保护。
+微信小程序仅使用微信登录入口：`wx.login` → `/api/auth/wechat/login` → 服务端 `https://api.weixin.qq.com/sns/jscode2session`，以服务端配置的 AppID 和微信返回的 OpenID 唯一标识账号。客户端不能自行指定 OpenID、邮箱或 userInfo 来获得身份。微信账号有独立随机用户 ID，`authProvider=wechat`、`email=""`，无密码；邮箱账号为 `authProvider=email`，不按昵称或邮箱合并。首次赠分及每日签到按用户 ID 去重。AppSecret 仅保存在服务端，微信返回的 session_key 不存储、不回传。小程序在自己的 `wx.request` 响应中读取 Cookie，使用独立版本化的微信会话缓存；旧版邮箱缓存清除，后续只向轻剪 API 域名发送该凭证。受保护文件通过 `wx.downloadFile` 的请求头授权后加载临时文件；公开 OSS 地址不携带账号 Cookie，凭证也不进入 URL。无需从 H5 导出 Cookie，保留现有跨站写保护。凭证无效/已使用返回 400 `WECHAT_CODE_INVALID`；微信限流返回 429；缺少服务端 AppSecret 返回 503 `WECHAT_LOGIN_UNCONFIGURED`；供应商不可用或验证失败返回 502。错误不包含 AppSecret、code、session_key 或原始供应商错误。失败后须重新调用 `wx.login` 获取新 code。
 
 需要复用测试浏览器会话时，使用 `scripts/music-browser-client.js` 中的 `window.qingjianMusicBrowser` 方法，并在对应站点原页面上下文运行；`fetch` 由 Chrome 自动附带同源凭据，脚本不读取 Cookie。服务端 `/api/music/*` 与浏览器上下文方法是两条不同传输路径，当前网络仅浏览器会话路径已完成 24bit 的搜索到音频流读取验证。
 

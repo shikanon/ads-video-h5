@@ -9,10 +9,10 @@
 - 不可变源码与构建：`/opt/qingjian-cn/releases/<40位Git提交号>`；`current` 为当前版本软链接。
 - 运行用户 `qingjian-cn`，构建用户 `qingjian-cn-build`；运行进程只监听 `127.0.0.1:8787`。
 - 正式持久数据 `/data/qingjian`，运行进程 HOME 也使用此路径；配置和模型密钥不进入源码包，构建用户不能读取此目录。
-- `qingjian-cn.service` 为运行服务；`/etc/qingjian-cn/server.env` 可存放服务器私有设置。
+- `qingjian-cn.service` 为运行服务；`/etc/qingjian-cn/server.env` 可存放服务器私有设置；微信 AppID/AppSecret 使用 `/etc/qingjian-cn/wechat.env`（root 拥有、0600），重启服务加载。密钥不写入客户端、Git、发布包或日志。
 - Nginx 仅新增 `video.tensorbytes.com` 专用站点；证书位于 `/etc/letsencrypt/live/video.tensorbytes.com`。
 
-用户已明确：保留原国外站 `video.shikanon.com`，停止迁移；国内站 `video.tensorbytes.com` 的账号、素材和积分与国外站独立。国内 H5 和国内小程序在同一域名下使用同一 API 与持久存储，实时共用国内账号、素材、会话、任务与积分。原 [`SHARED_DATA_CUTOVER.md`](SHARED_DATA_CUTOVER.md) 为已停止的历史方案，不再执行。
+用户已明确：保留原国外站 `video.shikanon.com`，停止迁移；国内站 `video.tensorbytes.com` 的账号、素材和积分与国外站独立。国内 H5 和国内小程序在同一域名下使用同一 API 与持久存储，按账号身份持久保存国内素材、会话、任务与积分。小程序现为独立微信账号体系，H5 保留邮箱账号，二者不自动合并。原 [`SHARED_DATA_CUTOVER.md`](SHARED_DATA_CUTOVER.md) 为已停止的历史方案，不再执行。
 
 ## 安装与激活
 
@@ -30,7 +30,7 @@
 
 ## 原生接口验收脚本
 
-[`tooling/smoke-miniprogram.mjs`](../../tooling/smoke-miniprogram.mjs) 使用实际原生客户端网络封装和真实 HTTP，默认测试国内小程序 API 与国内 H5。覆盖发布 SHA、鉴权、同账号双向会话同步、签到去重、PNG/MP4/MP3 二进制上传与私有下载、真实 Agent 视频导出、全帧解码和同步账本。启用语音选项还会生成测试语音，先识别，再提交同一任务；它不是微信设备模拟器。只有获授权完成跨站 API 对接后，才可显式设 `QINGJIAN_MINI_QA_H5_ORIGIN=https://video.shikanon.com` 做共用验收，不能将国内单站测试冒充国外数据共用。
+[`tooling/smoke-miniprogram.mjs`](../../tooling/smoke-miniprogram.mjs) 使用实际原生客户端网络封装和真实 HTTP，使用专用邮箱测试账号检查国内 API 的通用网络封装和 H5 兼容性，不代表微信登录验收。覆盖发布 SHA、鉴权、同邮箱账号双向会话同步、签到去重、PNG/MP4/MP3 二进制上传与私有下载、真实 Agent 视频导出、全帧解码和同步账本。启用语音选项还会生成测试语音，先识别，再提交同一任务；它不是微信设备模拟器。微信身份链路使用 `tests/wechatAuth.test.ts` 的隔离供应商集成测试，随后在微信开发者工具中用真实 `wx.login` 联调；不能用邮箱 smoke 结果代替微信认证通过。国内与国外站保持独立，不进行跨站共用验收。
 
 管理员须先在隔离测试环境准备专用账号。凭证 JSON 仅保存在服务器私有目录，含 `purpose: "qingjian-deployment-qa"`、以 `mini-deploy-` 开头且以 `@example.invalid` 结尾的测试邮箱，以及至少 24 位随机密码。脚本拒绝使用普通生产账号，不会打印凭证或登录 Cookie。以下命令只引用文件路径，不包含密钥值：
 

@@ -51,6 +51,7 @@ export interface CreditAccount {
   id: string;
   email: string;
   displayName: string;
+  authProvider?: 'email' | 'wechat';
   wallet: CreditWallet;
 }
 

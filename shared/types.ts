@@ -4,7 +4,7 @@ export type ArtifactKind = 'image' | 'audio' | 'video';
 export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music' | 'effect' | 'understanding' | 'review' | 'avatar';
 export type JobStatus = 'queued' | 'running' | 'stopping' | 'cancelled' | 'succeeded' | 'failed';
 export type ModelKind = 'text' | 'image' | 'audio' | 'understanding';
-export interface PublicUser { id: string; email: string; displayName: string; }
+export interface PublicUser { id: string; email: string; displayName: string; authProvider?: 'email' | 'wechat'; }
 
 export interface Shot {
   start: number;

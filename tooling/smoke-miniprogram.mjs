@@ -8,7 +8,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // Run against a dedicated, operator-provisioned QA account. Never prints
-// credentials or cookies. This verifies native transport, not WeChat devices.
+// credentials or cookies. This is a legacy email API transport smoke, not
+// acceptance of the shipped WeChat login flow or WeChat devices.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(root, 'apps/miniprogram/package.json'));
 const shippedConfig = require('./miniprogram/config.js');
@@ -25,12 +26,12 @@ assert.equal(typeof credentials.password, 'string');
 assert.ok(credentials.password.length >= 24);
 const base = new URL(config.apiBase).origin;
 const h5Origin = process.env.QINGJIAN_MINI_QA_H5_ORIGIN || base;
-assert.ok((isolatedApi ? [base] : [base, 'https://video.shikanon.com']).includes(h5Origin), 'H5 QA must use the isolated backend or a known Qingjian domain.');
+assert.equal(h5Origin, base, 'Domestic and overseas accounts are independent; smoke stays on one backend.');
 const apiPath = new URL(config.apiBase).pathname;
 const expected = JSON.parse(await readFile(path.join(root, 'dist/release.json'))).revision;
 const { createClient } = require('./miniprogram/utils/api.js');
 const directory = await mkdtemp(path.join(tmpdir(), 'qingjian-mini-smoke-'));
-const report = { at: new Date().toISOString(), environment: isolatedApi ? 'isolated-loopback' : h5Origin === base ? 'domestic-public' : 'shared-production', expectedRevision: expected, appid: project.appid, apiBase: config.apiBase, h5Origin, checks: {}, nativeDevice: 'not-tested' };
+const report = { at: new Date().toISOString(), environment: isolatedApi ? 'isolated-loopback' : h5Origin === base ? 'domestic-public' : 'shared-production', expectedRevision: expected, appid: project.appid, apiBase: config.apiBase, h5Origin, checks: {}, authentication: 'legacy-email-transport-only', wechatLogin: 'not-tested', nativeDevice: 'not-tested' };
 const record = (key, value) => { report.checks[key] = value; console.log(JSON.stringify({ check: key, result: value })); };
 const deadline = ms => AbortSignal.timeout(ms);
 
@@ -82,7 +83,7 @@ try {
   const nativeLogin = await client.request('/api/auth/login', login), h5Login = await secondClient.request('/api/auth/login', login);
   assert.equal(h5Login.user.id, nativeLogin.user.id);
   let state = await client.request('/api/state'); assert.equal(state.mode, 'pi');
-  record('nativeLoginAndConfiguredModels', { mode: state.mode, availableModels: state.models.length });
+  record('emailTransportAndConfiguredModels', { mode: state.mode, availableModels: state.models.length });
   state = await client.request('/api/sessions', {});
   assert.equal((await secondClient.request('/api/state')).activeSessionId, state.activeSessionId);
   const fromH5 = await secondClient.request('/api/sessions', {});

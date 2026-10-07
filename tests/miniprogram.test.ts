@@ -12,7 +12,7 @@ const { createClient } = miniRequire('./miniprogram/utils/api.js');
 const { createVoice } = miniRequire('./miniprogram/utils/voice.js');
 const { chatView, points, beijingTime } = miniRequire('./miniprogram/utils/view.js');
 
-test('native transport registers and logs in using its own cookie, syncs sessions and exactly identifies binary uploads', async t => {
+test('legacy email API transport remains compatible, syncs its own sessions and exactly identifies binary uploads', async t => {
   const fixture = await startCreditServer(); t.after(fixture.close);
   const platform = nativePlatform(fixture.base, fixture.directory);
   const client = createClient(platform, { apiBase: fixture.base + '/api', allowLocal: true });
@@ -52,7 +52,7 @@ test('native transport registers and logs in using its own cookie, syncs session
 });
 
 test('cookies from empty cookies arrays still work, invalid storage is ignored, and protected 401 clears login', async () => {
-  const key = 'qingjian:session:https://video.shikanon.com/qingjian/api', stored = new Map([[key, 'fake\r\nHeader: injected']]); let expired = 0;
+  const key = 'qingjian:wechat-session:v1:https://video.shikanon.com/qingjian/api', stored = new Map([[key, 'fake\r\nHeader: injected']]); let expired = 0;
   const sent: any[] = [];
   const platform = { getStorageSync: (name: string) => stored.get(name), setStorageSync: (name: string, value: string) => stored.set(name, value), removeStorageSync: (name: string) => stored.delete(name),
     request(options: any) { sent.push(options); options.success(sent.length === 1 ? { statusCode: 200, cookies: [], header: { 'Set-Cookie': 'qingjian_session=' + 'a'.repeat(43) + '; HttpOnly; Secure' }, data: {} } : { statusCode: 401, header: {}, data: { error: '请登录' } }); },

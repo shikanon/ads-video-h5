@@ -10,11 +10,21 @@ import { defaultTokenPrices } from '../../server/tokenPricing';
 
 // Real Express/queue/Pi transport, disposable local users and a controllable
 // token provider. No production credentials or external services are used.
-export async function startCreditServer() {
+export async function startCreditServer(options: { wechat?: boolean } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'qj-credit-service-'));
   const password = 'Credit-QA-user-123', adminPassword = 'Credit-QA-admin-123';
-  const providerState = { calls: 0, outputTokens: 100, delay: 0, multiTurn: false, fail: false };
+  const providerState = { calls: 0, outputTokens: 100, delay: 0, multiTurn: false, fail: false, wechatCalls: 0 };
   const provider = createServer(async (request, response) => {
+    if (options.wechat && request.url?.startsWith('/wechat-session?')) {
+      providerState.wechatCalls++;
+      const query = new URL(request.url, 'http://fixture.test').searchParams;
+      const who = /^(alice|bob)-[A-Za-z0-9_-]+$/.exec(query.get('js_code') || '')?.[1];
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify(who && query.get('appid') === 'wxf5dfb5d144bcd684' && query.get('secret') === 'fixture-wechat-secret'
+        ? { openid: 'fixture-openid-' + who, session_key: 'fixture-session-key-must-not-persist', unionid: 'fixture-unionid' }
+        : { errcode: 40029, errmsg: 'invalid fixture code' }));
+      return;
+    }
     let raw = ''; for await (const chunk of request) raw += chunk;
     const body = JSON.parse(raw); const id = 'fixture-' + (++providerState.calls);
     if (providerState.fail) { response.writeHead(400, { 'Content-Type': 'application/json' }); response.end('{"error":{"message":"fixture failure"}}'); return; }
@@ -53,7 +63,10 @@ export async function startCreditServer() {
   const reserve = createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening');
   const port = (reserve.address() as { port: number }).port; await new Promise<void>(r => reserve.close(() => r()));
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
-  const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], { cwd: root, env: { ...process.env, QINGJIAN_DATA_DIR: directory, PORT: String(port), PUBLIC_BASE_PATH: '', QINGJIAN_ADMIN_PASSWORD: adminPassword }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const imports = options.wechat ? ['--import', './tests/fixtures/wechatFetch.ts'] : [];
+  const child = spawn(process.execPath, ['--import', 'tsx', ...imports, 'server/index.ts'], { cwd: root, env: { ...process.env, QINGJIAN_DATA_DIR: directory, PORT: String(port), PUBLIC_BASE_PATH: '', QINGJIAN_ADMIN_PASSWORD: adminPassword,
+    ...(options.wechat ? { QINGJIAN_TEST_WECHAT_PROVIDER: providerBase, QINGJIAN_WECHAT_APP_ID: 'wxf5dfb5d144bcd684', QINGJIAN_WECHAT_APP_SECRET: 'fixture-wechat-secret' } : {}),
+  }, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = ''; child.stdout.on('data', bytes => { logs += bytes; }); child.stderr.on('data', bytes => { logs += bytes; });
   const base = `http://127.0.0.1:${port}`;
   for (let n = 0; n < 120; n++) {
