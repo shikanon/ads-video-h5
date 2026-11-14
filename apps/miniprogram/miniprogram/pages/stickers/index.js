@@ -62,7 +62,9 @@ Page({
   choose(event) { const scenes = this.data.scenes.slice(), index = Number(event.currentTarget.dataset.index), choice = Number(event.detail.value), item = this.data.items[choice]; if (!item || !scenes[index]) return; scenes[index] = Object.assign({}, scenes[index], { id: item.id, choice, name: item.name }); this.setData({ scenes }); },
   async start() {
     if (this.data.submitting || !requireLogin() || !this.data.pack) return;
-    const app = getApp(), generation = app._generation, startingSession = app.state.activeSessionId;
+    const app = getApp();
+    if (!app.state || !this._sessionId) { this.setData({ error: '正在同步会话，请稍后重试。' }); return; }
+    const generation = app._generation, startingSession = app.state.activeSessionId;
     const task = { packId: this.data.pack.id, title: this.data.title, makeVideo: this.data.makeVideo, bgm: this.data.bgm,
       sceneIds: this.data.scenes.map(scene => scene.id), captions: this.data.scenes.map(scene => scene.caption) };
     if (new Set(task.sceneIds).size !== 6 || !task.title.trim() || task.captions.some(line => !line.trim())) { this.setData({ error: '请选择6个不同动作，并填写片名和每幕短句。' }); return; }

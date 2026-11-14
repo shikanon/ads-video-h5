@@ -125,3 +125,10 @@ test('a late sticker submission receipt cannot navigate away from a newer page o
   const pending=page.start();page.onHide();state.activeSessionId='newer';finish(state);await pending;
   assert.equal(calls.length,1);assert.match(calls[0],/\/jobs$/);assert.equal(state.activeSessionId,'newer');page.onUnload();
 });
+
+test('sticker submission waits for the initial authenticated conversation state',async()=>{
+  const pack=publicStickerPack(await loadStickerPack());let submitted=0;
+  const app:any={_generation:1,state:null,subscribe:()=>()=>{},refresh:async()=>null,client:{hasSession:()=>true,templateAssetUrl:(v:string)=>v,request:async()=>({packs:[pack]})},mutate:async()=>{submitted++}};
+  const page=await capturePage('stickers',app,{showShareMenu(){}});page.onLoad({});page.onShow();await new Promise(r=>setTimeout(r,0));
+  assert.equal(page.data.items.length,24);await page.start();assert.equal(submitted,0);assert.match(page.data.error,/同步会话/);page.onUnload();
+});
