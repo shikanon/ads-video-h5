@@ -62,7 +62,7 @@ Page({
   choose(event) { const scenes = this.data.scenes.slice(), index = Number(event.currentTarget.dataset.index), choice = Number(event.detail.value), item = this.data.items[choice]; if (!item || !scenes[index]) return; scenes[index] = Object.assign({}, scenes[index], { id: item.id, choice, name: item.name }); this.setData({ scenes }); },
   async start() {
     if (this.data.submitting || !requireLogin() || !this.data.pack) return;
-    const app = getApp(), generation = app._generation;
+    const app = getApp(), generation = app._generation, startingSession = app.state.activeSessionId;
     const task = { packId: this.data.pack.id, title: this.data.title, makeVideo: this.data.makeVideo, bgm: this.data.bgm,
       sceneIds: this.data.scenes.map(scene => scene.id), captions: this.data.scenes.map(scene => scene.caption) };
     if (new Set(task.sceneIds).size !== 6 || !task.title.trim() || task.captions.some(line => !line.trim())) { this.setData({ error: '请选择6个不同动作，并填写片名和每幕短句。' }); return; }
@@ -71,7 +71,7 @@ Page({
     this.setData({ submitting: true, error: '' });
     try {
       await app.mutate('/api/sticker-packs/' + encodeURIComponent(task.packId) + '/jobs', { sessionId: this._sessionId, requestId: this._requestId, task });
-      if (generation !== app._generation) return;
+      if (!this._visible || generation !== app._generation || app.state.activeSessionId !== startingSession) return;
       if (app.state.activeSessionId !== this._sessionId) await app.mutate('/api/sessions/' + encodeURIComponent(this._sessionId) + '/activate', {});
       wx.switchTab({ url: '/pages/chat/index' });
     } catch (error) { if (generation === app._generation) this.setData({ error: error.message }); }

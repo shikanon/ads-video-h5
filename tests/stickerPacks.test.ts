@@ -116,3 +116,12 @@ test('using the sticker template opens its form without submitting a chat messag
   page.use({currentTarget:{dataset:{id:'qingmao-stickers'}}});assert.equal(calls.length,1);assert.equal(calls[0].url,'/pages/stickers/index?sessionId=one');
   assert.deepEqual(app.pendingAttachments,['keep']);assert.equal(app.pendingTemplate,undefined);page.onHide();
 });
+
+test('a late sticker submission receipt cannot navigate away from a newer page or conversation',async()=>{
+  const pack=publicStickerPack(await loadStickerPack()),calls:any[]=[],state:any={activeSessionId:'one',sessions:[{id:'one'}],jobs:[],artifacts:[]};let finish:any;
+  const app:any={_generation:1,state,subscribe:()=>()=>{},refresh:async()=>state,client:{hasSession:()=>true,templateAssetUrl:(v:string)=>v,request:async()=>({packs:[pack]})},
+    mutate(route:string){calls.push(route);return new Promise(resolve=>{finish=resolve})}};
+  const page=await capturePage('stickers',app,{showShareMenu(){},switchTab:(o:any)=>calls.push(o.url)});page.onLoad({});page.onShow();await new Promise(r=>setTimeout(r,0));
+  const pending=page.start();page.onHide();state.activeSessionId='newer';finish(state);await pending;
+  assert.equal(calls.length,1);assert.match(calls[0],/\/jobs$/);assert.equal(state.activeSessionId,'newer');page.onUnload();
+});
