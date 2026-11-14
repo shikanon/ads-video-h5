@@ -2,6 +2,8 @@ name: Domestic Linux release
 
 'on':
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -21,7 +23,7 @@ name: Domestic Linux release
       - 'tests/**'
       - 'tooling/**'
       - 'third_party/pixelfx/**'
-      - 'skills/defold-game/**'
+      - 'skills/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -43,6 +45,7 @@ jobs:
       HYPERFRAMES_SKIP_SKILLS: '1'
       PNPM_MAX_WORKERS: '1'
       NODE_OPTIONS: --max-old-space-size=1536
+      QINGJIAN_STICKER_RENDER_TEST: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

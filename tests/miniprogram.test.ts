@@ -125,12 +125,12 @@ test('ASR failures and empty recognition never dispatch instructions; successful
   const voice = createVoice({ getRecorderManager: () => recorder }, { onState() {}, authorize: async () => {}, onError: (error: any) => errors.push(error), onAccepted: () => accepted++,
     client: { upload: async (...args: any[]) => { requests.push(['asr', ...args]); if (response instanceof Error) throw response; return response; } }, submit: async (...args: any[]) => { requests.push(['chat', ...args]); return {}; } });
   for (const result of [new Error('识别失败'), { text: '' }, { text: '先写分镜', creditTicket: 'admitted-ticket' }]) {
-    response = result; const snapshot = { sessionId: 'frozen-session', prefix: '不要生成成片', attachmentIds: ['own-media'] };
-    voice.hold(); await voice.start(snapshot); snapshot.prefix = 'later edited'; snapshot.attachmentIds.push('later-media'); voice.release();
+    response = result; const snapshot = { sessionId: 'frozen-session', interaction: 'chat', researchMode: 'deep', prefix: '不要生成成片', attachmentIds: ['own-media'] };
+    voice.hold(); await voice.start(snapshot); snapshot.prefix = 'later edited'; snapshot.researchMode = 'off'; snapshot.attachmentIds.push('later-media'); voice.release();
     await recorder.stopped({ tempFilePath: '/own-recording', duration: 1000, fileSize: 100 });
   }
   assert.equal(errors.length, 2); assert.equal(accepted, 1); assert.equal(requests.filter(value => value[0] === 'chat').length, 1);
-  const chat = requests.find(value => value[0] === 'chat'); assert.deepEqual(chat[2], { sessionId: 'frozen-session', message: '不要生成成片\n先写分镜', attachmentIds: ['own-media'], voiceTicket: 'admitted-ticket' });
+  const chat = requests.find(value => value[0] === 'chat'); assert.deepEqual(chat[2], { sessionId: 'frozen-session', interaction: 'chat', researchMode: 'deep', message: '不要生成成片\n先写分镜', attachmentIds: ['own-media'], voiceTicket: 'admitted-ticket' });
   assert.deepEqual(requests[0].slice(1), ['/api/voice/transcribe', '/own-recording', 'audio', { prefix: '不要生成成片' }]); voice.dispose();
 });
 
@@ -247,10 +247,9 @@ test('every native WXML page renders with the official component compiler and ha
     assert.equal(route, '/api/templates');
     return { templates: app.state.templates };
   } };
-  let opened: any, backCount = 0;
+  const tabRoutes: string[] = [];
   Object.assign((globalThis as any).wx, {
-    navigateTo: (options: unknown) => { opened = options; },
-    navigateBack: () => { backCount++; },
+    switchTab: (options: any) => { tabRoutes.push(options.url); },
     pageScrollTo() {},
   });
   chat.instance.render(app.state);
@@ -258,11 +257,11 @@ test('every native WXML page renders with the official component compiler and ha
   chat.setData({ prompt: '@像素游戏 保留我已有的文字' });
   chat.querySelector('.gallery-entry').dispatchEvent('tap');
   await simulate.sleep(0);
-  assert.equal(opened.url, '/pages/templates/index');
+  assert.deepEqual(tabRoutes, ['/pages/templates/index']);
+  chat.instance.onHide();
   const galleryId = simulate.load(path.join(miniRoot, 'pages/templates/index'), { compiler: 'official', rootPath: miniRoot });
   const gallery = simulate.render(galleryId);
   gallery.attach(document.createElement('div'));
-  gallery.instance.getOpenerEventChannel = () => ({ emit: (name: string, data: unknown) => opened.events[name](data) });
   gallery.instance.onShow();
   await simulate.sleep(0);
   assert.equal(gallery.data.cards.length, 2);
@@ -274,7 +273,7 @@ test('every native WXML page renders with the official component compiler and ha
   assert.ok(gallery.querySelector('.sample-player'));
   gallery.querySelector('.sample-use').dispatchEvent('tap');
   await simulate.sleep(0);
-  assert.equal(backCount, 1);
+  assert.deepEqual(tabRoutes, ['/pages/templates/index', '/pages/chat/index']);
   chat.instance.onShow();
   assert.equal(chat.data.prompt, '@界面动效 保留我已有的文字');
   assert.equal(chat.data.templateName, '界面动效');

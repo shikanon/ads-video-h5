@@ -1,23 +1,59 @@
 const { appearanceData } = require('../../utils/appearance');
 const { shareAppMessage, shareTimeline } = require("../../utils/share");
-const { mediaView } = require('../../utils/view');
+const { mediaView, artifactView, jobView, active } = require('../../utils/view');
 const { notify, withSession, hide, requireLogin, guestState } = require('../../utils/page');
 const { chooseFiles, uploadMedia, livePhotoHelp } = require('../../utils/upload');
 const { loadThumbnails, coverError } = require('../../utils/thumbnails');
+const { collectionOf, isProduction } = require('../../utils/media-collections');
 Page({
   onShareAppMessage: shareAppMessage,
   onShareTimeline: shareTimeline,
-  data: Object.assign(appearanceData(), { items: [], filter: 'all', more: false, uploading: false, uploadText: '', count: 0 }),
-  onLoad() { this._limit = 30; },
-  onShow() { withSession(this, this.render); }, onHide() { hide(this); }, onUnload() { hide(this); },
+  data: Object.assign(appearanceData(), { section: 'materials', jobs: [], materialCount: 0, filmCount: 0, items: [], collection: 'library', query: '', filter: 'all', more: false, uploading: false, uploadText: '', count: 0 }),
+  onLoad() { this._limit = 30; this._sectionViews = {}; },
+  onShow() {
+    const app = getApp();
+    if (app.pendingResourceSection) { this.changeSection(app.pendingResourceSection, false); app.pendingResourceSection = null; }
+    if (app.pendingLibraryCollection) { this.changeSection('materials', false); this.setData({ collection: app.pendingLibraryCollection }); this._limit = 30; app.pendingLibraryCollection = null; }
+    withSession(this, this.render);
+  },
+  onHide() { hide(this); }, onUnload() { hide(this); },
   render(state) {
-    const all = state.media.filter(item => !item.character && (this.data.filter === 'all' || item.kind === this.data.filter)).slice().reverse();
-    this.setData({ items: all.slice(0, this._limit).map(item => mediaView(item, getApp().client)), more: all.length > this._limit, count: all.length });
+    const films = this.data.section === 'films';
+    this.setData({ materialCount: state.media.filter(item => !item.character && collectionOf(item) === 'library').length, filmCount: state.artifacts.length });
+    if (films) {
+      const needle = this.data.query.trim().toLowerCase();
+      const all = state.artifacts.filter(item => (this.data.filter === 'all' || item.kind === this.data.filter) && item.name.toLowerCase().includes(needle)).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      this.setData({ items: all.slice(0, this._limit).map(item => artifactView(item, getApp().client)), jobs: state.jobs.filter(active).slice(0, 10).map(job => jobView(job)), more: all.length > this._limit, count: all.length });
+      loadThumbnails(this, 'items', getApp().client);
+      return;
+    }
+    const needle = this.data.query.trim().toLowerCase(), all = state.media.filter(item => !item.character && (this.data.collection === 'clips' ? Boolean(item.archive) && collectionOf(item) === 'library' : collectionOf(item) === this.data.collection) && (this.data.filter === 'all' || item.kind === this.data.filter) && (item.name + ' ' + (item.archive && item.archive.tags || []).join(' ')).toLowerCase().includes(needle)).slice().reverse();
+    this.setData({ items: all.slice(0, this._limit).map(item => Object.assign(mediaView(item, getApp().client), { production: collectionOf(item) === 'production', productionSource: isProduction(item), archivedClip: Boolean(item.archive), tags: item.archive && item.archive.tags || [] })), jobs: [], more: all.length > this._limit, count: all.length, productionCount: state.media.filter(m => !m.character && collectionOf(m) === 'production').length });
     loadThumbnails(this, 'items', getApp().client);
   },
+  section(event) { this.changeSection(event.currentTarget.dataset.section, true); },
+  changeSection(section, render) {
+    if (!['materials', 'films'].includes(section) || section === this.data.section) return;
+    const views = this._sectionViews || (this._sectionViews = {});
+    views[this.data.section] = { query: this.data.query, filter: this.data.filter, limit: this._limit || 30 };
+    const next = views[section] || { query: '', filter: 'all', limit: 30 };
+    this._limit = next.limit;
+    this.setData({ section, query: next.query, filter: next.filter, items: [], jobs: [] });
+    if (render) { this.render(getApp().state || guestState()); if (wx.pageScrollTo) wx.pageScrollTo({ scrollTop: 0, duration: 0 }); }
+  },
   filter(event) { this._limit = 30; this.setData({ filter: event.currentTarget.dataset.kind }); this.render(getApp().state || guestState()); },
+  collection(event) { this._limit = 30; this.setData({ collection: event.currentTarget.dataset.collection }); this.render(getApp().state || guestState()); },
+  search(event) { this._limit = 30; this.setData({ query: event.detail.value }); this.render(getApp().state || guestState()); },
+  film(event) { wx.navigateTo({ url: '/pages/film/index' + (event.currentTarget.dataset.id ? '?id=' + encodeURIComponent(event.currentTarget.dataset.id) : '') }); },
+  async moveCollection(event) { if (!requireLogin()) return; if (!getApp().state.features || !getApp().state.features.filmAnalysis) { notify(new Error('当前服务暂不支持保存素材归档位置。')); return; } try { await getApp().mutate('/api/media/' + encodeURIComponent(event.currentTarget.dataset.id) + '/collection', { collection: event.currentTarget.dataset.collection }, 'PATCH'); wx.showToast({ title: '已更新归档位置', icon: 'none' }); } catch (error) { notify(error); } },
   more() { this._limit += 30; this.render(getApp().state || guestState()); },
-  play(event) { wx.navigateTo({ url: '/pages/player/index?type=media&id=' + encodeURIComponent(event.currentTarget.dataset.id) }); },
+  play(event) { wx.navigateTo({ url: '/pages/player/index?type=' + (this.data.section === 'films' ? 'artifact' : 'media') + '&id=' + encodeURIComponent(event.currentTarget.dataset.id) }); },
+  create() { wx.switchTab({ url: '/pages/chat/index' }); },
+  async session(event) {
+    const app = getApp(), job = app.state && app.state.jobs.find(item => item.id === event.currentTarget.dataset.id);
+    if (!job) return;
+    try { await app.mutate('/api/sessions/' + encodeURIComponent(job.sessionId) + '/activate', {}); wx.switchTab({ url: '/pages/chat/index' }); } catch (error) { notify(error); }
+  },
   coverError(event) { coverError(this, 'items', event, getApp().client); },
   retryCover() { loadThumbnails(this, 'items', getApp().client); },
   livePhotoHelp,

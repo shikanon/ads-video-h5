@@ -14,8 +14,12 @@ Page({
     const all = this._type === 'artifact' ? state.artifacts : state.media;
     const item = all.find(value => value.id === this._id);
     if (!item) { this.setData({ error: '文件不存在，可能已被删除。', item: null }); return; }
+    if (item.kind === 'sticker-pack') {
+      if (!this._redirected) { this._redirected = true; wx.redirectTo({ url: '/pages/stickers/index?artifactId=' + encodeURIComponent(item.id) + '&sessionId=' + encodeURIComponent(item.sessionId) }); }
+      return;
+    }
     this._item = item;
-    this.setData({ item: { id: item.id, name: this._type === 'artifact' ? brandText(item.name) : item.name, kind: item.kind, date: beijingTime(item.createdAt), duration: item.duration ? Math.round(item.duration) + ' 秒' : '' }, analysis: item.analysis && item.analysis.transcript || '' });
+    this.setData({ item: { id: item.id, name: this._type === 'artifact' ? brandText(item.name) : item.name, kind: item.kind, project: Boolean(item.projectUrl), date: beijingTime(item.createdAt), duration: item.duration ? Math.round(item.duration) + ' 秒' : '' }, analysis: item.analysis && item.analysis.transcript || '' });
     if (!this.data.src && !this.data.loading) this.load();
   },
   async load() {
@@ -51,6 +55,16 @@ Page({
     } catch (error) { this.setData({ error: error.message }); } finally { this.setData({ saving: false }); }
   },
   use() { if (this._type === 'media') { getApp().pendingAttachments = [this._id]; wx.switchTab({ url: '/pages/chat/index' }); } },
+  async project() {
+    if (!this._item || !this._item.projectUrl || this.data.saving) return;
+    this.setData({ saving: true, error: '' });
+    try {
+      await privacy();
+      const filePath = await getApp().client.download(this._item.projectUrl);
+      await new Promise((resolve, reject) => wx.shareFileMessage({ filePath, fileName: this._item.name.replace(/\.mp4$/, '') + '-工程与封面.zip', success: resolve, fail: reject }));
+    } catch (error) { this.setData({ error: error.message || error.errMsg || '工程下载未完成，请重试。' }); }
+    finally { this.setData({ saving: false }); }
+  },
   async analyze() {
     if (this.data.analyzing) return; this.setData({ analyzing: true });
     try { await getApp().mutate('/api/media/' + encodeURIComponent(this._id) + '/analyze', { sessionId: getApp().state.activeSessionId }); wx.switchTab({ url: '/pages/chat/index' }); } catch (error) { notify(error); } finally { this.setData({ analyzing: false }); }

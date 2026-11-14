@@ -1,3 +1,8 @@
+import {resolveResearchMode} from './questionResearch';
+import {createNotifications,disabledNotifications} from './wechatNotifications';
+import {analyzeFilm,readFilmReport,filmDirectory,reusableShot,removeFilmData} from './filmAnalysis';
+import {fileDigest} from './artifactIntegrity';
+import type {FilmTask} from '../shared/film';
 import {loadTaskDraft,saveTaskDraft} from './taskDrafts';
 import {acquireFileLock} from './durableState';
 import {createTaskSpec,assertTaskRevision,priorTaskSpec} from './taskContract';
@@ -79,6 +84,9 @@ import { defoldEnvironment } from './defoldRuntime';
 import {pixelfxLibrary,findPixelEffects} from './pixelfx';
 import { mountTemplateTestRoutes } from './templateTestRoutes';
 import { wantsConversation } from './intents';
+import { mountStickerRoutes, mountStickerSamples } from './stickerRoutes';
+import { defaultStickerTask, loadStickerPack } from './stickerPacks';
+import { runStickerWorkflow } from './stickerWorkflow';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -98,7 +106,7 @@ const stateFile = path.join(dataDir, 'app-state.json');
 const port = Number(process.env.PORT || 8787);
 const publicBase = `/${(process.env.PUBLIC_BASE_PATH || '').replace(/^\/+|\/+$/g, '')}`.replace(/^\/$/, '');
 const publicUrl = (url: string) => `${publicBase}${url}`;
-const assetUrl = (ownerId: string, category: AssetCategory, id: string, fallback: string) => oss?.publicUrl(ownerId, category, id) || publicUrl(fallback);
+const assetUrl = (ownerId: string, category: AssetCategory, id: string, fallback: string) => fallback.startsWith('/api/templates/') ? publicUrl(fallback) : oss?.publicUrl(ownerId, category, id) || publicUrl(fallback);
 await Promise.all([mediaDir, artifactDir, exportDir, tmpDir].map((dir) => mkdir(dir, { recursive: true })));
 const effects = createEffectStore(dataDir, oss);
 await effects.init();
@@ -167,16 +175,17 @@ async function profileOf(user: PublicUser) {
 const shortName = (name: string) => path.basename(name).replace(/[\u0000-\u001f/\\]/g, '').slice(0, 120) || '素材';
 const extFor = (mime: string) => mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : mime === 'image/png' ? 'png' : mime === 'audio/mpeg' ? 'mp3' : mime === 'audio/wav' || mime === 'audio/x-wav' ? 'wav' : mime === 'audio/ogg' ? 'ogg' : 'bin';
 
-async function publicState(user: PublicUser): Promise<AppState> {
+async function publicState(user:PublicUser):Promise<AppState>{const snapshot=await basePublicState(user);return{...snapshot,media:snapshot.media.map(m=>m.kind==='video'?{...m,thumbnailUrl:publicUrl('/api/media/'+m.id+'/thumbnail')}:m),features:{...snapshot.features!,notifications:notifications.ready,filmAnalysis:true},notifications:notifications.list(user.id)};}
+async function basePublicState(user: PublicUser): Promise<AppState> {
   const [models, profile, wallet] = await Promise.all([listPublicModels(), profileOf(user), credits.snapshot(user.id)]);
   const textConfig = await getModelConfig('text', getSession(profile.activeSessionId, user.id)?.modelId);
-  return { account: user, features: { conversationModes: true, sessionManagement: true, schedules: true, accountAvatars: true }, limits: { maxAttachments: MAX_CHAT_ATTACHMENTS }, templates: videoTemplates.map(publicTemplate), credits: wallet, activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, ...(item.kind === 'image' ? { thumbnailUrl: publicUrl('/api/media/' + item.id + '/thumbnail') } : {}), url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.kind==='game'?publicUrl(item.url):assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.projectUrl ? { projectUrl: publicUrl(item.projectUrl) } : {}), ...(item.coverUrl ? { coverUrl: item.kind==='game'?publicUrl(item.coverUrl):assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)).map(publicJob), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
+  return { account: user, features: { conversationModes: true, sessionManagement: true, schedules: true, accountAvatars: true, researchModes: true }, limits: { maxAttachments: MAX_CHAT_ATTACHMENTS }, templates: videoTemplates.map(publicTemplate), credits: wallet, activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, ...(item.kind === 'image' ? { thumbnailUrl: publicUrl('/api/media/' + item.id + '/thumbnail') } : {}), url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.kind==='game'?publicUrl(item.url):assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.projectUrl ? { projectUrl: publicUrl(item.projectUrl) } : {}), ...(item.coverUrl ? { coverUrl: item.kind==='game'?publicUrl(item.coverUrl):assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)).map(publicJob), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
 }
 
 function addReply(session: Session, job: Job, text: string, artifactId?: string) {
   return updateReply(session, job, text, 'final', 'final', artifactId);
 }
-async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['kind'],'game'>, name: string, bytes: Buffer, mimeType: string, text?: string, duration?: number): Promise<Artifact> {
+async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['kind'],'game'|'sticker-pack'>, name: string, bytes: Buffer, mimeType: string, text?: string, duration?: number): Promise<Artifact> {
   throwIfJobCancelled();
   const id = randomUUID();
   const filename = `${id}.${extFor(mimeType)}`;
@@ -251,13 +260,45 @@ async function performJob(job: Job): Promise<void> {
     job.progress=Math.max(job.progress||0,Math.min(88,10+events.filter(e=>e.status==='succeeded').length*2));await saveState();
   };
   const basicProgress = workflowProgress;
+  if(job.filmTask){
+    const task=job.filmTask,source=media.find(m=>m.id===task.sourceId&&m.kind==='video');
+    if(!source||!Number.isFinite(source.duration)||!source.duration)throw Error('原片不存在或没有有效时长。');
+    const assertSource=()=>{if(!state.media.includes(source)||source.ownerId!==job.ownerId)throw Error('原片已变化或删除。');};
+    const input=path.join(mediaDir,source.id);await oss?.ensure(job.ownerId!,'media',source.id,input);assertSource();
+    if(task.action==='analyze'){
+      const config=await getModelConfig('understanding');if(!config)throw Error('画面理解模型尚未配置。');
+      if(!source.analysis&&source.hasAudio!==false)await analyzeAudio(source.id);
+      const report=await analyzeFilm({root:path.join(dataDir,'film-analysis'),source,file:input,config,assertCurrent:assertSource,publish:async report=>{
+        assertSource();source.filmAnalysis={id:report.id,sourceHash:report.sourceHash,status:report.status,shotCount:report.shots.length,completed:report.shots.filter(s=>s.status==='ready').length,updatedAt:report.updatedAt};
+        job.progress=10+Math.round(source.filmAnalysis.completed/Math.max(1,report.shots.length)*80);job.stage='拉片分析 '+source.filmAnalysis.completed+'/'+report.shots.length;await saveState();
+      }});
+      addReply(session,job,'已完成 '+report.shots.length+' 个自动检测镜头的拉片分析。可在素材库的拉片工作台查看场景、人物描述、景别和复用建议，选择有用的镜头归档。自动分析和人物临时标签仍需复核。');
+    }else{
+      const report=await readFilmReport(path.join(dataDir,'film-analysis'),source);if(!report)throw Error('请先完成原片拉片分析。');
+      if(report.id!==task.reportId)throw Error('拉片记录已更新，请重新选择镜头后归档。');
+      if(!/^[a-f0-9-]{36}$/.test(task.targetId))throw Error('归档目标标识无效。');
+      const shot=reusableShot(report,source,task.shotId);if(await fileDigest(input)!==report.sourceHash)throw Error('原片内容已变化，请重新拉片后归档。');
+      const existing=state.media.find(m=>m.ownerId===job.ownerId&&m.archive?.sourceHash===report.sourceHash&&m.archive.start===shot.start&&m.archive.end===shot.end);
+      if(existing){addReply(session,job,'这个原片镜头已归档为「'+existing.name+'」，可在镜头归档中复用。');return;}
+      const temp=path.join(mediaDir,task.targetId+'.pending.mp4'),target=path.join(mediaDir,task.targetId);
+      try{
+        await runFFmpeg(['-v','error','-y','-ss',String(shot.start),'-i',input,'-t',String(shot.end-shot.start),'-map','0:v:0','-map','0:a?','-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2','-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-movflags','+faststart',temp],120000);
+        const duration=await probeVideo(temp);if(Math.abs(duration.duration-(shot.end-shot.start))>.35)throw Error('归档片段时长未通过检查。');
+        throwIfJobCancelled();currentTaskExecution()?.guard();assertSource();if(await fileDigest(input)!==report.sourceHash)throw Error('原片在归档期间发生变化。');
+        await rename(temp,target);await oss?.put(job.ownerId!,'media',task.targetId,target,'video/mp4');throwIfJobCancelled();assertSource();
+        state.media.push({id:task.targetId,ownerId:job.ownerId,name:task.name||source.name.replace(/\.[^.]+$/,'')+' · 镜头'+(shot.index+1),kind:'video',mimeType:'video/mp4',duration:duration.duration,hasAudio:duration.hasAudio,url:'/api/media/'+task.targetId,origin:'imported',createdAt:now(),archive:{sourceId:source.id,sourceHash:report.sourceHash,reportId:report.id,shotId:shot.id,start:shot.start,end:shot.end,tags:task.tags||shot.tags||[]}});
+        await saveState();addReply(session,job,'已把原片 '+shot.start+'–'+shot.end+' 秒归档为独立镜头，可在素材库“镜头归档”中选择并用于创作。');
+      }finally{await rm(temp,{force:true});}
+    }
+    return;
+  }
   if (job.interaction === 'chat' || job.interaction === 'explore') {
     const config = await getModelConfig('text', session.modelId);
     if (!config) throw new Error('文本模型尚未配置。');
     const instruction = job.interaction === 'explore'
       ? '你是轻喵的工作伙伴。帮助用户思考想实现什么产出：结合上下文逐步澄清目标、受众、交付形式、素材和约束。每轮最多问两个关键问题；信息足够时给出简洁工作简报和下一步建议。此阶段只讨论和写文字，不执行生成视频、图片、音频或发布。用户可点“开始创作”再执行。'
       : '你是轻喵，友善自然地闲聊、解释问题和帮助思考。当前是对话区，只回复文字，不执行视频、图片、音频制作或发布。需要创作时提示用户切换到工作区。';
-    addReply(session, job, await answerForSessionWithPi({ prompt: instruction + '\n用户本轮消息：' + prompt, config, media, history, plan: session.plan, attached, progress: basicProgress, onSection: async (id, text) => { updateReply(session, job, text, 'commentary', id); await saveState(); } }));
+    addReply(session, job, await answerForSessionWithPi({ prompt, instruction, researchMode:job.researchMode, onResearch:async evidence=>{ throwIfJobCancelled(); const folder=path.join(dataDir,'question-research',job.id);await mkdir(folder,{recursive:true,mode:0o700});const temporary=path.join(folder,randomUUID()+'.tmp');await writeFile(temporary,JSON.stringify(evidence),{mode:0o600});await rename(temporary,path.join(folder,'snapshot.json')); }, config, media, history, plan: session.plan, attached, progress: basicProgress, onSection: async (id, text) => { updateReply(session, job, text, 'commentary', id); await saveState(); } }));
     return;
   }
 
@@ -265,6 +306,44 @@ async function performJob(job: Job): Promise<void> {
     const entry = videoTemplates.find(t=>t.id===job.template!.id);
     const template = entry && await loadVideoTemplate(entry);
     if (!template || template.skillHash!==job.template.skillHash) throw new Error('模板规则已变化，请重新发送制作要求以使用当前版本。');
+    if(template.workflow==='sticker-pack') {
+      if(!job.stickerTask) {
+        addReply(session,job,'请在「模板 → 动态表情套装」中选择6个动作、填写短句，并设置是否同步制作分享视频，再点击开始制作。当前可复用轻喵第2弹24套表情。');
+        return;
+      }
+      const made=await runStickerWorkflow({task:job.stickerTask,directory:path.join(dataDir,'sticker-projects',job.id,job.attemptId||randomUUID()),progress:workflowProgress,
+        renderProgress:async(frames,total)=>{job.progress=30+Math.round(frames/total*60);job.stage='渲染表情分享视频 · '+Math.round(frames/total*100)+'%';await saveState();}});
+      const packId=randomUUID(),videoId=made.rendered?randomUUID():undefined;
+      const delivery={packId:made.pack.id,packVersion:made.pack.version,sourceHash:made.sourceHash,count:made.pack.items.length,sceneIds:made.task.sceneIds,videoId,task:made.task};
+      const packFile=packId+'.zip',destinations=[path.join(artifactDir,packFile)];
+      const uploads:Array<{category:AssetCategory;id:string;file:string;mime:string}>=[{category:'artifacts',id:packId,file:destinations[0],mime:'application/zip'}];
+      try {
+        await copyFile(made.archive,destinations[0]);
+        if(made.rendered&&videoId) {
+          for(const [source,file,category,key,mime] of [
+            [made.rendered.file,`${videoId}.mp4`,'exports',videoId,'video/mp4'],
+            [made.rendered.cover,`${videoId}-cover.png`,'covers',videoId,'image/png'],
+            [made.rendered.archive,`${videoId}-project.zip`,'artifacts',`${videoId}-project`,'application/zip'],
+          ]) {
+            const target=path.join(exportDir,file);destinations.push(target);await copyFile(source,target);
+            uploads.push({category:category as AssetCategory,id:key,file:target,mime});
+          }
+          const report=path.join(exportDir,`${videoId}-template.json`);destinations.push(report);await writeFile(report,JSON.stringify(made.verification,null,2));
+        }
+        for(const upload of uploads)await oss?.put(job.ownerId!,upload.category,upload.id,upload.file,upload.mime);
+        throwIfJobCancelled();currentTaskExecution()?.guard();
+      } catch(error) {
+        await Promise.all(destinations.map(file=>rm(file,{force:true})));
+        if(oss)await Promise.allSettled(uploads.map(upload=>oss.remove(job.ownerId!,upload.category,upload.id)));
+        throw error;
+      }
+      const packArtifact:Artifact={id:packId,ownerId:job.ownerId,sessionId:session.id,messageId:job.messageId,kind:'sticker-pack',name:made.pack.name+'-表情套装.zip',url:`/api/artifacts/${packId}`,downloadUrl:`/api/download/${packId}`,coverUrl:'/api/templates/qingmao-stickers/sample/poster',createdAt:now(),version:state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='sticker-pack').length+1,sticker:delivery};
+      state.artifacts.push(packArtifact);state.artifactFiles[packId]=packFile;
+      if(made.rendered&&videoId)state.artifacts.push({id:videoId,ownerId:job.ownerId,sessionId:session.id,messageId:job.messageId,kind:'video',name:made.task.title+'.mp4',url:`/api/artifacts/${videoId}`,downloadUrl:`/api/download/${videoId}`,projectUrl:`/api/artifacts/${videoId}/project`,coverUrl:`/api/artifacts/${videoId}/cover`,coverMimeType:'image/png',createdAt:now(),version:state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1,duration:24,hasNarration:false,hasBgm:made.task.bgm,sticker:{...delivery,packArtifactId:packId,width:1080,height:1440},template:{...job.template,panels:0,technicalPassed:true,userAccepted:false,boundary:'复用已确认的轻喵第2弹动态表情，1080×1440分享视频。',basis:[],animationMode:'code',sourceHash:made.sourceHash},workflow:structuredClone(job.workflow)});
+      const reply=`已保存24套动态表情及专辑配套素材${videoId?'，并使用同一批序列帧制作《'+made.task.title+'》：24秒，1080×1440'+(made.task.bgm?'，带音乐':'，无配乐')+'。视频、封面和可编辑工程已保存，技术检查通过，待你审阅。':'。可在资源中预览表情或下载套装，之后继续制作分享视频。'}`;
+      addReply(session,job,reply,packId);if(videoId)addReply(session,job,reply,videoId);
+      job.artifactId=videoId||packId;await saveState();return;
+    }
     const config=await getModelConfig('text',session.modelId);
     if(!config)throw new Error('文本模型尚未配置，请在管理后台设置后重试。');
     if(wantsConversation(prompt)){
@@ -747,6 +826,7 @@ async function performJob(job: Job): Promise<void> {
   } else addReply(session, job, await answerForSessionWithPi({prompt,config:textConfig,media,history,plan:session.plan,attached,progress:basicProgress,onSection:async(id,text)=>{updateReply(session,job,text,'commentary',id);await saveState();}}));
 }
 const jobQueue = createJobQueue({
+  concurrency: {work:1,chat:2,research:2},
   jobs: () => state.jobs,
   execute: processQueuedJob,
   onError: (job, error) => console.error(JSON.stringify({ event: 'job.queue-error', jobId: job.id, failure: executionFailure(error) })),
@@ -783,7 +863,7 @@ async function processQueuedJob(job: Job) {
           if(activeSession){activeSession.taskRevisions||={};activeSession.taskRevisions[job.taskSpec.id]??=job.taskSpec.revision;}
           await saveState();
           const execute = () => withAgentRuntime(runtime, async()=>{
-            const manifest={models:snapshotModels(models!).map(({id,modelId,provider,baseUrl})=>({id,modelId,provider,baseUrl})),capabilities:job.capabilities,extensions:runtime.fingerprint,template:job.template};
+            const manifest={models:snapshotModels(models!).map(({id,modelId,provider,baseUrl})=>({id,modelId,provider,baseUrl})),capabilities:job.capabilities,extensions:runtime.fingerprint,template:job.template,film:job.filmTask};
             const assertTemplate = async () => {
               if (!job.template) return;
               const entry = videoTemplates.find(t => t.id === job.template!.id);
@@ -793,7 +873,7 @@ async function processQueuedJob(job: Job) {
             };
             await assertTemplate();
             const environmentHash=await captureTaskEnvironment(root,manifest);
-            return withTaskExecution({timeoutMs:taskTimeoutMs(job.ownerId,evaluationJobDeadlines.get(job.id)),ledgerDirectory:path.join(dataDir,'agent-effects',job.taskSpec!.id),maxCredits:process.env.QINGJIAN_TASK_MAX_CREDITS===undefined?undefined:Number(process.env.QINGJIAN_TASK_MAX_CREDITS),spec:job.taskSpec!,directory:path.join(dataDir,'agent-runs',job.id),environmentHash,
+            return withTaskExecution({timeoutMs:!isEvaluationOwner(job.ownerId)&&job.researchMode==='deep'?null:taskTimeoutMs(job.ownerId,evaluationJobDeadlines.get(job.id)),ledgerDirectory:path.join(dataDir,'agent-effects',job.taskSpec!.id),maxCredits:process.env.QINGJIAN_TASK_MAX_CREDITS===undefined?undefined:Number(process.env.QINGJIAN_TASK_MAX_CREDITS),spec:job.taskSpec!,directory:path.join(dataDir,'agent-runs',job.id),environmentHash,
               assertCurrent:()=>assertTaskRevision(job.taskSpec!,getSession(job.sessionId)?.taskRevisions),
               assertEnvironment:async()=>{await assertTemplate();await runtime.assertFresh?.();if(environmentHash!==await captureTaskEnvironment(root,manifest))throw Error('执行环境已变化，旧验收不能用于交付。');},
             },()=>withModelSnapshot(models!,()=>performJob(job)));
@@ -826,9 +906,14 @@ async function processQueuedJob(job: Job) {
       evaluationJobDeadlines.delete(job.id);
       const session = getSession(job.sessionId); if (session) session.updatedAt = now();
       await saveState();
+      if(job.ownerId&&!isEvaluationOwner(job.ownerId)&&['succeeded','failed'].includes(job.status))try{
+        const kind=job.interaction==='chat'||job.interaction==='explore'?'reply':'task';
+        await notifications.record({id:job.id+':'+attempt.id,ownerId:job.ownerId,jobId:job.id,sessionId:job.sessionId,kind,title:session?.title||'轻喵任务',result:job.status==='failed'?'未能完成，点击查看原因':kind==='reply'?'轻喵已回复，点击查看':'任务已完成，点击查看结果',status:job.status as 'succeeded'|'failed',at:job.updatedAt});
+        void notifications.flush().catch(()=>console.warn('Completion notification delivery deferred.'));
+      }catch{console.warn('Completion notification could not be recorded.');}
 }
 
-async function enqueueAgentMessage(session: Session, text: string, attachmentIds: string[], voiceTicket?: string, modelSnapshot?:ModelSnapshot, interaction?: Job['interaction']): Promise<Job> {
+async function enqueueAgentMessage(session: Session, text: string, attachmentIds: string[], voiceTicket?: string, modelSnapshot?:ModelSnapshot, interaction?: Job['interaction'], researchMode?:Job['researchMode'], stickerTask?:Job['stickerTask']): Promise<Job> {
   const selection = interaction === 'chat' || interaction === 'explore'
     ? { kind: 'plan' as const, template: undefined }
     : resolveTemplateRequest(text, session, videoTemplates);
@@ -838,6 +923,8 @@ async function enqueueAgentMessage(session: Session, text: string, attachmentIds
   const message: ChatMessage = { id: randomUUID(), role: 'user', text, createdAt, attachmentIds };
   const job: Job = { id: randomUUID(), ownerId: session.ownerId, sessionId: session.id, messageId: message.id, kind: selection.kind, status: 'queued', createdAt, updatedAt: createdAt, progress: 0, ...(template ? { template: templateSelection(template) } : {}) };
   if (interaction) job.interaction = interaction;
+  if(stickerTask)job.stickerTask=structuredClone(stickerTask);
+  if(interaction==='chat'||interaction==='explore')job.researchMode=resolveResearchMode(text,researchMode);else if(researchMode)job.researchMode=researchMode;
   job.taskSpec=createTaskSpec([...session.messages,message],text,selection.template?.id,priorTaskSpec(session,selection.template?.id));if(selection.template)(session.taskSpecsByTemplate||={})[selection.template.id]=job.taskSpec;if(!wantsConversation(text))session.taskSpec=job.taskSpec;session.taskRevisions||={};session.taskRevisions[job.taskSpec.id]=job.taskSpec.revision;
   jobRunner.supersede(state.jobs,job.taskSpec,now());
   job.creditTaskId = creditTaskId;
@@ -922,6 +1009,8 @@ app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
 const auth = createAuth(dataDir, publicBase);
 await auth.load();
+const notifications=await createNotifications(path.join(dataDir,'notifications.json'),{identity:auth.wechatIdentity}).catch(()=>{console.warn('Notifications unavailable; original records preserved.');return disabledNotifications();});
+const notificationTimer=setInterval(()=>{void notifications.flush().catch(()=>console.warn('Completion notification delivery deferred.'));},10000);notificationTimer.unref();
 const credits = createCredits(dataDir);
 await credits.load(auth.listUsers());
 const adminAuth = createAdminAuth(dataDir);
@@ -932,11 +1021,12 @@ mountCreditAdminRoutes(app, credits, adminAuth, auth.listUsers);
 await mountTemplateTestRoutes(app,{
   dataDir,templates:videoTemplates,adminAuth,
   async start(id,prompt,modelId){
+    const sticker=prompt.startsWith('@动态表情套装 ');
     const config=await getModelConfig('text',modelId||await getDefaultTextModelId());
-    if(!config)throw new Error('请先配置可用的文本模型，再运行模板测试。');
-    const session={...newSession(config.id),ownerId:`evaluation:template:${id}`,title:'视频模板测试'};
+    if(!config&&!sticker)throw new Error('请先配置可用的文本模型，再运行模板测试。');
+    const session={...newSession(config?.id||null),ownerId:`evaluation:template:${id}`,title:'视频模板测试'};
     const modelSnapshot:ModelSnapshot={text:config,image:null,audio:null,understanding:null,textFallbacks:await getTextFallbackConfigs(config)};
-    state.sessions.push(session);const job=await enqueueAgentMessage(session,prompt,[],undefined,modelSnapshot);
+    state.sessions.push(session);const job=await enqueueAgentMessage(session,prompt,[],undefined,modelSnapshot,undefined,undefined,sticker?defaultStickerTask(await loadStickerPack()):undefined);
     await saveState();return {session,job};
   },
   job:id=>state.jobs.find(j=>j.id===id),artifact:job=>state.artifacts.find(a=>a.id===job.artifactId&&a.ownerId===job.ownerId&&a.sessionId===job.sessionId),
@@ -959,7 +1049,29 @@ app.get('/api/templates/:id/sample/:kind', (request, response) => {
   if (!template || !asset) return response.status(404).json({ error: '样片不存在。' });
   return response.sendFile(asset, { root: path.join(template.directory, 'assets'), maxAge: '1h' });
 });
+mountStickerSamples(app);
 auth.mount(app, credits.readiness, user => credits.snapshot(user.id));
+const startingStickerSessions=new Set<string>();
+mountStickerRoutes(app,{base:publicBase,async start(user,sessionId,requestId,task){
+  const session=getSession(sessionId,user.id);if(!session)throw Object.assign(new Error('会话不存在。'),{status:404});
+  const previous=state.jobs.find(job=>job.ownerId===user.id&&job.stickerRequestId===requestId);
+  if(previous){if(previous.sessionId!==sessionId||JSON.stringify(previous.stickerTask)!==JSON.stringify(task))throw Object.assign(new Error('重复请求的参数已变化，请重新提交。'),{status:409});return {...await publicState(user),stickerJobId:previous.id};}
+  if(startingStickerSessions.has(session.id)||state.jobs.some(job=>job.sessionId===session.id&&isActiveJob(job)))throw Object.assign(new Error('当前会话已有任务，请等待完成或停止后再试。'),{status:409});
+  startingStickerSessions.add(session.id);
+  try {
+    const prompt='@动态表情套装 保存轻喵第2弹24套表情'+(task.makeVideo?'，同步制作24秒分享视频《'+task.title+'》。动作顺序：'+task.sceneIds.join('、')+'；短句：'+task.captions.join(' / ')+'；'+(task.bgm?'带音乐':'无配乐'):'，仅保存表情套装');
+    const job=await enqueueAgentMessage(session,prompt,[],undefined,undefined,'create',undefined,task);job.stickerRequestId=requestId;
+    await saveState();const response={...await publicState(user),stickerJobId:job.id};void processQueue();return response;
+  }finally{startingStickerSessions.delete(session.id);}
+}});
+app.get('/api/notifications/config',(q,r)=>r.json(notifications.configuration(userOf(q).id)));
+app.get('/api/notifications',(q,r)=>r.json(notifications.list(userOf(q).id,Number(q.query.limit)||40)));
+app.get('/api/notifications/:id',(q,r)=>{const notice=notifications.get(userOf(q).id,q.params.id);if(!notice)return r.status(404).json({error:'消息不存在。'});r.json(notice);});
+app.post('/api/notifications/read',async(q,r)=>{const all=q.body?.all===true,ids=q.body?.ids||[];if(!Array.isArray(ids)||ids.length>200||ids.some(id=>typeof id!=='string'||id.length>100))return r.status(400).json({error:'消息列表无效。'});await notifications.read(userOf(q).id,ids,all);r.json(await publicState(userOf(q)));});
+app.post('/api/notifications/read-session',async(q,r)=>{if(typeof q.body?.sessionId!=='string'||q.body.sessionId.length>100||typeof q.body?.cursor!=='string'||q.body.cursor.length>100)return r.status(400).json({error:'会话消息标识无效。'});await notifications.readSession(userOf(q).id,q.body.sessionId,q.body.cursor);r.json(notifications.list(userOf(q).id));});
+app.post('/api/notifications/subscribe',async(q,r)=>{const ids=q.body?.accepted;if(!Array.isArray(ids)||ids.length>3||ids.some(id=>typeof id!=='string')||typeof q.body?.requestId!=='string')return r.status(400).json({error:'订阅回执无效。'});try{await notifications.grant(userOf(q).id,q.body.requestId,ids);r.json(notifications.configuration(userOf(q).id));}catch{r.status(400).json({error:'订阅回执无效或当前服务尚未配置。'});}});
+app.post('/api/notifications/disable',async(q,r)=>{await notifications.disable(userOf(q).id);r.json(notifications.configuration(userOf(q).id));});
+app.post('/api/notifications/presence',(q,r)=>{if(typeof q.body?.foreground!=='boolean'||typeof q.body?.device!=='string')return r.status(400).json({error:'在线状态无效。'});try{notifications.presence(userOf(q).id,q.body.device,q.body.sequence,q.body.foreground);r.json({ok:true});void notifications.flush().catch(()=>{});}catch{r.status(400).json({error:'在线状态无效。'});}});
 await mountAccountAvatar(app, dataDir, publicBase, auth.setAvatar);
 mountCreditRoutes(app, credits);
 mountExtensionRoutes(app, extensions, { sessions: () => state.sessions, jobs: () => state.jobs, save: saveState, publicState, activate: async(user,session) => { (await profileOf(user)).activeSessionId = session.id; } });
@@ -1034,7 +1146,9 @@ app.get('/api/state', async (request, response) => response.json(await publicSta
 app.post('/api/sessions', async (request, response) => {
   const user = userOf(request), profile = await profileOf(user);
   const mode = request.body?.mode === 'chat' ? 'chat' : 'work';
-  let session = request.body?.reuseEmpty ? reusableDraft(state.sessions, user.id, mode) : undefined;
+  const excluded=request.body?.excludeSessionIds||[];
+  if(!Array.isArray(excluded)||excluded.length>64||excluded.some(id=>typeof id!=='string'||id.length>100))return response.status(400).json({error:'待发送会话列表无效。'});
+  let session = request.body?.reuseEmpty ? reusableDraft(state.sessions.filter(s=>!excluded.includes(s.id)), user.id, mode) : undefined;
   if (session) session.mode = mode;
   if (!session) { session = { ...newSession(profile.settings.defaultModelId), ownerId: user.id, mode }; state.sessions.unshift(session); }
   profile.activeSessionId = session.id;
@@ -1065,7 +1179,7 @@ app.delete('/api/sessions/:id', async (request, response) => {
   delete state.narrationBySession[session.id]; delete state.bgmBySession[session.id];
   await saveState(); response.json(await publicState(user));
 });
-app.post('/api/sessions/:id/activate', async (request, response) => { const user = userOf(request); if (!getSession(request.params.id, user.id)) return response.status(404).json({ error: '对话不存在。' }); (await profileOf(user)).activeSessionId = request.params.id; await saveState(); response.json(await publicState(user)); });
+app.post('/api/sessions/:id/activate', async (request, response) => { const user = userOf(request),session=getSession(request.params.id, user.id); if (!session) return response.status(404).json({ error: '对话不存在。' }); if(session.archivedAt)return response.status(409).json({error:'请先取消归档。'});(await profileOf(user)).activeSessionId = request.params.id; await saveState(); response.json(request.body?.receiptOnly?{activeSessionId:session.id}:await publicState(user)); });
 app.patch('/api/sessions/:id/model', async (request, response) => {
   const user = userOf(request);
   const session = getSession(request.params.id, user.id);
@@ -1100,11 +1214,14 @@ app.post('/api/chat', async (request, response) => {
   if (request.body?.voiceTicket !== undefined && (typeof request.body.voiceTicket !== 'string' || request.body.voiceTicket.length > 100)) return response.status(400).json({ error: '语音指令凭证格式无效。' });
   const interaction = request.body?.interaction;
   if (interaction !== undefined && !['chat', 'explore', 'create'].includes(interaction)) return response.status(400).json({ error: '对话模式无效。' });
+  const researchMode=request.body?.researchMode;
+  if(researchMode!==undefined&&!['auto','off','web','deep'].includes(researchMode))return response.status(400).json({error:'联网模式无效。'});
+  if(researchMode&&researchMode!=='auto'&&interaction!=='chat'&&interaction!=='explore')return response.status(400).json({error:'请在对话区选择联网或深度探索。'});
   if (interaction !== 'chat' && interaction !== 'explore') {
     try { resolveTemplateRequest(text, session, videoTemplates); }
     catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : '请选择有效的视频模板。' }); }
   }
-  await enqueueAgentMessage(session, text, attachments, request.body?.voiceTicket, undefined, interaction);
+  await enqueueAgentMessage(session, text, attachments, request.body?.voiceTicket, undefined, interaction, researchMode);
   await saveState(); response.json(await publicState(user)); void processQueue();
 });
 app.post('/api/media', upload.array('files', 6), async (request, response) => {
@@ -1176,6 +1293,46 @@ app.post('/api/media/:id/analyze', async (request, response) => {
   message.jobId = job.id; session.messages.push(message); session.updatedAt = timestamp; state.jobs.push(job);
   await saveState(); response.status(202).json(await publicState(user)); void processQueue();
 });
+async function startFilmTask(user:PublicUser,source:MediaItem,session:Session,task:FilmTask){
+  const busy=state.jobs.find(j=>j.ownerId===user.id&&['queued','running','stopping'].includes(j.status)&&j.filmTask?.sourceId===source.id&&j.filmTask.action===task.action&&(task.action==='analyze'||j.filmTask.action==='archive'&&j.filmTask.shotId===task.shotId));
+  if(busy)return busy;
+  const creditTaskId=task.action==='analyze'?await credits.admit(user.id):undefined;
+  const timestamp=now(),message:ChatMessage={id:randomUUID(),role:'user',text:task.action==='analyze'?'拉片分析「'+source.name+'」，整理可复用镜头':'归档「'+source.name+'」的原片镜头',createdAt:timestamp,attachmentIds:[source.id]};
+  const job:Job={id:randomUUID(),ownerId:user.id,sessionId:session.id,messageId:message.id,kind:'understanding',interaction:'create',filmTask:task,status:'queued',createdAt:timestamp,updatedAt:timestamp,progress:0,creditTaskId};
+  message.jobId=job.id;if(!session.messages.length)session.title=(task.action==='analyze'?'拉片 · ':'镜头归档 · ')+source.name;session.messages.push(message);session.updatedAt=timestamp;state.jobs.push(job);return job;
+}
+app.post('/api/media/:id/film',async(q,r)=>{
+  const user=userOf(q),source=state.media.find(m=>m.id===q.params.id&&owned(m,user.id)),session=getSession(String(q.body?.sessionId||''),user.id);
+  if(!source||source.kind!=='video'||!source.duration||!session)return r.status(404).json({error:'原片或工作会话不存在。'});
+  if(session.archivedAt||session.mode==='chat')return r.status(409).json({error:'请在未归档的工作会话中开始拉片。'});
+  if(!await getModelConfig('understanding'))return r.status(503).json({error:'画面理解模型尚未配置。'});
+  await startFilmTask(user,source,session,{action:'analyze',sourceId:source.id});await saveState();r.status(202).json(await publicState(user));void processQueue();
+});
+app.get('/api/media/:id/film',async(q,r)=>{
+  const source=state.media.find(m=>m.id===q.params.id&&owned(m,userOf(q).id));if(!source)return r.status(404).json({error:'原片不存在。'});
+  const report=await readFilmReport(path.join(dataDir,'film-analysis'),source);r.json({report:report?{...report,shots:report.shots.map(s=>({...s,thumbnailUrl:publicUrl('/api/media/'+source.id+'/film/frames/'+s.index)+'?revision='+report.id}))}:null});
+});
+app.get('/api/media/:id/film/frames/:index',async(q,r)=>{
+  const source=state.media.find(m=>m.id===q.params.id&&owned(m,userOf(q).id));if(!source?.filmAnalysis||!/^\d+$/.test(q.params.index))return r.status(404).json({error:'镜头封面不存在。'});
+  if(q.query.revision&&q.query.revision!==source.filmAnalysis.id)return r.status(410).json({error:'原片分析已更新，请刷新。'});
+  const report=await readFilmReport(path.join(dataDir,'film-analysis'),source),shot=report?.shots.find(s=>s.index===Number(q.params.index));if(!shot)return r.status(404).json({error:'镜头不存在。'});
+  r.set('Cache-Control','private, no-store').type('image/jpeg').sendFile(path.join(filmDirectory(path.join(dataDir,'film-analysis'),source.id,report!.id),shot.id+'-1.jpg'));
+});
+app.post('/api/media/:id/film/archive',async(q,r)=>{
+  const user=userOf(q),source=state.media.find(m=>m.id===q.params.id&&owned(m,user.id)),session=getSession(String(q.body?.sessionId||''),user.id);
+  if(!source||!session)return r.status(404).json({error:'原片或工作会话不存在。'});
+  if(session.archivedAt||session.mode==='chat')return r.status(409).json({error:'请在未归档的工作会话中归档。'});
+  if(typeof q.body?.shotId!=='string'||!/^shot-\d+$/.test(q.body.shotId)||q.body.name!==undefined&&(typeof q.body.name!=='string'||q.body.name.trim().length>80)||q.body.tags!==undefined&&(!Array.isArray(q.body.tags)||q.body.tags.length>12||q.body.tags.some((v:unknown)=>typeof v!=='string'||!v.trim()||v.length>60)))return r.status(400).json({error:'镜头名称或标签无效。'});
+  const report=await readFilmReport(path.join(dataDir,'film-analysis'),source);if(!report)return r.status(409).json({error:'请先分析原片。'});
+  if(q.body.reportId!==report.id)return r.status(409).json({error:'拉片记录已更新，请重新选择镜头。'});
+  try{reusableShot(report,source,q.body.shotId);}catch{return r.status(400).json({error:'请选择已完成分析的有效镜头。'});}
+  await startFilmTask(user,source,session,{action:'archive',sourceId:source.id,reportId:report.id,shotId:q.body.shotId,targetId:randomUUID(),name:q.body.name?.trim()||undefined,tags:q.body.tags});await saveState();r.status(202).json(await publicState(user));void processQueue();
+});
+app.patch('/api/media/:id/collection',async(q,r)=>{
+  const item=state.media.find(m=>m.id===q.params.id&&owned(m,userOf(q).id));if(!item)return r.status(404).json({error:'素材不存在。'});
+  if(!['library','production'].includes(q.body?.collection))return r.status(400).json({error:'归档位置无效。'});
+  item.libraryCollection=q.body.collection;await saveState();r.json(await publicState(userOf(q)));
+});
 app.get('/api/media/:id/transcript', async (request, response) => {
   const item = state.media.find((m) => m.id === request.params.id && owned(m, userOf(request).id));
   if (!item?.analysis) return response.status(404).json({ error: '逐字稿尚未完成，请先分析素材。' });
@@ -1185,6 +1342,7 @@ app.delete('/api/media/:id', async (request, response) => {
   const user = userOf(request);
   const item = state.media.find((media) => media.id === request.params.id && owned(media, user.id));
   if (!item) return response.status(404).json({ error: '素材不存在。' });
+    if(state.jobs.some(j=>j.ownerId===user.id&&j.filmTask?.sourceId===item.id&&['queued','running','stopping'].includes(j.status)))return response.status(409).json({error:'请先停止或等待该原片的拉片、归档任务完成。'});
   state.media = state.media.filter((media) => media.id !== item.id);
   const profile=await profileOf(user);
   if(profile.settings.authorAvatarId===item.id)profile.settings.authorAvatarId=null;
@@ -1192,6 +1350,7 @@ app.delete('/api/media/:id', async (request, response) => {
   for (const artifact of state.artifacts) if (owned(artifact, user.id) && artifact.mediaId === item.id) artifact.mediaId = undefined;
   await saveState(); await rm(path.join(mediaDir, item.id), { force: true }); await audioUnderstanding.remove(item.id);
   await rm(path.join(mediaDir, `${item.id}-preview.jpg`), { force: true });
+    if(/^[\w-]{1,128}$/.test(item.id))await removeFilmData(path.join(dataDir,'film-analysis'),item.id);
   try { await oss?.remove(user.id, 'media', item.id); } catch { console.error('OSS media cleanup failed for', item.id); }
   for (const [index] of (item.shots || []).entries()) {
     await rm(path.join(mediaDir, `${item.id}-shot-${index}.jpg`), { force: true });
@@ -1202,8 +1361,8 @@ app.delete('/api/media/:id', async (request, response) => {
 const imagePreviews = new Map<string, Promise<void>>();
 app.get('/api/media/:id/thumbnail', async (request, response) => {
   const user = userOf(request);
-  const item = state.media.find(media => media.id === request.params.id && media.kind === 'image' && owned(media, user.id));
-  if (!item) return response.status(404).json({ error: '图片不存在。' });
+  const item = state.media.find(media => media.id === request.params.id && ['image','video'].includes(media.kind) && owned(media, user.id));
+  if (!item) return response.status(404).json({ error: '素材不存在。' });
   const target = path.join(mediaDir, `${item.id}-preview.jpg`);
   try {
     if (!existsSync(target)) {
@@ -1213,7 +1372,8 @@ app.get('/api/media/:id/thumbnail', async (request, response) => {
           const source = path.join(mediaDir, item.id), tmp = path.join(mediaDir, `${item.id}-preview-${randomUUID()}.jpg`);
           try {
             await oss?.ensure(user.id, 'media', item.id, source);
-            await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', source, '-frames:v', '1', '-vf', 'scale=320:320:force_original_aspect_ratio=decrease', '-q:v', '4', tmp], 30_000);
+            if (!existsSync(source)) throw Object.assign(new Error('素材文件不存在。'), { code: 'ENOENT' });
+            await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', ...(item.kind==='video'?['-ss',String(Math.min(1,(item.duration||1)/2))]:[]), '-i', source, '-frames:v', '1', '-vf', 'scale=320:320:force_original_aspect_ratio=decrease', '-q:v', '4', tmp], 30_000);
             if (!state.media.some(media => media.id === item.id && owned(media, user.id))) throw new Error('素材已删除。');
             await rename(tmp, target);
           } finally { await rm(tmp, { force: true }); }
@@ -1225,7 +1385,10 @@ app.get('/api/media/:id/thumbnail', async (request, response) => {
       await pending;
     }
     response.set('Cache-Control', 'private, no-store').type('image/jpeg').sendFile(target);
-  } catch { response.status(502).json({ error: '缩略图暂时无法生成，请重试。' }); }
+  } catch (error) {
+    const missing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+    response.status(missing ? 404 : 502).json({ error: missing ? '素材文件不存在。' : '缩略图暂时无法生成，请重试。' });
+  }
 });
 app.get('/api/media/:id', async (request, response) => {
   const item = state.media.find((media) => media.id === request.params.id && owned(media, userOf(request).id));

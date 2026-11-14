@@ -376,6 +376,7 @@ function ArtifactCard({
   repair?: () => void;
 }) {
   const t = labels[locale];
+  if(artifact.kind==='sticker-pack')return <div className="artifact-card image-card"><img src={artifact.coverUrl} alt="轻喵动态表情套装" style={{width:'100%',maxHeight:300,objectFit:'contain'}}/><h3>{artifact.name.replace(/\.zip$/,'')}</h3><p>24套透明动态表情 · GIF / WebP / APNG / PNG</p><a className="artifact-download" href={artifact.downloadUrl} download={artifact.name}>下载表情套装</a></div>;
   if(artifact.kind==='game')return <div className="artifact-card game-card"><h3>{artifact.name.replace(/\.zip$/,'')}</h3><CreativeGamePreview endpoint={artifact.url}/><p>Defold · 编译、试玩与模型自检通过，待审阅</p><a className="artifact-download" href={artifact.projectUrl} download>下载可编辑工程</a></div>;
   if (artifact.kind === "audio")
     return (

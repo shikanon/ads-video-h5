@@ -53,10 +53,13 @@ function fixture(loggedIn = false) {
 
 test('fresh visitors browse all tabs, filters and agreements without login, microphone permission or network', async () => {
   const f = fixture();
-  for (const name of ['chat', 'library', 'films', 'profile', 'settings', 'history', 'credits']) {
+  for (const name of ['chat', 'templates', 'library', 'profile', 'settings', 'history', 'credits']) {
     const page = await f.page(name); page.onLoad?.({}); page.onShow();
     assert.equal(page.data.guest, true, name);
-    if (['library', 'films'].includes(name)) page.filter({ currentTarget: { dataset: { kind: 'video' } } });
+    if (name === 'library') {
+      page.filter({ currentTarget: { dataset: { kind: 'video' } } });
+      page.section({ currentTarget: { dataset: { section: 'films' } } });
+    }
     page.onHide?.(); page.onUnload?.();
   }
   assert.equal(f.calls.length, 0, 'browsing does not create an identity or collect audio');

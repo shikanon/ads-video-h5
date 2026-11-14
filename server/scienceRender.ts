@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { access, copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import ffmpeg from 'ffmpeg-static';
 import { onJobAbort, spawnForJob, throwIfJobCancelled } from './jobExecution';
@@ -22,7 +23,7 @@ export { scienceHtml } from './scienceHtml';
 import { scienceHtml } from './scienceHtml';
 export async function scienceBrowser() {
   const require=createRequire(createRequire(import.meta.url).resolve('hyperframes/package.json'));
-  const [{default:puppeteer},browsers]=await Promise.all([import(require.resolve('puppeteer-core')),import(require.resolve('@puppeteer/browsers'))]);
+  const [{default:puppeteer},browsers]=await Promise.all([import(pathToFileURL(require.resolve('puppeteer-core')).href),import(pathToFileURL(require.resolve('@puppeteer/browsers')).href)]);
   const explicit=process.env.QINGJIAN_CHROMIUM_PATH||process.env.HYPERFRAMES_BROWSER_PATH||process.env.PRODUCER_HEADLESS_SHELL_PATH;
   if(explicit){await access(explicit);return {puppeteer,executablePath:explicit};}
   for(const cacheDir of [path.join(homedir(),'.cache/hyperframes/chrome'),path.join(homedir(),'.cache/puppeteer')]){

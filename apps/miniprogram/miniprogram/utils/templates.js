@@ -28,7 +28,10 @@ function galleryCards(templates, client) {
     const poster = sample ? client.templateAssetUrl(sample.posterUrl) : '';
     return {
       id: template.id, name: template.name, description: template.description,
-      format: template.output === 'game' ? '交互游戏' : '视频模板',
+      output: template.output,
+      format: template.output === 'sticker-pack' ? '动态表情 + 分享视频' : template.output === 'game' ? '交互游戏' : '视频模板',
+      icon: template.output === 'game' ? 'create' : template.id.includes('science') || template.id.includes('diagram') ? 'idea' : 'films',
+      skill: Boolean(template.skillName),
       seconds: template.defaults.seconds,
       sample: video && poster ? { title: sample.title, author: sample.source.author, video, poster } : null,
     };

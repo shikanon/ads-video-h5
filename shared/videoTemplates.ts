@@ -6,7 +6,7 @@ export interface VideoTemplateSample {
 }
 
 export interface VideoTemplate {
-  output?: 'game';
+  output?: 'game' | 'sticker-pack';
   sample?: VideoTemplateSample;
   id: string;
   name: string;

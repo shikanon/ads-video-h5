@@ -1,6 +1,6 @@
 export type Format = '9:16' | '16:9' | '1:1';
 export type MediaKind = 'video' | 'image' | 'audio';
-export type ArtifactKind = 'image' | 'audio' | 'video' | 'game';
+export type ArtifactKind = 'image' | 'audio' | 'video' | 'game' | 'sticker-pack';
 export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music' | 'effect' | 'understanding' | 'review' | 'avatar';
 export type JobStatus = 'queued' | 'running' | 'stopping' | 'cancelled' | 'succeeded' | 'failed';
 export type ModelKind = 'text' | 'image' | 'audio' | 'understanding';
@@ -13,6 +13,9 @@ export interface Shot {
 }
 
 export interface MediaItem {
+  filmAnalysis?: import('./film').FilmIndex;
+  libraryCollection?: 'library' | 'production';
+  archive?: {sourceId:string;sourceHash:string;reportId:string;shotId:string;start:number;end:number;tags:string[]};
   thumbnailUrl?: string;
   ownerId?: string;
   id: string;
@@ -295,6 +298,7 @@ export interface MusicSearch {
 }
 
 export interface Artifact {
+  sticker?: import('./stickerPacks').StickerDelivery;
   creative?: {engine:'defold';sourceHash:string;artifactHash?:string;technicalPassed:boolean;modelSelfChecked:boolean;userAccepted:false};
   template?: import('./videoTemplates').TemplateSelection & { panels: number; technicalPassed: boolean; userAccepted: false; boundary: string; basis: string[]; animationMode?:'code'|'declarative'; sourceHash?:string; motion?:{meanChangedAreaPct:number;activeFramePct:number} };
   projectUrl?: string;
@@ -358,6 +362,10 @@ export interface JobAttempt {
 }
 
 export interface Job {
+  stickerTask?: import('./stickerPacks').StickerTask;
+  stickerRequestId?: string;
+  filmTask?: import('./film').FilmTask;
+  researchMode?: 'auto' | 'off' | 'web' | 'deep';
   interaction?: 'chat' | 'explore' | 'create';
   taskSpec?: import('./taskRuntime').TaskSpec;
   template?: import('./videoTemplates').TemplateSelection;
@@ -427,8 +435,9 @@ export interface AppSettings {
 }
 
 export interface AppState {
+  notifications?: import('./notifications').NoticeInbox;
   account?: { id: string; displayName: string; avatarUrl?: string; authProvider?: 'email' | 'wechat' };
-  features?: { conversationModes: boolean; sessionManagement: boolean; schedules: boolean; accountAvatars?: boolean };
+  features?: { conversationModes: boolean; sessionManagement: boolean; schedules: boolean; accountAvatars?: boolean; researchModes?: boolean; notifications?: boolean; filmAnalysis?: boolean };
   limits?: { maxAttachments: number };
   templates?: import('./videoTemplates').VideoTemplate[];
   credits?: import('./creditTypes').CreditWallet;

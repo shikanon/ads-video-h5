@@ -99,6 +99,26 @@ test('the real browser checks every frame and verifies deterministic seek, loopi
   }
 });
 
+test('CRLF scene modules execute inside the isolated browser without leaking module imports', async t => {
+  const [template] = await loadVideoTemplates();
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'qj-crlf-scene-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const integration = path.join(directory, 'assets/integration');
+  await mkdir(integration, { recursive: true });
+  for (const name of ['project-builder', 'renderer', 'scene', 'motion-api', 'reference-effects', 'motion-metrics']) {
+    const source = await readFile(path.join(template.directory, 'assets/integration', name + '.mjs'), 'utf8');
+    await writeFile(path.join(integration, name + '.mjs'), source.replace(/\r?\n/g, '\r\n'));
+  }
+  const view = await openSciencePage({ ...template, directory }, scienceFixture(4));
+  try {
+    assert.equal(await view.page.evaluate(() => {
+      const scene = (window as any).science;
+      scene.renderer.draw(3);
+      return scene.config.panels.length;
+    }), 4);
+  } finally { await view.close(); }
+});
+
 test('project archives retain UTF-8 source names and do not include sibling private files',async()=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),'qj-template-zip-'));
   try{
