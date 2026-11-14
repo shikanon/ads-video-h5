@@ -53,10 +53,7 @@ Page({
     this.setData(Object.assign({ focus: false }, keyboardLayout(this._windowBaseline, this._windowBaseline, 0)));
     this.setData({ voice: this._voicePhase || 'idle', voiceLabel: voiceLabels[this._voicePhase || 'idle'] });
     if (this._voiceError) this.setData({ error: this._voiceError });
-    const selection = this._pendingTemplate;
-    this._pendingTemplate = null;
     if (!withSession(this, this.render)) return;
-    if (selection) this.applyTemplate(selection);
     if (getApp().pendingAttachments) { const ids = getApp().pendingAttachments; getApp().pendingAttachments = null; this.addAttachments(ids); if (getApp().state) this.render(getApp().state); }
   },
   onHide() { hide(this); this._editorFocused = false; this.setData({ focus: false, keyboardHeight: 0, keyboardOffset: 0 }); this.cancelConsent(); if (this._voice) this._voice.cancel(); },
@@ -129,6 +126,7 @@ Page({
     if (Object.keys(delta).length) this.setData(delta);
     if (this._visible && !this.data.sidebarOpen && getApp()._foreground !== false && !getApp()._pendingNotice && !getApp()._openingNotice) markSessionRead(getApp(), view.sessionId);
     if (this._lastCount !== view.messages.length || this._lastSession !== view.sessionId) { this._lastCount = view.messages.length; this._lastSession = view.sessionId; this.scroll(); }
+    this.consumeTemplate();
   },
   scroll() { if (this._visible) this.setData({ scrollTarget: '' }, () => this.setData({ scrollTarget: this.data.empty ? 'thread-start' : 'thread-end' })); },
   input(event) { this.setData({ prompt: event.detail.value, cursor: event.detail.cursor, templateName: selectedTemplateName(event.detail.value, this.templates()), error: '' }); this.setData({ voiceReady: Boolean(this.voiceTicket()) }); },
@@ -166,14 +164,22 @@ Page({
   },
   templates() { return (getApp().state || {}).templates || []; },
   openTemplates() {
-    if (this.data.modelChanging || this.data.creatingSession || this.data.sending || this.data.uploading || this.data.voice !== 'idle' || !requireLogin() || !this.data.sessionId) return;
-    const { sessionId } = this.data;
-    const generation = getApp()._generation;
-    wx.navigateTo({
+    if (this.data.modelChanging || this.data.creatingSession || this.data.sending || this.data.uploading || this.data.voice !== 'idle') return;
+    const app = getApp();
+    app.templateOrigin = { sessionId: this.data.sessionId, generation: app._generation };
+    wx.switchTab({
       url: '/pages/templates/index',
-      events: { useTemplate: ({ id }) => { this._pendingTemplate = { id, sessionId, generation }; } },
-      fail: () => notify(new Error('暂时无法打开模板画廊。')),
+      fail: () => { app.templateOrigin = null; notify(new Error('暂时无法打开模板页。')); },
     });
+  },
+  consumeTemplate() {
+    const app = getApp(), selection = app.pendingTemplate;
+    if (!selection || !this._visible || app._restored || !this.data.sessionId) return;
+    app.pendingTemplate = null;
+    if (selection.generation !== app._generation) return;
+    if (selection.sessionId && selection.sessionId !== this.data.sessionId) { notify(new Error('会话已切换，请重新选择模板。')); return; }
+    if (this.data.sending || this.data.creatingSession || this.data.modelChanging || this.data.uploading || this.data.voice !== 'idle') { notify(new Error('请等当前操作结束，再选择模板。')); return; }
+    this.applyTemplate(Object.assign({}, selection, { sessionId: this.data.sessionId }));
   },
   applyTemplate({ id, sessionId, generation }) {
     const app = getApp();

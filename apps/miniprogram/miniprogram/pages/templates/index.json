@@ -1,3 +1,4 @@
 {
-  "navigationBarTitleText": "模板画廊"
+  "navigationBarTitleText": "模板与技能",
+  "enablePullDownRefresh": true
 }

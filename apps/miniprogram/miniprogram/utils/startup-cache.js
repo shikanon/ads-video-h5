@@ -19,7 +19,7 @@ function project(state, count, textLimit) {
     ...(m.character ? { character: { role: m.character.role } } : {}),
     ...(m.analysis ? { analysis: { transcript: String(m.analysis.transcript || '').slice(0, 1000) } } : {}),
     ...(m.shots ? { shots: m.shots.slice(0, 1).map(s => pick(s, ['thumbnailUrl'])) } : {}) }));
-  result.artifacts = state.artifacts.map(a => ({ ...pick(a, ['id', 'name', 'kind', 'url', 'downloadUrl', 'coverUrl', 'createdAt', 'duration', 'version']), ...(a.review ? { review: { status: a.review.status } } : {}) }));
+  result.artifacts = state.artifacts.map(a => ({ ...pick(a, ['id', 'sessionId', 'name', 'kind', 'url', 'downloadUrl', 'coverUrl', 'createdAt', 'duration', 'version', 'projectUrl', 'sticker']), ...(a.review ? { review: { status: a.review.status } } : {}) }));
   result.jobs = state.jobs.map(j => pick(j, ['id', 'sessionId', 'status', 'progress', 'stage', 'error', 'kind', 'interaction', 'createdAt', 'updatedAt']));
   return result;
 }

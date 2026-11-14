@@ -122,7 +122,7 @@ function createClient(platform, config, onExpired) {
     return url && !url.startsWith(base + '/') ? url : '';
   };
   const templateAssetUrl = route => typeof route === 'string' &&
-    /^\/api\/templates\/[a-z][a-z0-9-]{0,63}\/sample\/(?:video|poster)$/.test(route) ? endpoint(route) : '';
+    /^(?:\/api\/templates\/[a-z][a-z0-9-]{0,63}\/sample\/(?:video|poster)|\/api\/sticker-packs\/[a-z][a-z0-9-]{0,63}\/items\/\d{2}\/(?:thumb|preview))$/.test(route) ? endpoint(route) : '';
   return { request, wechatLogin, upload, download, mediaUrl, previewUrl, templateAssetUrl, clear, hasSession: () => Boolean(cookie), restoreState: startup.read, rememberState: startup.write,
     cachedDownload, forgetDownload: value => { const url = mediaUrl(value); cache.delete(url); images.forget(url); } };
 }

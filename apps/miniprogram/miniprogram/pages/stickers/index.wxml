@@ -1,0 +1,30 @@
+<view class="screen theme-surface theme-{{theme}} sticker-page">
+  <view class="eyebrow">轻喵创作工坊 · 动态表情</view>
+  <view class="title">一套表情，一个小故事。</view>
+  <view class="muted intro">复用轻喵第2弹24套透明动态表情。点开看动作，选6个串成分享短片。</view>
+  <view wx:if="{{loading}}" class="muted">正在读取表情套装…</view>
+  <view wx:if="{{error}}" class="error">{{error}}<button wx:if="{{!pack}}" class="secondary" bindtap="load">重新加载</button></view>
+  <block wx:if="{{pack}}">
+    <view class="sticker-grid"><button wx:for="{{items}}" wx:key="id" class="sticker-tile" bindtap="preview" data-id="{{item.id}}" aria-label="预览{{item.name}}"><image src="{{item.thumb}}" mode="aspectFit" lazy-load/><text>{{item.name}}</text></button></view>
+    <view wx:if="{{result}}" class="panel result"><view class="section-title">表情套装已保存</view><view class="muted">包含GIF、WebP、APNG、静态PNG与专辑配套素材。</view><button class="primary" bindtap="download" loading="{{saving}}" disabled="{{saving}}">下载并分享表情ZIP</button><button wx:if="{{result.videoId}}" class="secondary" bindtap="videoResult">查看配套分享视频 ↗</button></view>
+    <view class="panel story-form">
+      <view class="section-title">{{result ? '继续制作分享视频' : '制作选项'}}</view>
+      <view class="row spread"><text>同步制作表情包分享视频</text><switch color="#c9612f" checked="{{makeVideo}}" bindchange="video"/></view>
+      <block wx:if="{{makeVideo}}">
+        <view class="field-label">片名</view><input class="input" maxlength="16" value="{{title}}" bindinput="title" placeholder="给这段故事起个名字"/>
+        <view class="muted scene-hint">按下面的顺序播放，每幕短句最多18字。</view>
+        <view wx:for="{{scenes}}" wx:key="index" class="scene-row">
+          <view class="scene-number">{{index + 1}}</view>
+          <view class="scene-fields"><picker range="{{items}}" range-key="name" value="{{item.choice}}" bindchange="choose" data-index="{{index}}"><view class="scene-picker">{{item.name}}　⌄</view></picker><input class="input" maxlength="18" value="{{item.caption}}" bindinput="caption" data-index="{{index}}"/></view>
+        </view>
+        <view class="row spread"><text>轻音乐</text><switch color="#c9612f" checked="{{bgm}}" bindchange="music"/></view>
+        <view class="muted scene-hint">同款故事编排 · 24秒 · 3:4 · 无口播</view>
+      </block>
+      <view wx:else class="muted scene-hint">只保存完整表情套装，之后可以继续制作分享视频。</view>
+      <button class="primary" bindtap="start" disabled="{{submitting || busy}}" loading="{{submitting}}">{{busy ? '当前会话有任务进行中' : makeVideo ? '保存表情并生成分享视频 ↗' : '保存表情套装 ↗'}}</button>
+    </view>
+    <view class="section-title sample-title">分享视频样片</view><video class="sample" src="{{pack.sample}}" poster="{{pack.poster}}" controls object-fit="contain"/>
+  </block>
+  <view wx:if="{{selected}}" class="preview-mask" bindtap="closePreview"><view class="preview-card"><image wx:if="{{!previewError}}" src="{{selected.preview}}" mode="aspectFit" binderror="previewError"/><text wx:else class="error">动作预览暂时无法加载，请关闭后重试。</text><view class="section-title">{{selected.name}}</view><view class="muted">{{selected.action}} · 点击空白处关闭</view></view></view>
+  <privacy-dialog id="privacy"/>
+</view>

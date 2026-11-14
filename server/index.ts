@@ -84,6 +84,9 @@ import { defoldEnvironment } from './defoldRuntime';
 import {pixelfxLibrary,findPixelEffects} from './pixelfx';
 import { mountTemplateTestRoutes } from './templateTestRoutes';
 import { wantsConversation } from './intents';
+import { mountStickerRoutes, mountStickerSamples } from './stickerRoutes';
+import { defaultStickerTask, loadStickerPack } from './stickerPacks';
+import { runStickerWorkflow } from './stickerWorkflow';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -103,7 +106,7 @@ const stateFile = path.join(dataDir, 'app-state.json');
 const port = Number(process.env.PORT || 8787);
 const publicBase = `/${(process.env.PUBLIC_BASE_PATH || '').replace(/^\/+|\/+$/g, '')}`.replace(/^\/$/, '');
 const publicUrl = (url: string) => `${publicBase}${url}`;
-const assetUrl = (ownerId: string, category: AssetCategory, id: string, fallback: string) => oss?.publicUrl(ownerId, category, id) || publicUrl(fallback);
+const assetUrl = (ownerId: string, category: AssetCategory, id: string, fallback: string) => fallback.startsWith('/api/templates/') ? publicUrl(fallback) : oss?.publicUrl(ownerId, category, id) || publicUrl(fallback);
 await Promise.all([mediaDir, artifactDir, exportDir, tmpDir].map((dir) => mkdir(dir, { recursive: true })));
 const effects = createEffectStore(dataDir, oss);
 await effects.init();
@@ -182,7 +185,7 @@ async function basePublicState(user: PublicUser): Promise<AppState> {
 function addReply(session: Session, job: Job, text: string, artifactId?: string) {
   return updateReply(session, job, text, 'final', 'final', artifactId);
 }
-async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['kind'],'game'>, name: string, bytes: Buffer, mimeType: string, text?: string, duration?: number): Promise<Artifact> {
+async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['kind'],'game'|'sticker-pack'>, name: string, bytes: Buffer, mimeType: string, text?: string, duration?: number): Promise<Artifact> {
   throwIfJobCancelled();
   const id = randomUUID();
   const filename = `${id}.${extFor(mimeType)}`;
@@ -303,6 +306,44 @@ async function performJob(job: Job): Promise<void> {
     const entry = videoTemplates.find(t=>t.id===job.template!.id);
     const template = entry && await loadVideoTemplate(entry);
     if (!template || template.skillHash!==job.template.skillHash) throw new Error('模板规则已变化，请重新发送制作要求以使用当前版本。');
+    if(template.workflow==='sticker-pack') {
+      if(!job.stickerTask) {
+        addReply(session,job,'请在「模板 → 动态表情套装」中选择6个动作、填写短句，并设置是否同步制作分享视频，再点击开始制作。当前可复用轻喵第2弹24套表情。');
+        return;
+      }
+      const made=await runStickerWorkflow({task:job.stickerTask,directory:path.join(dataDir,'sticker-projects',job.id,job.attemptId||randomUUID()),progress:workflowProgress,
+        renderProgress:async(frames,total)=>{job.progress=30+Math.round(frames/total*60);job.stage='渲染表情分享视频 · '+Math.round(frames/total*100)+'%';await saveState();}});
+      const packId=randomUUID(),videoId=made.rendered?randomUUID():undefined;
+      const delivery={packId:made.pack.id,packVersion:made.pack.version,sourceHash:made.sourceHash,count:made.pack.items.length,sceneIds:made.task.sceneIds,videoId,task:made.task};
+      const packFile=packId+'.zip',destinations=[path.join(artifactDir,packFile)];
+      const uploads:Array<{category:AssetCategory;id:string;file:string;mime:string}>=[{category:'artifacts',id:packId,file:destinations[0],mime:'application/zip'}];
+      try {
+        await copyFile(made.archive,destinations[0]);
+        if(made.rendered&&videoId) {
+          for(const [source,file,category,key,mime] of [
+            [made.rendered.file,`${videoId}.mp4`,'exports',videoId,'video/mp4'],
+            [made.rendered.cover,`${videoId}-cover.png`,'covers',videoId,'image/png'],
+            [made.rendered.archive,`${videoId}-project.zip`,'artifacts',`${videoId}-project`,'application/zip'],
+          ]) {
+            const target=path.join(exportDir,file);destinations.push(target);await copyFile(source,target);
+            uploads.push({category:category as AssetCategory,id:key,file:target,mime});
+          }
+          const report=path.join(exportDir,`${videoId}-template.json`);destinations.push(report);await writeFile(report,JSON.stringify(made.verification,null,2));
+        }
+        for(const upload of uploads)await oss?.put(job.ownerId!,upload.category,upload.id,upload.file,upload.mime);
+        throwIfJobCancelled();currentTaskExecution()?.guard();
+      } catch(error) {
+        await Promise.all(destinations.map(file=>rm(file,{force:true})));
+        if(oss)await Promise.allSettled(uploads.map(upload=>oss.remove(job.ownerId!,upload.category,upload.id)));
+        throw error;
+      }
+      const packArtifact:Artifact={id:packId,ownerId:job.ownerId,sessionId:session.id,messageId:job.messageId,kind:'sticker-pack',name:made.pack.name+'-表情套装.zip',url:`/api/artifacts/${packId}`,downloadUrl:`/api/download/${packId}`,coverUrl:'/api/templates/qingmao-stickers/sample/poster',createdAt:now(),version:state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='sticker-pack').length+1,sticker:delivery};
+      state.artifacts.push(packArtifact);state.artifactFiles[packId]=packFile;
+      if(made.rendered&&videoId)state.artifacts.push({id:videoId,ownerId:job.ownerId,sessionId:session.id,messageId:job.messageId,kind:'video',name:made.task.title+'.mp4',url:`/api/artifacts/${videoId}`,downloadUrl:`/api/download/${videoId}`,projectUrl:`/api/artifacts/${videoId}/project`,coverUrl:`/api/artifacts/${videoId}/cover`,coverMimeType:'image/png',createdAt:now(),version:state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1,duration:24,hasNarration:false,hasBgm:made.task.bgm,sticker:{...delivery,packArtifactId:packId,width:1080,height:1440},template:{...job.template,panels:0,technicalPassed:true,userAccepted:false,boundary:'复用已确认的轻喵第2弹动态表情，1080×1440分享视频。',basis:[],animationMode:'code',sourceHash:made.sourceHash},workflow:structuredClone(job.workflow)});
+      const reply=`已保存24套动态表情及专辑配套素材${videoId?'，并使用同一批序列帧制作《'+made.task.title+'》：24秒，1080×1440'+(made.task.bgm?'，带音乐':'，无配乐')+'。视频、封面和可编辑工程已保存，技术检查通过，待你审阅。':'。可在资源中预览表情或下载套装，之后继续制作分享视频。'}`;
+      addReply(session,job,reply,packId);if(videoId)addReply(session,job,reply,videoId);
+      job.artifactId=videoId||packId;await saveState();return;
+    }
     const config=await getModelConfig('text',session.modelId);
     if(!config)throw new Error('文本模型尚未配置，请在管理后台设置后重试。');
     if(wantsConversation(prompt)){
@@ -872,7 +913,7 @@ async function processQueuedJob(job: Job) {
       }catch{console.warn('Completion notification could not be recorded.');}
 }
 
-async function enqueueAgentMessage(session: Session, text: string, attachmentIds: string[], voiceTicket?: string, modelSnapshot?:ModelSnapshot, interaction?: Job['interaction'], researchMode?:Job['researchMode']): Promise<Job> {
+async function enqueueAgentMessage(session: Session, text: string, attachmentIds: string[], voiceTicket?: string, modelSnapshot?:ModelSnapshot, interaction?: Job['interaction'], researchMode?:Job['researchMode'], stickerTask?:Job['stickerTask']): Promise<Job> {
   const selection = interaction === 'chat' || interaction === 'explore'
     ? { kind: 'plan' as const, template: undefined }
     : resolveTemplateRequest(text, session, videoTemplates);
@@ -882,6 +923,7 @@ async function enqueueAgentMessage(session: Session, text: string, attachmentIds
   const message: ChatMessage = { id: randomUUID(), role: 'user', text, createdAt, attachmentIds };
   const job: Job = { id: randomUUID(), ownerId: session.ownerId, sessionId: session.id, messageId: message.id, kind: selection.kind, status: 'queued', createdAt, updatedAt: createdAt, progress: 0, ...(template ? { template: templateSelection(template) } : {}) };
   if (interaction) job.interaction = interaction;
+  if(stickerTask)job.stickerTask=structuredClone(stickerTask);
   if(interaction==='chat'||interaction==='explore')job.researchMode=resolveResearchMode(text,researchMode);else if(researchMode)job.researchMode=researchMode;
   job.taskSpec=createTaskSpec([...session.messages,message],text,selection.template?.id,priorTaskSpec(session,selection.template?.id));if(selection.template)(session.taskSpecsByTemplate||={})[selection.template.id]=job.taskSpec;if(!wantsConversation(text))session.taskSpec=job.taskSpec;session.taskRevisions||={};session.taskRevisions[job.taskSpec.id]=job.taskSpec.revision;
   jobRunner.supersede(state.jobs,job.taskSpec,now());
@@ -979,11 +1021,12 @@ mountCreditAdminRoutes(app, credits, adminAuth, auth.listUsers);
 await mountTemplateTestRoutes(app,{
   dataDir,templates:videoTemplates,adminAuth,
   async start(id,prompt,modelId){
+    const sticker=prompt.startsWith('@动态表情套装 ');
     const config=await getModelConfig('text',modelId||await getDefaultTextModelId());
-    if(!config)throw new Error('请先配置可用的文本模型，再运行模板测试。');
-    const session={...newSession(config.id),ownerId:`evaluation:template:${id}`,title:'视频模板测试'};
+    if(!config&&!sticker)throw new Error('请先配置可用的文本模型，再运行模板测试。');
+    const session={...newSession(config?.id||null),ownerId:`evaluation:template:${id}`,title:'视频模板测试'};
     const modelSnapshot:ModelSnapshot={text:config,image:null,audio:null,understanding:null,textFallbacks:await getTextFallbackConfigs(config)};
-    state.sessions.push(session);const job=await enqueueAgentMessage(session,prompt,[],undefined,modelSnapshot);
+    state.sessions.push(session);const job=await enqueueAgentMessage(session,prompt,[],undefined,modelSnapshot,undefined,undefined,sticker?defaultStickerTask(await loadStickerPack()):undefined);
     await saveState();return {session,job};
   },
   job:id=>state.jobs.find(j=>j.id===id),artifact:job=>state.artifacts.find(a=>a.id===job.artifactId&&a.ownerId===job.ownerId&&a.sessionId===job.sessionId),
@@ -1006,7 +1049,21 @@ app.get('/api/templates/:id/sample/:kind', (request, response) => {
   if (!template || !asset) return response.status(404).json({ error: '样片不存在。' });
   return response.sendFile(asset, { root: path.join(template.directory, 'assets'), maxAge: '1h' });
 });
+mountStickerSamples(app);
 auth.mount(app, credits.readiness, user => credits.snapshot(user.id));
+const startingStickerSessions=new Set<string>();
+mountStickerRoutes(app,{base:publicBase,async start(user,sessionId,requestId,task){
+  const session=getSession(sessionId,user.id);if(!session)throw Object.assign(new Error('会话不存在。'),{status:404});
+  const previous=state.jobs.find(job=>job.ownerId===user.id&&job.stickerRequestId===requestId);
+  if(previous){if(previous.sessionId!==sessionId||JSON.stringify(previous.stickerTask)!==JSON.stringify(task))throw Object.assign(new Error('重复请求的参数已变化，请重新提交。'),{status:409});return {...await publicState(user),stickerJobId:previous.id};}
+  if(startingStickerSessions.has(session.id)||state.jobs.some(job=>job.sessionId===session.id&&isActiveJob(job)))throw Object.assign(new Error('当前会话已有任务，请等待完成或停止后再试。'),{status:409});
+  startingStickerSessions.add(session.id);
+  try {
+    const prompt='@动态表情套装 保存轻喵第2弹24套表情'+(task.makeVideo?'，同步制作24秒分享视频《'+task.title+'》。动作顺序：'+task.sceneIds.join('、')+'；短句：'+task.captions.join(' / ')+'；'+(task.bgm?'带音乐':'无配乐'):'，仅保存表情套装');
+    const job=await enqueueAgentMessage(session,prompt,[],undefined,undefined,'create',undefined,task);job.stickerRequestId=requestId;
+    await saveState();const response={...await publicState(user),stickerJobId:job.id};void processQueue();return response;
+  }finally{startingStickerSessions.delete(session.id);}
+}});
 app.get('/api/notifications/config',(q,r)=>r.json(notifications.configuration(userOf(q).id)));
 app.get('/api/notifications',(q,r)=>r.json(notifications.list(userOf(q).id,Number(q.query.limit)||40)));
 app.get('/api/notifications/:id',(q,r)=>{const notice=notifications.get(userOf(q).id,q.params.id);if(!notice)return r.status(404).json({error:'消息不存在。'});r.json(notice);});

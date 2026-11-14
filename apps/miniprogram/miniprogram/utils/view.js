@@ -18,7 +18,7 @@ function jobView(job, showWorkflow) {
 }
 function artifactView(item, client) {
   const coverSource = item.kind === 'image' ? item.url : item.coverUrl || '';
-  return { id: item.id, name: brandText(item.name), kind: item.kind, date: beijingTime(item.createdAt), source: item.url, coverSource, cover: client.cachedDownload && client.cachedDownload(coverSource) || client.previewUrl(coverSource), version: item.version || 1, duration: item.duration ? Math.round(item.duration) + ' 秒' : '', status: item.review && item.review.status === 'needs-review' ? '需复核' : '已完成' };
+  return { id: item.id, name: brandText(item.name), kind: item.kind, date: beijingTime(item.createdAt), source: item.url, coverSource, cover: client.cachedDownload && client.cachedDownload(coverSource) || client.previewUrl(coverSource), version: item.version || 1, duration: item.kind === 'sticker-pack' && item.sticker ? item.sticker.count + ' 套表情' : item.duration ? Math.round(item.duration) + ' 秒' : '', status: item.review && item.review.status === 'needs-review' ? '需复核' : '已完成' };
 }
 function mediaView(item, client) {
   const coverSource = item.kind === 'image' ? item.thumbnailUrl || item.url : item.thumbnailUrl || item.shots && item.shots[0] && item.shots[0].thumbnailUrl || '';

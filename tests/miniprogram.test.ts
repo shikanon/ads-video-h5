@@ -247,10 +247,9 @@ test('every native WXML page renders with the official component compiler and ha
     assert.equal(route, '/api/templates');
     return { templates: app.state.templates };
   } };
-  let opened: any, backCount = 0;
+  const tabRoutes: string[] = [];
   Object.assign((globalThis as any).wx, {
-    navigateTo: (options: unknown) => { opened = options; },
-    navigateBack: () => { backCount++; },
+    switchTab: (options: any) => { tabRoutes.push(options.url); },
     pageScrollTo() {},
   });
   chat.instance.render(app.state);
@@ -258,11 +257,11 @@ test('every native WXML page renders with the official component compiler and ha
   chat.setData({ prompt: '@像素游戏 保留我已有的文字' });
   chat.querySelector('.gallery-entry').dispatchEvent('tap');
   await simulate.sleep(0);
-  assert.equal(opened.url, '/pages/templates/index');
+  assert.deepEqual(tabRoutes, ['/pages/templates/index']);
+  chat.instance.onHide();
   const galleryId = simulate.load(path.join(miniRoot, 'pages/templates/index'), { compiler: 'official', rootPath: miniRoot });
   const gallery = simulate.render(galleryId);
   gallery.attach(document.createElement('div'));
-  gallery.instance.getOpenerEventChannel = () => ({ emit: (name: string, data: unknown) => opened.events[name](data) });
   gallery.instance.onShow();
   await simulate.sleep(0);
   assert.equal(gallery.data.cards.length, 2);
@@ -274,7 +273,7 @@ test('every native WXML page renders with the official component compiler and ha
   assert.ok(gallery.querySelector('.sample-player'));
   gallery.querySelector('.sample-use').dispatchEvent('tap');
   await simulate.sleep(0);
-  assert.equal(backCount, 1);
+  assert.deepEqual(tabRoutes, ['/pages/templates/index', '/pages/chat/index']);
   chat.instance.onShow();
   assert.equal(chat.data.prompt, '@界面动效 保留我已有的文字');
   assert.equal(chat.data.templateName, '界面动效');

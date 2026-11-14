@@ -56,8 +56,8 @@ export default function TemplateGallery({ templates, locale, assetUrl, onUse }: 
         <button type="button" className="gallery-primary" onClick={() => onUse(preview)}>{t.use}</button>
       </div>
       <div className="gallery-sources">
-        <a href={sample.source.url} target="_blank" rel="noreferrer">{t.source} {sample.source.author}</a>
-        <a href={sample.source.galleryUrl} target="_blank" rel="noreferrer">{t.related}</a>
+        {sample.source.url ? <a href={sample.source.url} target="_blank" rel="noreferrer">{t.source} {sample.source.author}</a> : <span>{sample.source.author}</span>}
+        {sample.source.galleryUrl ? <a href={sample.source.galleryUrl} target="_blank" rel="noreferrer">{t.related}</a> : null}
       </div>
     </section>;
   }
@@ -89,7 +89,7 @@ export default function TemplateGallery({ templates, locale, assetUrl, onUse }: 
           <h3>{template.name}</h3>
           <p>{template.description}</p>
           <div className="gallery-card-actions">
-            <span className="gallery-tag">{template.output === 'game' ? t.game : t.video}</span>
+            <span className="gallery-tag">{template.output === 'sticker-pack' ? (locale === 'zh-CN' ? '动态表情 + 分享视频' : 'Stickers + video') : template.output === 'game' ? t.game : t.video}</span>
             <button type="button" className="gallery-use" aria-label={`${t.use} · ${template.name}`} onClick={() => onUse(template)}>{t.use}</button>
           </div>
         </div>

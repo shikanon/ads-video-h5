@@ -1,6 +1,6 @@
 export type Format = '9:16' | '16:9' | '1:1';
 export type MediaKind = 'video' | 'image' | 'audio';
-export type ArtifactKind = 'image' | 'audio' | 'video' | 'game';
+export type ArtifactKind = 'image' | 'audio' | 'video' | 'game' | 'sticker-pack';
 export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music' | 'effect' | 'understanding' | 'review' | 'avatar';
 export type JobStatus = 'queued' | 'running' | 'stopping' | 'cancelled' | 'succeeded' | 'failed';
 export type ModelKind = 'text' | 'image' | 'audio' | 'understanding';
@@ -298,6 +298,7 @@ export interface MusicSearch {
 }
 
 export interface Artifact {
+  sticker?: import('./stickerPacks').StickerDelivery;
   creative?: {engine:'defold';sourceHash:string;artifactHash?:string;technicalPassed:boolean;modelSelfChecked:boolean;userAccepted:false};
   template?: import('./videoTemplates').TemplateSelection & { panels: number; technicalPassed: boolean; userAccepted: false; boundary: string; basis: string[]; animationMode?:'code'|'declarative'; sourceHash?:string; motion?:{meanChangedAreaPct:number;activeFramePct:number} };
   projectUrl?: string;
@@ -361,6 +362,8 @@ export interface JobAttempt {
 }
 
 export interface Job {
+  stickerTask?: import('./stickerPacks').StickerTask;
+  stickerRequestId?: string;
   filmTask?: import('./film').FilmTask;
   researchMode?: 'auto' | 'off' | 'web' | 'deep';
   interaction?: 'chat' | 'explore' | 'create';
