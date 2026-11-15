@@ -138,7 +138,8 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
           await runFFmpeg(['-y','-v','error','-i',path.join(dir,'still.png'),'-vf','scale=160:160',path.join(dir,'thumb.png')]);
           if(recipe.mode==='dynamic') {
             await writeFile(path.join(dir,'frames.txt'),playback.map((n,i)=>`file 'frame-${n}.png'\nduration ${original.items.find(item=>item.id===id)!.durations[i]/1000}`).join('\n')+`\nfile 'frame-1.png'\n`);
-            const input=['-y','-v','error','-f','concat','-safe','0','-i',path.join(dir,'frames.txt'),'-frames:v','10','-fps_mode','vfr'];
+            // VFR=2 also works on the production FFmpeg 4.4 binary.
+            const input=['-y','-v','error','-f','concat','-safe','0','-i',path.join(dir,'frames.txt'),'-frames:v','10','-vsync','2'];
             await runFFmpeg([...input,'-filter_complex','[0:v]split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse=alpha_threshold=128','-loop','0',path.join(dir,'animation.gif')]);
             await runFFmpeg([...input,'-c:v','libwebp_anim','-lossless','1','-loop','0',path.join(dir,'animation.webp')]);
             await runFFmpeg([...input,'-plays','0','-f','apng',path.join(dir,'animation.png')]);

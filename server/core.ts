@@ -6,7 +6,7 @@ import { createAssistantMessageEventStream, createModels, createProvider, type M
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { Type } from 'typebox';
 import type { AudioAnalysis, ChatMessage, EditPlan, Format, MediaItem, Shot, WorkflowEvent } from '../src/types';
-import { getModelConfig, type ModelConfig } from './modelRegistry';
+import type { ModelConfig } from './modelRegistry';
 import { loadEditingSkill } from './skills';
 import { loadVideoTemplateCatalog, publicTemplate } from './videoTemplates';
 import { publicSkillGuide, skillGuideTool, isCapabilityInquiry } from './assistantSkills';
@@ -339,6 +339,9 @@ export async function answerWithPi(prompt:string,config:ModelConfig,media:MediaI
 }
 
 async function answerUsingModel(prompt: string, config: ModelConfig, media: MediaItem[], history: ChatMessage[], onSection?: (id:string,text:string)=>Promise<void>,progress?:(events:WorkflowEvent[])=>Promise<void>,research?:QuestionResearch,outerDeadline=Date.now()+60000,events:WorkflowEvent[]=[]): Promise<string> {
+  // Registry storage binds to the configured data directory at import time.
+  // Keep core imports side-effect free for callers that provision it later.
+  const {getModelConfig}=await import('./modelRegistry');
   const [templates,imageModel,audioModel,conversationStyle,game]=await Promise.all([loadVideoTemplateCatalog(),getModelConfig('image'),getModelConfig('audio'),loadEditingSkill('lightmao-conversation'),defoldEnvironment()]);
   const guide=publicSkillGuide(templates.map(publicTemplate),{text:Boolean(config.enabled),image:Boolean(imageModel?.enabled&&/^doubao-seedream-/.test(imageModel.modelId)),audio:Boolean(audioModel?.enabled),game:game.available});
   const guideTool=skillGuideTool(guide);
