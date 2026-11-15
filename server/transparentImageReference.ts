@@ -6,6 +6,12 @@ const LIMIT = 30 * 1024 * 1024;
 const MAX_PIXELS = 16_777_216;
 const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
+export function hasTransparentReferencePixel(bytes:Buffer):boolean {
+  const png=PNG.sync.read(bytes,{checkCRC:true});
+  for(let p=3;p<png.data.length;p+=4)if(png.data[p]<255)return true;
+  return false;
+}
+
 function validatePng(bytes: Buffer): void {
   if (bytes.length < 33 || bytes.length > LIMIT || !bytes.subarray(0, 8).equals(signature)) throw Error('参考图片转换失败，请换一张完整的图片。');
   const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);

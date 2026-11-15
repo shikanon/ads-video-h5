@@ -36,7 +36,7 @@ Page({
       const [config,response]=await Promise.all([app.client.request('/api/sticker-projects/config'),app.client.request('/api/sticker-projects')]);
       if(!this._visible||generation!==app._generation||token!==this._loadToken)return;
       const projects=response.projects.slice().sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(project=>projectRow(project,app.state&&app.state.jobs));
-      this.setData({available:config.available,checking:false,projects});
+      this.setData({available:config.available,templateHash:config.templateHash||'',checking:false,projects});
       const selected=this.data.project&&projects.find(item=>item.id===this.data.project.id);if(selected)this.showProject(selected);
     }catch(error){if(this._visible&&generation===app._generation&&token===this._loadToken)this.setData({checking:false,error:error.message||'表情工坊需要更新后端后使用。'});}
     finally{if(generation===app._generation&&token===this._loadToken)this.setData({loading:false});}
@@ -83,7 +83,11 @@ Page({
     this.renderProjectJob();
     Promise.all(project.samples.map(async item=>{try{const image=await app.client.download(item.thumbnailUrl,{persistent:true});if(!this._visible||generation!==app._generation||token!==this._previewToken)return;this.setData({samples:this.data.samples.map(sample=>sample.id===item.id?Object.assign({},sample,{image}):sample)});}catch{ /* individual preview remains retryable */ }}));
   },
-  renderProjectJob(){const project=this.data.project,state=getApp().state,jobs=state&&state.jobs||[],job=latestProjectJob(project,jobs),session=project&&state&&(state.sessions||[]).find(item=>item.id===project.sessionId),unavailable=Boolean(project&&(!session||session.archivedAt));this.setData({projectSessionUnavailable:unavailable,projectSessionReason:session?'原会话已归档':'原会话已不存在',projectJob:job?{id:job.id,active:active(job),retryable:job.status==='failed'&&job.cancelReason!=='superseded'&&!unavailable,phase:job.stickerGenerationTask.phase,status:({queued:'排队中',running:'制作中',failed:'本阶段未完成',cancelled:'已停止',succeeded:'此阶段已完成'})[job.status]||job.status,stage:job.stage||'',error:job.error||'',workflow:jobView(job,this.data.showTaskRecords).workflow}:null});},
+  renderProjectJob(){
+    const project=this.data.project,state=getApp().state,jobs=state&&state.jobs||[],job=latestProjectJob(project,jobs),session=project&&state&&(state.sessions||[]).find(item=>item.id===project.sessionId),unavailable=Boolean(project&&(!session||session.archivedAt));
+    const changed=Boolean(project&&!project.ready&&job&&job.template&&this.data.templateHash&&job.template.skillHash!==this.data.templateHash);
+    this.setData({projectSessionUnavailable:unavailable,projectTemplateChanged:changed,projectSessionReason:session?'原会话已归档':'原会话已不存在',projectJob:job?{id:job.id,active:active(job),retryable:job.status==='failed'&&job.cancelReason!=='superseded'&&!unavailable&&!changed,phase:job.stickerGenerationTask.phase,status:({queued:'排队中',running:'制作中',failed:'本阶段未完成',cancelled:'已停止',succeeded:'此阶段已完成'})[job.status]||job.status,stage:job.stage||'',error:job.error||'',workflow:jobView(job,this.data.showTaskRecords).workflow}:null});
+  },
   async retry(){
     const job=this.data.projectJob;if(this.data.submitting||!job||!job.retryable||this.data.busy||!requireLogin())return;
     const app=getApp(),generation=app._generation,projectId=this.data.project.id;this.setData({submitting:true,error:''});
@@ -96,7 +100,7 @@ Page({
     try{const image=await app.client.download(item.previewUrl);if(this._visible&&generation===app._generation&&token===this._previewToken)this.setData({selected:image});}catch(error){if(generation===app._generation)this.setData({error:error.message});}
   },closePreview(){this._previewToken++;this.setData({selected:null});},
   async approve(){
-    const project=this.data.project;if(!project||!project.previewHash||this.data.submitting||this.data.projectSessionUnavailable||!requireLogin())return;
+    const project=this.data.project;if(!project||!project.previewHash||this.data.submitting||this.data.projectSessionUnavailable||this.data.projectTemplateChanged||!requireLogin())return;
     const app=getApp(),generation=app._generation,id=project.id;this.setData({submitting:true,error:''});
     try{const response=await app.client.request('/api/sticker-projects/'+id+'/approve',{previewHash:project.previewHash,makeVideo:this.data.makeVideo,bgm:this.data.bgm});if(generation!==app._generation)return;app.apply(response.state);if(this._visible&&this.data.project?.id===id){this.showProject(response.project);this.load();}}
     catch(error){if(generation===app._generation)this.setData({error:error.message});}finally{if(generation===app._generation)this.setData({submitting:false});}

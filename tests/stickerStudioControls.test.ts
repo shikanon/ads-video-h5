@@ -60,6 +60,16 @@ test('a rejected retry unlocks its controls and keeps an actionable error instea
   page.regenerate();assert.equal(page.data.project,null);assert.equal(f.creations.length,0);page.onUnload();clearTimeout(f.app._cacheTimer);
 });
 
+test('outdated generation versions keep settings editable and block obsolete retries and approvals',async()=>{
+  const f=await fixture();Object.assign(f.job,{template:{id:'qingmao-stickers',skillHash:'old'}});
+  const original=f.app.client.request;f.app.client.request=async(route:string,body:any)=>route.endsWith('/config')?{available:true,templateHash:'current'}:original(route,body);
+  const page=await capturePage('sticker-studio',f.app,f.platform);page.onLoad({mode:'static'});page.onShow();await waitFor(()=>page.data.projects.length===1);page.openProject({currentTarget:{dataset:{id:'p'}}});
+  assert.equal(page.data.projectTemplateChanged,true);assert.equal(page.data.projectJob.retryable,false);
+  await page.retry();await page.approve();assert.equal(f.calls.some(route=>route.includes('/retry')||route.includes('/approve')),false);
+  page.regenerate();assert.equal(page.data.project,null);assert.equal(page.data.referenceId,'role');assert.equal(page.data.name,f.project.recipe.name);assert.equal(page.data.style,f.project.recipe.style);assert.equal(f.creations.length,0);
+  page.onUnload();clearTimeout(f.app._cacheTimer);
+});
+
 test('deleted or archived project conversations retain readable task records and only create a recovery workspace after an explicit new-generation tap',async()=>{
   for(const archived of [false,true]){
     const f=await fixture();f.app.state.sessions=archived?f.app.state.sessions.map((s:any)=>s.id==='original'?{...s,archivedAt:'2026-11-15T07:00:00Z'}:s):f.app.state.sessions.filter((s:any)=>s.id!=='original');

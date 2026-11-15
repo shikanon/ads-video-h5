@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { ModelConfig } from './modelRegistry';
 import { markAudioConnectTimeout, markAudioRateLimitRefusal, markMediaTransientFailure, recoverAudioRequest, recoverMediaRequest, type AudioRecovery } from './audioRateLimit';
 import { safeErrorText } from './executionErrors';
-import { transparentImageReference } from './transparentImageReference';
+import { transparentImageReference, hasTransparentReferencePixel } from './transparentImageReference';
 
 const IMAGE_URL = 'https://ark.cn-beijing.volces.com/api/v3/images/generations';
 const AUDIO_URL = 'https://openspeech.bytedance.com/api/v3/tts/create';
@@ -235,7 +235,7 @@ export async function generateImage(prompt: string, config: ModelConfig, referen
     }
     let bytes = reference.bytes, mimeType = reference.mimeType;
     if (options?.background === 'transparent') {
-      try { bytes = await transparentImageReference(bytes); mimeType = 'image/png'; }
+      try { bytes = await transparentImageReference(bytes); mimeType = 'image/png';if(!hasTransparentReferencePixel(bytes))throw Error('透明生成模式需要已抠除背景的PNG。普通照片应使用纯色背景生成模式。'); }
       catch (error) { throwIfJobCancelled(); throw new ProviderError(error instanceof Error ? error.message : '参考图片转换失败。', 'INVALID_INPUT'); }
     }
     body.image = `data:${mimeType};base64,${bytes.toString('base64')}`;

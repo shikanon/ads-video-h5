@@ -13,7 +13,7 @@ import { PNG } from 'pngjs';
 
 // Real Express/queue/Pi transport, disposable local users and a controllable
 // token provider. No production credentials or external services are used.
-export async function startCreditServer(options: { stickerImages?: boolean; wechat?: boolean; onProviderRequest?: (body: any) => Promise<void>; structuredReply?: (body:any)=>unknown } = {}) {
+export async function startCreditServer(options: { stickerImages?: boolean; obsoleteSticker?: boolean; wechat?: boolean; onProviderRequest?: (body: any) => Promise<void>; structuredReply?: (body:any)=>unknown } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'qj-credit-service-'));
   const password = 'Credit-QA-user-123', adminPassword = 'Credit-QA-admin-123';
   const providerState = { calls: 0, outputTokens: 100, delay: 0, multiTurn: false, fail: false, wechatCalls: 0 };
@@ -39,10 +39,12 @@ export async function startCreditServer(options: { stickerImages?: boolean; wech
       // fixture-only tests while failing transparent generation in production.
       const reference=typeof body.image==='string'&&body.image.startsWith('data:image/png;base64,')?Buffer.from(body.image.slice('data:image/png;base64,'.length),'base64'):Buffer.alloc(0);
       let valid=false;
-      try { const p=PNG.sync.read(reference,{checkCRC:true});valid=reference[25]===6&&p.width>0&&p.height>0; } catch {}
-      if(body.background!=='transparent'||body.output_format!=='png'||!valid){response.writeHead(400,{'Content-Type':'application/json'});response.end(JSON.stringify({error:{code:'InvalidParameter',message:'transparent background requires a PNG input with an alpha channel'}}));return;}
-      const dynamic=body.size==='3072x2048',w=dynamic?384:128,h=dynamic?256:128,png=new PNG({width:w,height:h});
-      for(let n=0;n<(dynamic?6:1);n++)for(let y=30;y<100;y++)for(let x=35;x<90;x++){const p=((Math.floor(n/3)*128+y)*w+n%3*128+x)*4;png.data[p]=150+n*10;png.data[p+1]=70+n*4;png.data[p+2]=30;png.data[p+3]=255;}
+      try { const p=PNG.sync.read(reference,{checkCRC:true});valid=reference[25]===6&&p.width>0&&p.height>0&&p.data.some((v,i)=>i%4===3&&v<255); } catch {}
+      const dimensions=String(body.size).split('x').map(Number),tooLarge=dimensions.length===2&&dimensions[0]*dimensions[1]>4624220;
+      if(body.output_format!=='png'||!['transparent','opaque'].includes(body.background)||(body.background==='transparent'&&!valid)||tooLarge){response.writeHead(400,{'Content-Type':'application/json'});response.end(JSON.stringify({error:{code:'InvalidParameter',message:tooLarge?'image area must be at most 4624220 pixels':'transparent background requires a PNG input with at least one transparent pixel'}}));return;}
+      const dynamic=body.size==='2496x1664',w=dynamic?384:128,h=dynamic?256:128,png=new PNG({width:w,height:h});
+      if(body.background==='opaque'){const key=body.prompt.includes('#FF00FF')?[255,0,255]:body.prompt.includes('#00FFFF')?[0,255,255]:[0,255,0];for(let p=0;p<png.data.length;p+=4){png.data[p]=key[0];png.data[p+1]=key[1];png.data[p+2]=key[2];png.data[p+3]=255;}}
+      for(let n=0;n<(dynamic?6:1);n++)for(let y=30;y<100;y++)for(let x=35;x<90+n*2;x++){const p=((Math.floor(n/3)*128+y)*w+n%3*128+x)*4;png.data[p]=150+n*10;png.data[p+1]=70+n*4;png.data[p+2]=30;png.data[p+3]=255;}
       response.writeHead(200,{'Content-Type':'application/json'});response.end(JSON.stringify({data:[{b64_json:PNG.sync.write(png).toString('base64')}]}));return;
     }
     const audioRequest = body.messages.some((message: any) => Array.isArray(message.content) && message.content.some((part: any) => part.type === 'input_audio'));
@@ -73,6 +75,7 @@ export async function startCreditServer(options: { stickerImages?: boolean; wech
   if(options.stickerImages)models.push({id:'image',name:'Fixture image',kind:'image',provider:'ark',modelId:'doubao-seedream-5-0-flash-260915',baseUrl:'https://ark.cn-beijing.volces.com',apiKeyCiphertext,enabled:true});
   const session = { id: 'ordinary-session', ownerId: 'ordinary', title: '新会话', modelId: 'text', createdAt, updatedAt: createdAt, messages: [{ id: 'failed-message', role: 'user', text: '你好', attachmentIds: [], jobId: 'failed-job', createdAt }], plan: null };
   const seeded = { sessions: [session], activeSessionId: session.id, media: [{ id: 'video-fixture', ownerId: 'ordinary', name: '视频', kind: 'video', mimeType: 'video/mp4', url: '/api/media/video-fixture', createdAt }, { id: 'avatar-fixture', ownerId: 'ordinary', name: '作者', kind: 'image', mimeType: 'image/png', url: '/api/media/avatar-fixture', createdAt, character: { role: 'reference' } }], artifacts: [], jobs: [{ id: 'failed-job', ownerId: 'ordinary', sessionId: session.id, messageId: 'failed-message', kind: 'chat', status: 'failed', createdAt, updatedAt: createdAt }], settings: { language: 'zh-CN', chatBackground: null }, profiles: { ordinary: { activeSessionId: session.id, settings: { language: 'zh-CN', chatBackground: null, defaultModelId: 'text' } } }, artifactFiles: {}, narrationBySession: {}, bgmBySession: {} };
+  if(options.obsoleteSticker)Object.assign(seeded.jobs[0],{stickerGenerationTask:{projectId:'a'.repeat(64),phase:'samples',makeVideo:false,bgm:false},template:{id:'qingmao-stickers',skillHash:'obsolete-before-real-transparency'}});
   await Promise.all([
     writeFile(path.join(directory, 'admin-token'), modelToken, { mode: 0o600 }),
     writeFile(path.join(directory, 'provider-models.json'), JSON.stringify({ version: 1, textModelPresetsVersion: 1, defaultTextModelId: 'text', models }), { mode: 0o600 }),
