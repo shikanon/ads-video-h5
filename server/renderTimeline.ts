@@ -21,7 +21,7 @@ export function recoverPublishedPlan(plan:EditPlan,expected:string|undefined):Ed
   }
   return plan;
 }
-export const dimensions = (plan: EditPlan) => plan.lesson ? lessonDimensions(plan.format) : plan.format === '16:9' ? [960, 540] : plan.format === '1:1' ? [720, 720] : plan.reconstruction ? [720, 1280] : [540, 960];
+export const dimensions = (plan: EditPlan) => plan.lesson?.presentation?.profile==='daily-ai'&&plan.format==='16:9' ? [1920,1080] : plan.lesson ? lessonDimensions(plan.format) : plan.format === '16:9' ? [960, 540] : plan.format === '1:1' ? [720, 720] : plan.reconstruction ? [720, 1280] : [540, 960];
 const assTime = (seconds: number) => { const n = Math.round(seconds * 100); return `${Math.floor(n / 360000)}:${String(Math.floor(n / 6000) % 60).padStart(2, '0')}:${String(Math.floor(n / 100) % 60).padStart(2, '0')}.${String(n % 100).padStart(2, '0')}`; };
 const assText = (text: string) => text.replace(/\\/g, '＼').replace(/[{}]/g, '').replace(/\r?\n/g, '\\N');
 const filterPath = (value: string) => value.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "'\\''");
@@ -30,9 +30,10 @@ export function createAss(plan: EditPlan, layout?:TimelineTextLayout): string {
   const [w, h] = dimensions(plan);
   const font = process.env.QINGJIAN_SUBTITLE_FONT || (process.platform === 'darwin' ? 'PingFang SC' : 'Noto Sans CJK SC');
   if (!/^[\w \u4e00-\u9fff-]{1,80}$/.test(font)) throw new Error('字幕字体配置无效。');
-  const size = plan.lesson ? (plan.format==='16:9'?34:38) : plan.reconstruction ? Math.round(w/14) : ordinarySubtitleSize(w);
-  const subtitleMargin = plan.lesson ? (plan.format==='16:9'?60:100) : Math.round(h*(plan.reconstruction ? .13 : .095));
-  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: ${w}\nPlayResY: ${h}\nWrapStyle: 0\nScaledBorderAndShadow: yes\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: subtitle,${font},${size},&H00FFFFFF,&H000000FF,&H00181818,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,32,32,${subtitleMargin},1\nStyle: title,${font},${Math.round(size * 1.45)},&H00FFFFFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,8,32,32,${Math.round(h * 0.1)},1\nStyle: keyword,${font},${Math.round(size * 1.15)},&H0053BBFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,8,32,32,${Math.round(h * 0.25)},1\nStyle: lower-third,${font},${size},&H00FFFFFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,1,32,32,${Math.round(h * 0.28)},1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n`;
+  const daily=plan.lesson?.presentation?.profile==='daily-ai';
+  const size = daily&&plan.format==='16:9'?46:plan.lesson ? (plan.format==='16:9'?34:38) : plan.reconstruction ? Math.round(w/14) : ordinarySubtitleSize(w);
+  const subtitleMargin = daily&&plan.format==='16:9'?78:plan.lesson ? (plan.format==='16:9'?60:100) : Math.round(h*(plan.reconstruction ? .13 : .095));
+  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: ${w}\nPlayResY: ${h}\nWrapStyle: 0\nScaledBorderAndShadow: yes\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: subtitle,${font},${size},${daily?'&H00A8216B':'&H00FFFFFF'},&H000000FF,&H00181818,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,32,32,${subtitleMargin},1\nStyle: title,${font},${Math.round(size * 1.45)},&H00FFFFFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,8,32,32,${Math.round(h * 0.1)},1\nStyle: keyword,${font},${Math.round(size * 1.15)},&H0053BBFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,8,32,32,${Math.round(h * 0.25)},1\nStyle: lower-third,${font},${size},&H00FFFFFF,&H000000FF,&H00202020,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,1,32,32,${Math.round(h * 0.28)},1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n`;
   const event = (item: TimelineText, layer: number, index:number) => {
     const box = !plan.lesson ? (layer ? layout?.overlays[index] : layout?.captions[index]) : undefined;
     const centerY=box?box.y+(box.height-(item.animation==='rise'?16:0))/2:undefined;

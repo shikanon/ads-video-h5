@@ -11,6 +11,7 @@
     "pages/player/index",
     "pages/templates/index",
     "pages/stickers/index",
+    "pages/sticker-studio/index",
     "pages/legal/index",
     "pages/feedback/index",
     "pages/about/index",

@@ -118,3 +118,25 @@ test('late material thumbnail downloads cannot overwrite the film shown after a 
   assert.equal(page.data.items[0].cover, 'film-cover');
   assert.equal(page.data.items[0].coverSource, '/private/film'); page.onHide();
 });
+
+test('skill catalog groups actual capabilities and news starter preserves the draft without sending', async () => {
+  const f = fixture();
+  f.state.templates = [template('animated-science-video'), template('video-style-pixel'), { ...template('qingmao-stickers'), output: 'sticker-pack' }];
+  const gallery = await capturePage('templates', f.app, f.wx); gallery.onShow(); await tick();
+  assert.deepEqual(Array.from(gallery.data.categories, (c: any) => c.id), ['all', 'game', 'stickers', 'static-stickers', 'knowledge', 'news', 'editing']);
+  gallery.chooseFilter(event({ category: 'news' })); assert.equal(gallery.data.cards.length, 1); assert.equal(gallery.data.cards[0].id, 'qingjian-hot-video');
+  const chat = await capturePage('chat', f.app, f.wx); chat.onLoad(); chat.onShow(); chat.setData({ prompt: '人工智能', attachmentIds: [] }); chat.onHide();
+  gallery.use(event({ id: 'qingjian-hot-video' })); gallery.onHide(); chat.onShow();
+  assert.equal(chat.data.prompt, '制作一个新闻资讯视频，主题：人工智能'); chat.setData({ mode: 'chat' }); assert.equal(chat.interaction(), 'create'); assert.equal(f.state.jobs.length, 0); chat.onUnload();
+});
+
+test('resource menu keeps operations available and drops a choice after switching sections', async () => {
+  const f = fixture(); f.state.media = [{ id: 'm', kind: 'video', name: '片段', createdAt: '2026-11-15', url: '' }];
+  let sheet: any; f.wx.showActionSheet = (options: any) => { sheet = options; };
+  const page = await capturePage('library', f.app, f.wx); page.onLoad(); page.onShow();
+  assert.equal(page.data.kindCounts.video, 1);
+  const pending = page.itemMenu(event({ id: 'm' })); assert.deepEqual(Array.from(sheet.itemList), ['预览', '用来创作', '拉片分析', '删除素材']);
+  page.section(event({ section: 'films' })); sheet.success({ tapIndex: 1 }); await pending; assert.equal(f.app.pendingAttachments, undefined);
+  page.section(event({ section: 'materials' })); const choice = page.itemMenu(event({ id: 'm' })); sheet.success({ tapIndex: 1 }); await choice;
+  assert.deepEqual(Array.from(f.app.pendingAttachments), ['m']); page.onHide();
+});

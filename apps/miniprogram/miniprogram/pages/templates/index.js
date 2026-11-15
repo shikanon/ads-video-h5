@@ -1,12 +1,12 @@
 const { shareAppMessage, shareTimeline } = require('../../utils/share');
 const { appearanceData } = require('../../utils/appearance');
 const { requireLogin } = require('../../utils/page');
-const { galleryCards } = require('../../utils/templates');
+const { galleryCards, galleryCategories } = require('../../utils/templates');
 
 Page({
   onShareAppMessage: shareAppMessage,
   onShareTimeline: shareTimeline,
-  data: Object.assign(appearanceData(), { cards: [], query: '', category: 'all', preview: null, loading: false, error: '', videoError: false, returning: false, guest: true }),
+  data: Object.assign(appearanceData(), { cards: [], recommendations: [], categories: [], query: '', category: 'all', preview: null, loading: false, error: '', videoError: false, returning: false, guest: true }),
   onShow() {
     const app = getApp();
     this._visible = true;
@@ -15,8 +15,8 @@ Page({
     if (app.applyAppearance) app.applyAppearance(this);
     if (wx.showShareMenu) wx.showShareMenu({ menus: ['shareAppMessage', 'shareTimeline'] });
     this.setData({ guest: !app.client.hasSession(), returning: false });
-    if (this.data.guest) { this._catalog = null; this.setData({ cards: [], preview: null, error: '' }); return; }
-    if (this._catalogGeneration !== app._generation) { this._catalog = null; this.setData({ cards: [], preview: null }); }
+    if (this.data.guest) { this._catalog = null; this.setData({ cards: [], recommendations: [], categories: [], preview: null, error: '' }); return; }
+    if (this._catalogGeneration !== app._generation) { this._catalog = null; this.setData({ cards: [], recommendations: [], categories: [], preview: null }); }
     if (this._catalog) this.filter();
     this.load();
   },
@@ -50,9 +50,9 @@ Page({
   filter(query = this.data.query, category = this.data.category) {
     const search = query.trim().toLowerCase();
     const cards = (this._catalog || []).filter(card =>
-      (category === 'all' || category === 'samples' && card.sample || category === 'skills' && card.skill) &&
+      (category === 'all' || card.category === category || category === 'samples' && card.sample || category === 'skills' && card.skill) &&
       (card.name + ' ' + card.description + ' ' + card.id).toLowerCase().includes(search));
-    this.setData({ cards, query, category });
+    this.setData({ cards, query, category, categories: galleryCategories(this._catalog || []), recommendations: !search && category === 'all' ? (this._catalog || []).filter(card => card.sample).slice(0, 5) : [] });
   },
   input(event) { this.filter(event.detail.value); },
   chooseFilter(event) { this.filter(this.data.query, event.currentTarget.dataset.category); },
@@ -69,6 +69,8 @@ Page({
     if (this.data.returning || !requireLogin()) return;
     const app = getApp(), id = event.currentTarget.dataset.id;
     if (this._catalogGeneration !== app._generation || !(this._catalog || []).some(card => card.id === id)) return;
+    const card=(this._catalog || []).find(card=>card.id===id);
+    if(card.studioMode){wx.navigateTo({url:'/pages/sticker-studio/index?mode='+card.studioMode+(this._origin&&this._origin.sessionId?'&sessionId='+encodeURIComponent(this._origin.sessionId):'')});return;}
     if ((this._catalog || []).find(card => card.id === id).output === 'sticker-pack') {
       const sessionId = this._origin ? this._origin.sessionId : app.state && app.state.activeSessionId;
       wx.navigateTo({ url: '/pages/stickers/index' + (sessionId ? '?sessionId=' + encodeURIComponent(sessionId) : '') });

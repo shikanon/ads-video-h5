@@ -13,7 +13,7 @@ import { onJobAbort, throwIfJobCancelled } from './jobExecution';
 // rely on a development-only Playwright installation in production.
 async function installedBrowser() {
   const require = createRequire(createRequire(import.meta.url).resolve('hyperframes/package.json'));
-  const [{ default: puppeteer }, browsers] = await Promise.all([import(require.resolve('puppeteer-core')), import(require.resolve('@puppeteer/browsers'))]);
+  const [{ default: puppeteer }, browsers] = await Promise.all([import(pathToFileURL(require.resolve('puppeteer-core')).href), import(pathToFileURL(require.resolve('@puppeteer/browsers')).href)]);
   const explicit = process.env.HYPERFRAMES_BROWSER_PATH || process.env.PRODUCER_HEADLESS_SHELL_PATH;
   if (explicit) { await access(explicit); return { puppeteer, executablePath: explicit }; }
   for (const cacheDir of [path.join(homedir(), '.cache/hyperframes/chrome'), path.join(homedir(), '.cache/puppeteer')]) {

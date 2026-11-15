@@ -42,7 +42,7 @@ state.templates=${JSON.stringify([stickerTemplate])};
 const app={state,user:{displayName:'示例创作者',email:'',authProvider:'wechat'},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},refresh:async()=>state,apply(value){this.state=value;listeners.forEach(fn=>fn(value));return value},applyWallet(wallet){state.credits=wallet;this.apply(state)},
  client:{hasSession:()=>new URL(location.href).searchParams.get('page')!=='auth',previewUrl:()=>'',async wechatLogin(){throw Error('示例页面不连接微信，请在微信开发者工具中登录。')},async request(route,body){if(route==='/api/auth/wechat/profile'){app.user.displayName=body.displayName;return{user:app.user}}if(route==='/api/auth/me')return{user:app.user};if(route.startsWith('/api/credits')){if(route.endsWith('/check-in')){const first=!claimed;claimed=true;if(first){wallet.balance+=1000;wallet.canCheckIn=false}return{wallet,claimed:first,points:first?1000:0,date:wallet.checkInDate}}return{wallet,entries:[...(claimed?[{id:'daily',kind:'daily_checkin',points:1000,at:'2026-10-06T09:00:00Z'}]:[]),{id:'gift',kind:'signup_grant',points:2000,at:'2026-10-06T08:00:00Z'}],total:claimed?2:1}}throw Error('组件预览不连接生产服务')},clear(){}},async mutate(route,body){if(route==='/api/settings'){state.settings.defaultModelId=body.defaultModelId;state.sessions[0].modelId=body.defaultModelId;return this.apply(state)}throw Error('组件预览不执行制作任务，请在微信中测试。')},expired(){location.href='/preview?page=auth'}};
 window.getApp=()=>app;window.getCurrentPages=()=>[];
-const originalRequest=app.client.request;app.client.templateAssetUrl=route=>route;app.client.request=async(route,body)=>route==='/api/sticker-packs'?{packs:[${JSON.stringify(stickerPack)}]}:route==='/api/templates'?{templates:state.templates}:originalRequest(route,body);
+const originalRequest=app.client.request;app.client.templateAssetUrl=route=>route;app.client.request=async(route,body)=>route==='/api/sticker-projects/config'?{available:true}:route==='/api/sticker-projects'?{projects:[]}:route==='/api/sticker-packs'?{packs:[${JSON.stringify(stickerPack)}]}:route==='/api/templates'?{templates:state.templates}:originalRequest(route,body);
 const navigate=options=>{const match=/pages\\/(\\w+)\\/index/.exec(options.url);if(match)location.href='/preview?page='+match[1]};
 window.wx={getRecorderManager:()=>({onStart(){},onStop(){},onError(){},offStart(){},offStop(){},offError(){},stop(){}}),requirePrivacyAuthorize:o=>o.success(),authorize:o=>o.success(),showToast:o=>{document.getElementById('toast').textContent=o.title},navigateTo:navigate,switchTab:navigate,reLaunch:navigate,setNavigationBarTitle(){},getStorageSync(){},removeStorageSync(){}};
 `;
@@ -55,7 +55,7 @@ const id=simulate.load('mini/pages/'+name+'/index',{compiler:'official',rootPath
 const page=simulate.render(id);page.attach(document.getElementById('preview'));
 window.__miniPreview=page;
 const nativeSetData=page.instance.setData.bind(page.instance);page.instance.setData=(patch,callback)=>{nativeSetData(patch,callback);queueMicrotask(wire)};
-if(page.instance.onLoad)page.instance.onLoad({type:new URL(location.href).searchParams.get('type')||'privacy'});
+if(page.instance.onLoad)page.instance.onLoad({mode:new URL(location.href).searchParams.get('mode')||'dynamic',type:new URL(location.href).searchParams.get('type')||'privacy'});
 if(page.instance.onShow)page.instance.onShow();
 const attached=new WeakSet();
 function wire(){

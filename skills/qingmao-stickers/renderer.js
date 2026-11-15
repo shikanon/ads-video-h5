@@ -70,7 +70,7 @@ function scene(idx,t){
   c.save();c.globalAlpha=.08;c.fillStyle=ink;c.beginPath();c.ellipse(540,1118,210,18,0,0,TAU);c.fill();c.restore();
   sticker(scenes[5].name,u,540,895,590,Math.sin(u*2)*.012,p);
   for(let j=0;j<8;j++){let a=(u*.45+j/8)%1;heart(180+j*106,1080-a*430,18+18*a,pink,Math.sin(j)*.25,Math.sin(a*Math.PI)*.75)}
-  text(spec.title,540,1205,54,ink,700);text('24枚动态表情 · 亲昵互动篇',540,1280,31,ink);text('视频由轻喵小程序制作。',540,1380,25,'#9a7665');
+  text(spec.title,540,1205,54,ink,700);text(spec.mode ? '24枚'+(spec.mode==='static'?'静态':'动态')+'表情 · '+spec.packName : '24枚动态表情 · 亲昵互动篇',540,1280,31,ink);text('视频由轻喵小程序制作。',540,1380,25,'#9a7665');
  }
 }
 function render(t,ui=true){
@@ -83,9 +83,10 @@ function render(t,ui=true){
 
 }
 
+if(spec.mode){scenes[6].tag=spec.packName;scenes[6].small='24枚'+(spec.mode==='static'?'静态':'动态')+'表情';}
 scenes.slice(0,6).forEach((s,i)=>{
  s.name=spec.sceneIds[i];
- if(s.name!==['24','09','03','12','01','20'][i]){s.small=ASSETS[s.name].action;s.tag='轻喵 · '+ASSETS[s.name].name;}
+ if(spec.mode || s.name!==['24','09','03','12','01','20'][i]){s.small=ASSETS[s.name].action;s.tag=(spec.mode?spec.packName:'轻喵')+' · '+ASSETS[s.name].name;}
  const line=spec.captions[i],comma=line.search(/[，,、]/),split=comma>=0&&comma<9?comma+1:Math.min(9,line.length);
  s.a=line.slice(0,split);s.b=line.slice(split);
 });

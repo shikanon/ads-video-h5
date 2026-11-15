@@ -41,7 +41,7 @@ import { cachedLessonResearch } from './lessonResearchCache';
 import { currentResearchExpired, refreshHotTopics, researchHotTopics, newsSearchPolicy } from './hotResearch';
 import { wantsCurrentResearch } from './intents';
 import { lessonPresentation } from './lessonPresentation';
-import { writeUrgentBgm } from './bgm';
+import { writeUrgentBgm,writePresetBgm } from './bgm';
 import { createNewsPublicationCandidate, validateNewsPublicationProof } from './newsPublicationProof';
 import { newsSourceParserHash, preserveNewsSourceCheckpoint, revalidateNewsSources } from './newsSourceVersion';
 import type { PublicReader } from './publicResearch';
@@ -658,7 +658,7 @@ export async function runLessonWorkflow(o:Options){
     const base:EditPlan={lesson:structuredClone(report),format:report.format,targetSeconds:0,summary:`${report.title} · ${report.chapters.length}章，从直觉到应用`,clips:report.chapters.map((c,i)=>({sceneId:c.id,sourceId:c.mediaId!,start:0,end:c.duration!,purpose:i===0?'hook':i===report!.chapters.length-1?'conclusion':'argument',transition:i?{kind:'fade',duration:pacing.transitionSeconds}:{kind:'cut',duration:0}})),audio:{originalVolume:1,narrationVolume:0,bgmVolume:presentation.bgm ? .25 : 0,normalize:true}};
     base.captions=captionsFromTranscript(base,o.media);base.captions=formatGeneratedLessonCaptions(base,o.media);plan=validatePlan(base,o.media);await o.persist(plan);phase='render';return {seconds:plan.targetSeconds,chapters:plan.clips.length,captions:plan.captions?.length,nextTool:'render_lesson'};
   });
-  add('render_lesson',current?'渲染新闻成片':'渲染教学成片','输出当前最新方案，生成视频和实际渲染清单。',Type.Object({}),async()=>{if(!await requireGroundedCharts(report,plan?.lesson))return {feedback,nextTool:currentTool()};if(!plan)throw new Error('先编排教学时间线。');assertSourceRenderBudget();if(current&&research&&currentResearchExpired(research)&&!(datedMovieEvidence&&report&&canReuseNewsEvidence(report,o.prompt,requestedAt))){phase='research';throw new Error('热点研究超过30分钟，渲染前重新查证来源。');}let bgmFile:string|undefined;if(presentation.bgm){bgmFile=path.join(work,'urgent-bgm.wav');await trace.run('produce_background_music','制作紧张氛围配乐',{mood:presentation.mood,source:'original-synthesis'},async()=>{await writeUrgentBgm(bgmFile!);return {generated:true};});}rendered=await o.render(plan,bgmFile);renderedHash=hashBytes(await readFile(rendered.file));renders++;sourceRevalidation=undefined;reviewRetries=0;phase='review';return {artifactId:rendered.id,duration:plan.targetSeconds,nextTool:'review_lesson'};});
+  add('render_lesson',current?'渲染新闻成片':'渲染教学成片','输出当前最新方案，生成视频和实际渲染清单。',Type.Object({}),async()=>{if(!await requireGroundedCharts(report,plan?.lesson))return {feedback,nextTool:currentTool()};if(!plan)throw new Error('先编排教学时间线。');assertSourceRenderBudget();if(current&&research&&currentResearchExpired(research)&&!(datedMovieEvidence&&report&&canReuseNewsEvidence(report,o.prompt,requestedAt))){phase='research';throw new Error('热点研究超过30分钟，渲染前重新查证来源。');}let bgmFile:string|undefined;if(presentation.bgm){bgmFile=path.join(work,'urgent-bgm.wav');await trace.run('produce_background_music','制作紧张氛围配乐',{mood:presentation.mood,source:'original-synthesis'},async()=>{if(presentation.profile==='daily-ai'&&presentation.mood!=='urgent')await writePresetBgm(bgmFile!);else await writeUrgentBgm(bgmFile!);return {generated:true};});}rendered=await o.render(plan,bgmFile);renderedHash=hashBytes(await readFile(rendered.file));renders++;sourceRevalidation=undefined;reviewRetries=0;phase='review';return {artifactId:rendered.id,duration:plan.targetSeconds,nextTool:'review_lesson'};});
   add('review_lesson',current?'检查新闻成片与声音':'审查教学成片与声音','检查实际完整音频、各章抽帧、图解与旁白一致、字幕、概念递进、音色与音量。',Type.Object({}),async()=>{
     if(!plan||!rendered)throw new Error('先渲染教学成片。');review=await o.review(rendered.file,plan);
     // Re-read the actual candidate after the independent review. A passed
@@ -777,7 +777,7 @@ export async function runLessonWorkflow(o:Options){
   }
   await advanceWorkflow();
   if(todayEvidenceExhausted())throw new Error('新闻制作工作流未完成；已重选查证其他候选，仍缺少今天发生的可靠事件证据。'+feedback.slice(0,600));
-  const agent=getAgent(o.config,executableTools,(await loadEditingSkill('qingjian-teaching-video'))+'\n'+(current?await loadEditingSkill('qingjian-hot-video')+'\n':'')+(await loadMotionDesignContext())+'\n本次创作简报：'+JSON.stringify(brief),true);
+  const agent=getAgent(o.config,executableTools,(await loadEditingSkill('qingjian-teaching-video'))+'\n'+(presentation.profile==='daily-ai'?await loadEditingSkill('daily-ai-frontier')+'\n':'')+(current?await loadEditingSkill('qingjian-hot-video')+'\n':'')+(await loadMotionDesignContext())+'\n本次创作简报：'+JSON.stringify(brief),true);
   agent.prepareRequest=({context})=>({context:{...context,messages:context.messages.map((m,i)=>i===0&&m.role==='system'?{...m,sections:{...m.sections,'workflow-stage':stageInstruction()}}:m)}});
   const drainTrace=observeToolErrors(agent,trace);
   const decisionRecoveries=new Set<string>();

@@ -8,6 +8,7 @@ import { fileDigest } from './artifactIntegrity';
 export const stickerDirectory = fileURLToPath(new URL('../skills/qingmao-stickers/', import.meta.url));
 export const stickerAssets = path.join(stickerDirectory, 'assets');
 export interface PackManifest {
+  mode?: 'static' | 'dynamic';
   id: string; name: string; version: string;
   items: Array<{ id: string; name: string; action: string; durations: number[]; frameSize: number; columns: number; rows: number }>;
   defaultSceneIds: string[];
@@ -49,17 +50,17 @@ export function defaultStickerTask(pack: PackManifest): StickerTask {
   return { packId: pack.id, title: '被你哄好的一天', makeVideo: true, bgm: true,
     sceneIds: [...pack.defaultSceneIds], captions: [...defaultCaptions] };
 }
-export async function verifyStickerAssets(pack: PackManifest) {
+export async function verifyStickerAssets(pack: PackManifest, assets = stickerAssets) {
   const hash = createHash('sha256');
   for (const [relative, expected] of Object.entries(pack.files).sort(([a],[b]) => a.localeCompare(b))) {
     if (!/^(?:pack\/\d{2}\/(?:animation\.(?:gif|webp|png)|still\.png|thumb\.png|atlas\.webp)|music\.wav|sample\.mp4|poster\.png|banner\.jpg|album\.png|icon\.png|album\.json)$/.test(relative)) throw new Error('表情素材路径无效。');
-    const actual = await fileDigest(path.join(stickerAssets, relative));
+    const actual = await fileDigest(path.join(assets, relative));
     if (actual !== expected) throw new Error('表情素材已变化，请重新导入并确认版本。');
     hash.update(relative).update(actual);
   }
-  for (const item of pack.items) for (const file of ['animation.gif','animation.webp','animation.png','still.png','thumb.png','atlas.webp']) {
+  for (const item of pack.items) for (const file of (pack.mode==='static'?['still.png','thumb.png','atlas.webp']:['animation.gif','animation.webp','animation.png','still.png','thumb.png','atlas.webp'])) {
     if (!pack.files[`pack/${item.id}/${file}`]) throw new Error('表情素材清单不完整。');
   }
-  for(const file of ['music.wav','sample.mp4','poster.png','banner.jpg','album.png','icon.png','album.json'])if(!pack.files[file])throw new Error('专辑配套素材清单不完整。');
+  for(const file of ['music.wav',...(!pack.mode?['sample.mp4']:[]),'poster.png','banner.jpg','album.png','icon.png','album.json'])if(!pack.files[file])throw new Error('专辑配套素材清单不完整。');
   return hash.update(JSON.stringify(pack)).digest('hex');
 }

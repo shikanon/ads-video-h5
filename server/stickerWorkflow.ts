@@ -15,18 +15,18 @@ import { stateHash } from './durableState';
 import { createToolTrace } from './toolTrace';
 
 const safeJson = (value: unknown) => JSON.stringify(value).replace(/</g,'\\u003c');
-export async function stickerVideoHtml(task: StickerTask, pack: PackManifest) {
+export async function stickerVideoHtml(task: StickerTask, pack: PackManifest, assetsRoot = stickerAssets) {
   const assets: Record<string, unknown> = {};
   for(const id of task.sceneIds) {
     const item = pack.items.find(item => item.id === id)!;
-    assets[id] = { src:'data:image/webp;base64,' + (await readFile(path.join(stickerAssets,'pack',id,'atlas.webp'))).toString('base64'), size:item.frameSize, durations:item.durations, name:item.name, action:item.action };
+    assets[id] = { src:'data:image/webp;base64,' + (await readFile(path.join(assetsRoot,'pack',id,'atlas.webp'))).toString('base64'), size:item.frameSize, durations:item.durations, name:item.name, action:item.action };
   }
   return `<!doctype html><meta charset="utf-8"><title>轻喵表情分享视频</title>
 <style>body{margin:0;background:#fff9ee;color:#69473c;font-family:sans-serif;text-align:center}canvas{display:block;margin:auto;max-width:100%;max-height:85vh}button,input{margin:12px}input{width:50%}</style>
 <canvas width="1080" height="1440"></canvas><button id="play">播放</button><input id="seek" type="range" min="0" max="24" step="0.01" value="0" aria-label="播放进度"><span id="time">0 / 24 秒</span>
 ${task.bgm ? '<audio id="music" src="music.wav" preload="metadata"></audio>' : ''}
 <script>${await readFile(path.join(stickerDirectory,'renderer.js'),'utf8')}</script>
-<script>const assets=${safeJson(assets)},spec=${safeJson(task)};
+<script>const assets=${safeJson(assets)},spec=${safeJson({...task,packName:pack.name,mode:pack.mode})};
 window.stickerReady=createStickerMovie(document.querySelector('canvas'),assets,spec).then(movie=>{
 window.stickerMovie=movie;movie.render(0);let playing=false,t=0,last=0;
 const play=document.getElementById('play'),seek=document.getElementById('seek'),clock=document.getElementById('time'),audio=document.getElementById('music');
@@ -37,14 +37,14 @@ function tick(now){if(playing){t=Math.min(24,t+(now-last)/1000);movie.render(t);
 });</script>`;
 }
 export async function renderStickerVideo(task: StickerTask, pack: PackManifest, directory: string,
-  progress?: (frames:number,total:number)=>Promise<void>) {
+  progress?: (frames:number,total:number)=>Promise<void>, assetsRoot = stickerAssets) {
   const project=path.join(directory,'video-project'), frames=path.join(directory,'frames');
   await mkdir(project,{recursive:true});await mkdir(frames,{recursive:true});
-  const html=await stickerVideoHtml(task,pack), file=path.join(directory,'video.mp4'),cover=path.join(directory,'cover.png');
+  const html=await stickerVideoHtml(task,pack,assetsRoot), file=path.join(directory,'video.mp4'),cover=path.join(directory,'cover.png');
   await writeFile(path.join(project,'index.html'),html);
   await writeFile(path.join(project,'config.json'),JSON.stringify(task,null,2));
   await copyFile(path.join(stickerDirectory,'renderer.js'),path.join(project,'renderer.js'));
-  if(task.bgm)await copyFile(path.join(stickerAssets,'music.wav'),path.join(project,'music.wav'));
+  if(task.bgm)await copyFile(path.join(assetsRoot,'music.wav'),path.join(project,'music.wav'));
   const {puppeteer,executablePath}=await scienceBrowser();
   const browser=await puppeteer.launch({headless:true,executablePath,protocolTimeout:45000,args:['--disable-dev-shm-usage','--disable-background-networking',...(process.env.QINGJIAN_RENDER_NO_SANDBOX==='1'?['--no-sandbox']:[])]});
   const kill=()=>browser.process()?.kill('SIGKILL'),unbind=onJobAbort(kill),timer=setTimeout(kill,300000);
@@ -74,7 +74,7 @@ export async function renderStickerVideo(task: StickerTask, pack: PackManifest, 
   }
   try {
     await runFFmpeg(['-nostdin','-hide_banner','-loglevel','error','-framerate','30','-i',path.join(frames,'frame-%04d.jpg'),
-      ...(task.bgm?['-i',path.join(stickerAssets,'music.wav')]:[]),'-c:v','libx264','-preset','fast','-crf','18','-pix_fmt','yuv420p',
+      ...(task.bgm?['-i',path.join(assetsRoot,'music.wav')]:[]),'-c:v','libx264','-preset','fast','-crf','18','-pix_fmt','yuv420p',
       ...(task.bgm?['-c:a','aac','-b:a','192k']:['-an']),'-t','24','-movflags','+faststart',file],180000);
   } finally {await rm(frames,{recursive:true,force:true});}
   const probe=createRequire(import.meta.url)('ffprobe-static').path;
@@ -92,21 +92,21 @@ export async function renderStickerVideo(task: StickerTask, pack: PackManifest, 
   const archive=path.join(directory,'video-project.zip');await archiveTemplateProject(project,archive);
   return {file,cover,archive,project,verification};
 }
-export async function runStickerWorkflow(o:{task:StickerTask;directory:string;progress:(events:WorkflowEvent[])=>Promise<void>;renderProgress?:(frames:number,total:number)=>Promise<void>}) {
+export async function runStickerWorkflow(o:{pack?:PackManifest;assetsRoot?:string;task:StickerTask;directory:string;progress:(events:WorkflowEvent[])=>Promise<void>;renderProgress?:(frames:number,total:number)=>Promise<void>}) {
   await mkdir(o.directory,{recursive:true});
-  const trace=createToolTrace(o.progress),pack=await loadStickerPack(),task=validateStickerTask(o.task,pack);
-  const sourceHash=await trace.run('verify_sticker_pack','核对24套表情与透明序列帧',{pack:pack.id},()=>verifyStickerAssets(pack));
+  const trace=createToolTrace(o.progress),pack=o.pack || await loadStickerPack(),assetsRoot=o.assetsRoot || stickerAssets,task=validateStickerTask(o.task,pack);
+  const sourceHash=await trace.run('verify_sticker_pack','核对24套表情与透明序列帧',{pack:pack.id},()=>verifyStickerAssets(pack,assetsRoot));
   const bundle=path.join(o.directory,'sticker-pack');await mkdir(bundle,{recursive:true});
   const archive=await trace.run('package_stickers','保存表情套装与专辑配套素材',{count:24,formats:['GIF','WebP','APNG','PNG']},async()=>{
     for(const item of pack.items) {
       throwIfJobCancelled();const folder=path.join(bundle,item.name);await mkdir(folder);
-      for(const [file,target] of [['animation.gif','动画.gif'],['animation.webp','动画.webp'],['animation.png','动画-APNG.png'],['still.png','静态.png']])await copyFile(path.join(stickerAssets,'pack',item.id,file),path.join(folder,target));
+      for(const [file,target] of (pack.mode === 'static' ? [['still.png','静态.png']] : [['animation.gif','动画.gif'],['animation.webp','动画.webp'],['animation.png','动画-APNG.png'],['still.png','静态.png']]))await copyFile(path.join(assetsRoot,'pack',item.id,file),path.join(folder,target));
     }
-    for(const file of ['banner.jpg','album.png','icon.png','album.json'])await copyFile(path.join(stickerAssets,file),path.join(bundle,file));
+    for(const file of ['banner.jpg','album.png','icon.png','album.json'])await copyFile(path.join(assetsRoot,file),path.join(bundle,file));
     await writeFile(path.join(bundle,'清单.json'),JSON.stringify({id:pack.id,version:pack.version,sourceHash,items:pack.items},null,2));
     const file=path.join(o.directory,'stickers.zip');await archiveTemplateProject(bundle,file);return file;
   });
-  const rendered=task.makeVideo?await trace.run('render_sticker_story','使用同一批表情制作分享视频',{title:task.title,sceneIds:task.sceneIds,bgm:task.bgm},()=>renderStickerVideo(task,pack,o.directory,o.renderProgress)):undefined;
+  const rendered=task.makeVideo?await trace.run('render_sticker_story','使用同一批表情制作分享视频',{title:task.title,sceneIds:task.sceneIds,bgm:task.bgm},()=>renderStickerVideo(task,pack,o.directory,o.renderProgress,assetsRoot)):undefined;
   const verification={technicalPassed:true,approved:true,sourceHash,count:pack.items.length,task,video:rendered?.verification,packSha256:await fileDigest(archive)};
   const projectHash=stateHash(verification),execution=currentTaskExecution();
   await execution?.verify('technical',projectHash,verification);

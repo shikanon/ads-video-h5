@@ -6,7 +6,7 @@ const { version, sections, hasVoiceConsent } = require('../../utils/voice-consen
 const { chooseFiles, uploadMedia, livePhotoHelp } = require('../../utils/upload');
 const { attachmentLimit } = require('../../utils/media-limits');
 const { loadThumbnails, coverError } = require('../../utils/thumbnails');
-const { selectedTemplateName, withoutTemplateMentions } = require('../../utils/templates');
+const { selectedTemplateName, withoutTemplateMentions, skillStarter, isSkillPrompt } = require('../../utils/templates');
 const { createVoice } = require('../../utils/voice');
 const { keyboardLayout } = require('../../utils/keyboard-layout');
 const { openDraft, modeOf, activateSession } = require('../../utils/sessions');
@@ -184,6 +184,14 @@ Page({
   applyTemplate({ id, sessionId, generation }) {
     const app = getApp();
     if (!app.client.hasSession() || sessionId !== this.data.sessionId || generation !== app._generation) return;
+    const starter = skillStarter(id);
+    if (starter && starter.prompt) {
+      const prompt = starter.prompt + withoutTemplateMentions(this.data.prompt, this.templates());
+      if (prompt.length > 2000) { notify(new Error('请先缩短草稿，再选择创作方式。')); return; }
+      this._recognized = null;
+      this.setData({ prompt, templateName: '', cursor: prompt.length, editorCursor: prompt.length, voiceReady: false, focus: true, error: '' });
+      return;
+    }
     const template = this.templates().find(item => item.id === id);
     if (!template) { notify(new Error('模板已更新，请重新打开画廊。')); return; }
     const prompt = '@' + template.name + ' ' + withoutTemplateMentions(this.data.prompt, this.templates());
@@ -256,7 +264,7 @@ Page({
   },
   interaction() {
     const template = selectedTemplateName(this.data.prompt, this.templates());
-    return this.data.mode === 'chat' && !template ? 'chat' : 'create';
+    return this.data.mode === 'chat' && !template && !isSkillPrompt(this.data.prompt) ? 'chat' : 'create';
   },
   requestResearchMode() { return this.interaction() === 'chat' ? this.data.researchMode || 'auto' : 'auto'; },
   research(event) { if (this.data.sending || this.data.voice !== 'idle') return; if(!this.data.researchAvailable){notify(new Error('此功能需要连接 0.2.8 本地后端，正式后端尚未更新。'));return;}const mode = event.currentTarget.dataset.mode; this.setData({ researchMode: this.data.researchMode === mode ? 'auto' : mode }); },

@@ -16,6 +16,7 @@ import {newsPublisher,newsSourceCandidates,newsSourceIdentity} from './newsSourc
 export {newsPublisher} from './newsSourceUrls';
 import { beijingTimestamp, NEWS_OBSERVATION_POLICY, newsObservationContext } from './newsTime';
 import {hasUsableNewsDate,missingNewsDateNotice,newsDatePolicy,researchDatePolicy,undatedRecencyClaim,type NewsDatePolicy} from './newsDatePolicy';
+import { aiTopicSourcePlan } from './aiTopicSources';
 
 export function newsSearchPolicy(prompt:string){
   const subject=prompt.split(/\n(?:研究方向：|制作路径：)/)[0],anchors=requestedModelNames(subject);
@@ -76,7 +77,7 @@ export function validateHotBrief(topics:HotResearchBrief['topics'],refs:Research
 
 export async function refreshHotTopics(previous:ResearchResult,prompt:string,options:{read?:PublicReader;trace?:ReturnType<typeof createToolTrace>;requestedAt?:number}={}):Promise<ResearchResult>{
   if(!previous.current)throw new Error('没有可续查的新闻选题。');
-  const now=Date.now(),asOf=new Date(now).toISOString(),windowHours=newsWindowHours(prompt);
+  const now=Date.now(),asOf=new Date(now).toISOString(),windowHours=newsWindowHours(newsSearchPolicy(prompt).subject);
   const cutoff=options.requestedAt??now;
   const read=()=>verifyNewsPages(previous.references,windowHours,options.read,cutoff);
   const verified=options.trace?await options.trace.run('refresh_news_sources','重读已选新闻原文',{urls:previous.references.map(r=>r.url),asOf,cutoffUtc:new Date(cutoff).toISOString(),windowHours},read):await read();
@@ -87,9 +88,9 @@ export async function refreshHotTopics(previous:ResearchResult,prompt:string,opt
 }
 
 export async function researchHotTopics(config:ModelConfig,prompt:string,progress?:(events:WorkflowEvent[])=>Promise<void>,options:{read?:PublicReader;trace?:ReturnType<typeof createToolTrace>;search?:typeof researchGaps;requestedAt?:number}={}):Promise<ResearchResult>{
-  const requestedAt=options.requestedAt??Date.now(),asOf=new Date().toISOString(),windowHours=newsWindowHours(prompt),expiresAt=new Date(Date.parse(asOf)+30*60000).toISOString();
+  const requestedAt=options.requestedAt??Date.now(),asOf=new Date().toISOString(),windowHours=newsWindowHours(newsSearchPolicy(prompt).subject),expiresAt=new Date(Date.parse(asOf)+30*60000).toISOString();
   const trace=options.trace||createToolTrace(progress||(async()=>{}),[config.apiKey]);
-  const skill=await loadEditingSkill('qingjian-hot-video');
+  const skill=await loadEditingSkill('qingjian-hot-video')+'\n'+aiTopicSourcePlan(prompt.split('[轻喵模板:daily-ai-frontier]')[0]);
   const policy=newsSearchPolicy(prompt),daily=requiresTodayEvent(policy.subject),requested=/(\d+)\s*个.{0,25}选题/.exec(prompt),maxTopics=Math.min(3,Math.max(1,Number(requested?.[1]||1)));
   const datePolicy=newsDatePolicy(policy.subject);
   const dateInstruction=datePolicy==='flexible'?'未指定硬性日期窗口：优先有日期新稿，但缺少发布时间不阻断有两家独立正文支持的资讯。无日期时必须在uncertainties写明原文未注明发布时间，不能声称今天发生、刚刚或最新发布；核验时间只表示读取时间。':'用户有明确时间要求：至少一条核心来源满足原指令时间窗。允许其他无日期来源作交叉背景，不要求每篇都有时分秒。';

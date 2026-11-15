@@ -1,6 +1,3 @@
-.gallery-eyebrow { font-size:22rpx; color:var(--lm-accent); margin:10rpx 0 14rpx; letter-spacing:3rpx; }
-.gallery-heading { font-size:38rpx; line-height:1.5; color:var(--lm-ink); }
-.gallery-intro { color:var(--lm-muted); font-size:25rpx; margin:12rpx 0 28rpx; line-height:1.7; }
 .gallery-search { height:78rpx; padding:0 24rpx; border:1rpx solid var(--lm-line); background:var(--lm-paper); border-radius:24rpx; font-size:25rpx; }
 .gallery-filters { display:flex; margin:22rpx 0 28rpx; }
 .gallery-filters .filter { flex:0 0 auto; width:auto; margin:0 14rpx 0 0; padding:12rpx 25rpx; font-size:24rpx; color:var(--lm-muted); border-radius:30rpx; }
@@ -39,3 +36,36 @@
 .gallery-error button { display:inline-block; margin-left:12rpx; }
 .empty .secondary { width:auto; margin:28rpx auto 0; }
 @media (max-width:350px) { .gallery-heading { font-size:34rpx; }.card-copy { padding:18rpx; }.card-title { font-size:26rpx; } }
+
+.category-scroll { width:100%; white-space:nowrap; margin:18rpx 0 30rpx; }
+.gallery-filters { display:inline-flex; margin:0; }
+.gallery-filters .filter { padding:14rpx 22rpx; margin-right:8rpx; font-size:26rpx; }
+.gallery-filters .selected { font-weight:600; }
+.section-heading { display:flex; justify-content:space-between; align-items:center; font-size:29rpx; font-weight:600; margin:0 0 22rpx; }
+.section-note { font-size:21rpx; font-weight:400; color:var(--lm-muted); }
+.recommend-scroll { width:100%; white-space:nowrap; }
+.recommend-track { display:inline-flex; padding-bottom:8rpx; }
+.theme-surface .recommend-card { display:block; width:226rpx; flex:0 0 226rpx; max-width:none; margin:0 18rpx 0 0; padding:0; border-radius:0; text-align:left; background:transparent; white-space:normal; }
+.recommend-cover { width:226rpx; height:290rpx; position:relative; border-radius:24rpx; overflow:hidden; background:var(--lm-soft); }
+.recommend-cover image { width:100%; height:100%; }
+.recommend-name { display:block; font-size:24rpx; color:var(--lm-ink); margin:14rpx 0 0; }
+.catalog-heading { margin-top:38rpx; }
+.gallery-card { background:var(--lm-paper); border:0; border-radius:22rpx; margin-bottom:26rpx; }
+.sample-cover { height:330rpx; background:var(--lm-soft); border-radius:22rpx; }
+.cover-badge { position:absolute; left:14rpx; top:14rpx; color:var(--lm-ink); background:var(--lm-paper); padding:6rpx 12rpx; border-radius:12rpx; font-size:19rpx; line-height:1.5; }
+.card-copy { padding:18rpx 12rpx 12rpx; }
+.card-title { font-size:28rpx; font-weight:600; }
+.card-description { -webkit-line-clamp:2; font-size:22rpx; line-height:1.6; min-height:70rpx; }
+.card-meta { margin-top:14rpx; }
+.theme-surface .card-use { padding:14rpx 12rpx; font-size:22rpx; }
+.designed-cover { box-sizing:border-box; position:relative; height:100%; padding:72rpx 24rpx 28rpx; background:linear-gradient(145deg,var(--lm-soft),var(--lm-paper)); display:flex; flex-direction:column; }
+.cover-game .designed-cover { background:linear-gradient(145deg,#e4e8da,#f6e8cc); }
+.cover-news .designed-cover { background:linear-gradient(145deg,#ecd9c4,#f9efdf); }
+.cover-knowledge .designed-cover { background:linear-gradient(145deg,#dce8e0,#f4eddb); }
+.cover-product .designed-cover { background:linear-gradient(145deg,#dfddef,#f6ecdf); }
+.designed-cover image { width:58rpx; height:58rpx; margin-bottom:20rpx; }
+.cover-title { font-size:32rpx; font-weight:600; line-height:1.5; white-space:pre-line; color:#69473c; }
+.cover-note { margin-top:18rpx; font-size:19rpx; color:#856d5c; }
+.cover-brand { position:absolute; bottom:18rpx; left:24rpx; font-size:12rpx; letter-spacing:1rpx; color:#856d5c; }
+.category-scroll { height:76rpx; }
+.recommend-scroll { height:360rpx; }

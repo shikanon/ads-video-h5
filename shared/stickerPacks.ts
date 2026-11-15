@@ -7,6 +7,9 @@ export interface StickerItem {
   previewUrl: string;
 }
 export interface StickerPack {
+  private?: boolean;
+  projectId?: string;
+  mode?: 'static' | 'dynamic';
   id: string;
   name: string;
   version: string;
@@ -25,6 +28,7 @@ export interface StickerTask {
   captions: string[];
 }
 export interface StickerDelivery {
+  mode?: 'static' | 'dynamic';
   task?: StickerTask;
   packId: string;
   packVersion: string;
@@ -35,4 +39,12 @@ export interface StickerDelivery {
   packArtifactId?: string;
   width?: number;
   height?: number;
+}
+
+export interface StickerGenerationTask {
+  projectId: string;
+  phase: 'samples' | 'batch';
+  approvalHash?: string;
+  makeVideo: boolean;
+  bgm: boolean;
 }

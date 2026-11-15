@@ -1,0 +1,11 @@
+{
+  "id":"daily-ai-frontier",
+  "name":"AI前沿图解",
+  "description":"从可靠原文讲清一个AI问题，用紫粉动态图解展示机制、证据与边界。",
+  "version":"1.0.0",
+  "workflow":"daily-ai",
+  "contextFiles":["references/visual.md"],
+  "defaults":{"width":1920,"height":1080,"fps":30,"seconds":35,"panels":4,"narration":true,"bgm":true},
+  "sample":{"title":"AI前沿图解·视觉样片（无旁白）","source":{"author":"轻喵原创模板","url":"https://video.tensorbytes.com/qingjian/","galleryUrl":"https://video.tensorbytes.com/qingjian/"}},
+  "testCases":[{"id":"source-first","name":"查证AI进展再制作图解","prompt":"@AI前沿图解 制作一条近期AI领域的图解短片，核验一手来源，保留日期与限制，不冒充实测。"}]
+}

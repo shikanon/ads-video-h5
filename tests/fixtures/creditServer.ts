@@ -9,10 +9,11 @@ import { fileURLToPath } from 'node:url';
 import { hashPassword } from '../../server/auth';
 import { defaultTokenPrices } from '../../server/tokenPricing';
 import { disposeOwnedFixture, waitForOwnedFixtureReady } from './ownedProcess';
+import { PNG } from 'pngjs';
 
 // Real Express/queue/Pi transport, disposable local users and a controllable
 // token provider. No production credentials or external services are used.
-export async function startCreditServer(options: { wechat?: boolean; onProviderRequest?: (body: any) => Promise<void>; structuredReply?: (body:any)=>unknown } = {}) {
+export async function startCreditServer(options: { stickerImages?: boolean; wechat?: boolean; onProviderRequest?: (body: any) => Promise<void>; structuredReply?: (body:any)=>unknown } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'qj-credit-service-'));
   const password = 'Credit-QA-user-123', adminPassword = 'Credit-QA-admin-123';
   const providerState = { calls: 0, outputTokens: 100, delay: 0, multiTurn: false, fail: false, wechatCalls: 0 };
@@ -33,6 +34,11 @@ export async function startCreditServer(options: { wechat?: boolean; onProviderR
     if (providerState.fail) { response.writeHead(400, { 'Content-Type': 'application/json' }); response.end('{"error":{"message":"fixture failure"}}'); return; }
     if (providerState.delay) await new Promise(r => setTimeout(r, providerState.delay));
     if (response.destroyed) return;
+    if(options.stickerImages&&request.url==='/fixture-image'){
+      const dynamic=body.size==='3072x2048',w=dynamic?384:128,h=dynamic?256:128,png=new PNG({width:w,height:h});
+      for(let n=0;n<(dynamic?6:1);n++)for(let y=30;y<100;y++)for(let x=35;x<90;x++){const p=((Math.floor(n/3)*128+y)*w+n%3*128+x)*4;png.data[p]=150+n*10;png.data[p+1]=70+n*4;png.data[p+2]=30;png.data[p+3]=255;}
+      response.writeHead(200,{'Content-Type':'application/json'});response.end(JSON.stringify({data:[{b64_json:PNG.sync.write(png).toString('base64')}]}));return;
+    }
     const audioRequest = body.messages.some((message: any) => Array.isArray(message.content) && message.content.some((part: any) => part.type === 'input_audio'));
     const usage = { prompt_tokens: 1000, completion_tokens: providerState.outputTokens, prompt_tokens_details: { cached_tokens: 500, ...(audioRequest ? { audio_tokens: 1000, audio_cached_tokens: 500 } : {}) } };
     if (!body.stream) { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ id, usage, choices: [{ message: { content: JSON.stringify(options.structuredReply?.(body)??{text:'用一句话介绍功能'}) } }] })); return; }
@@ -58,6 +64,7 @@ export async function startCreditServer(options: { wechat?: boolean; onProviderR
   const registrationEmail = 'new@example.test', verificationCode = '123456', verificationSalt = randomBytes(16).toString('hex');
   const verification = { email: registrationEmail, salt: verificationSalt, hash: scryptSync(verificationCode, Buffer.from(verificationSalt, 'hex'), 32).toString('hex'), sentAt: Date.now(), expiresAt: Date.now() + 10 * 60_000, attempts: 0 };
   const models = [{ id: 'text', name: 'QA text', kind: 'text', provider: 'ark', modelId: defaultTokenPrices()[0].modelId, baseUrl: providerBase, apiKeyCiphertext, enabled: true }, { id: 'understanding', name: 'QA ASR', kind: 'understanding', provider: 'ark', modelId: defaultTokenPrices()[3].modelId, baseUrl: providerBase, apiKeyCiphertext, enabled: true }];
+  if(options.stickerImages)models.push({id:'image',name:'Fixture image',kind:'image',provider:'ark',modelId:'doubao-seedream-5-0-flash-260915',baseUrl:'https://ark.cn-beijing.volces.com',apiKeyCiphertext,enabled:true});
   const session = { id: 'ordinary-session', ownerId: 'ordinary', title: '新会话', modelId: 'text', createdAt, updatedAt: createdAt, messages: [{ id: 'failed-message', role: 'user', text: '你好', attachmentIds: [], jobId: 'failed-job', createdAt }], plan: null };
   const seeded = { sessions: [session], activeSessionId: session.id, media: [{ id: 'video-fixture', ownerId: 'ordinary', name: '视频', kind: 'video', mimeType: 'video/mp4', url: '/api/media/video-fixture', createdAt }, { id: 'avatar-fixture', ownerId: 'ordinary', name: '作者', kind: 'image', mimeType: 'image/png', url: '/api/media/avatar-fixture', createdAt, character: { role: 'reference' } }], artifacts: [], jobs: [{ id: 'failed-job', ownerId: 'ordinary', sessionId: session.id, messageId: 'failed-message', kind: 'chat', status: 'failed', createdAt, updatedAt: createdAt }], settings: { language: 'zh-CN', chatBackground: null }, profiles: { ordinary: { activeSessionId: session.id, settings: { language: 'zh-CN', chatBackground: null, defaultModelId: 'text' } } }, artifactFiles: {}, narrationBySession: {}, bgmBySession: {} };
   await Promise.all([
@@ -70,7 +77,9 @@ export async function startCreditServer(options: { wechat?: boolean; onProviderR
   const port = (reserve.address() as { port: number }).port; await new Promise<void>(r => reserve.close(() => r()));
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
   const imports = options.wechat ? ['--import', './tests/fixtures/wechatFetch.ts'] : [];
+  if(options.stickerImages)imports.push('--import','./tests/fixtures/stickerImageFetch.ts');
   child = spawn(process.execPath, ['--import', 'tsx', ...imports, 'server/index.ts'], { cwd: root, env: { ...process.env, QINGJIAN_WECHAT_NOTICE_TEMPLATES:'[]', QINGJIAN_DATA_DIR: directory, PORT: String(port), PUBLIC_BASE_PATH: '', QINGJIAN_ADMIN_PASSWORD: adminPassword,
+    ...(options.stickerImages ? { QINGJIAN_STICKER_IMAGE_FIXTURE_URL:providerBase+'/fixture-image' } : {}),
     ...(options.wechat ? { QINGJIAN_TEST_WECHAT_PROVIDER: providerBase, QINGJIAN_WECHAT_APP_ID: 'wxf5dfb5d144bcd684', QINGJIAN_WECHAT_APP_SECRET: 'fixture-wechat-secret' } : {}),
   }, stdio: ['ignore', 'pipe', 'pipe'] });
   let spawnError: Error | undefined, spawned = false;
@@ -92,7 +101,7 @@ export async function startCreditServer(options: { wechat?: boolean; onProviderR
     return response.headers.get('set-cookie')!.split(';')[0];
   }
   const request = (cookie: string, route: string, body?: unknown, method = body ? 'POST' : 'GET') => fetch(base + route, { method, headers: { Cookie: cookie, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10000) });
-  return { base, directory, child, providerState, password, adminPassword, registrationEmail, verificationCode, login, request, close };
+  return { base, directory, child, providerState, password, adminPassword, registrationEmail, verificationCode, login, request, close, diagnostics:()=>({exitCode:child?.exitCode,signal:child?.signalCode,logs:logs.slice(-7000)}) };
   } catch (error) {
     try { await close(); } catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Fixture startup and cleanup failed.'); }
     throw error;
