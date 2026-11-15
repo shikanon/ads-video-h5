@@ -3,6 +3,7 @@ import { userOf, type PublicUser } from './auth';
 import type { AdminAuth } from './adminAuth';
 import type { Credits } from './credits';
 import { validateTokenPrice } from './tokenPricing';
+import { validateImagePrice } from './imagePricing';
 
 const pagination = (query: Record<string, unknown>) => ({
   offset: Math.max(0, Math.min(1_000_000, Math.trunc(Number(query.offset) || 0))),
@@ -37,6 +38,10 @@ export function mountCreditAdminRoutes(app: Express, credits: Credits, admin: Ad
     try { input = validateTokenPrice({ ...request.body, modelId: request.params.modelId }); }
     catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : '价格无效。' }); }
     try { response.json({ price: await credits.setPrice(input) }); } catch (error) { next(error); }
+  });
+  router.put('/image-prices/:modelId',async(request,response,next)=>{
+    let price;try{price=validateImagePrice({...request.body,modelId:request.params.modelId});}catch(error){return response.status(400).json({error:(error as Error).message});}
+    try{response.json({price:await credits.setImagePrice(price)});}catch(error){next(error);}
   });
   app.use('/api/admin/credits', router);
 }

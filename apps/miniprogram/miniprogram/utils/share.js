@@ -12,4 +12,11 @@ function shareTimeline() {
   // An explicit empty query removes any parameters from the incoming link.
   return { title: '轻喵LightMao｜视频创作', query: '', imageUrl: '/assets/lightmao-logo.png' };
 }
-module.exports = { shareAppMessage, shareTimeline };
+function stickerTemplateShare(event) {
+  if(event && event.from === 'button' && event.target && event.target.dataset && event.target.dataset.stickerTemplate === 'true') {
+    const mode=event.target.dataset.stickerMode === 'static' ? 'static' : 'dynamic';
+    return {title:'用自己的角色，制作'+(mode === 'static' ? '静态' : '动态')+'表情',path:'/pages/sticker-studio/index?mode='+mode+'&from=template',imageUrl:'/assets/lightmao-logo.png'};
+  }
+  return shareAppMessage();
+}
+module.exports = { shareAppMessage, shareTimeline, stickerTemplateShare };

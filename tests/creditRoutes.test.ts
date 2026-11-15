@@ -51,6 +51,11 @@ test('credit management requires independent admin authentication, existing user
   const model = defaultTokenPrices()[0];
   assert.equal((await f.request('/api/admin/credits/prices/' + model.modelId, { ...model, input: -1 }, f.token, 'PUT')).status, 400);
   assert.equal((await f.request('/api/admin/credits/prices/' + model.modelId, { ...model, output: 10 }, f.token, 'PUT')).status, 200);
+  const image=state.imagePrices[0];assert.equal(image.rmbPerImage,.12);
+  assert.equal((await f.request('/api/admin/credits/image-prices/'+image.modelId,{rmbPerImage:.2},undefined,'PUT')).status,401);
+  for(const invalid of [0,-1,.0001,'0.1'])assert.equal((await f.request('/api/admin/credits/image-prices/'+image.modelId,{rmbPerImage:invalid},f.token,'PUT')).status,400);
+  assert.equal((await f.request('/api/admin/credits/image-prices/'+image.modelId,{rmbPerImage:.2},f.token,'PUT')).status,200);
+  assert.equal((await f.credits.imagePricing(image.modelId)).pointsPerImage,200);
   const history = await (await f.request('/api/admin/credits/users/a/ledger', undefined, f.token)).json() as any;
   assert.equal(history.total, 2); assert.equal(history.entries[0].kind, 'special_grant');
 });

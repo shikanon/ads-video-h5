@@ -157,7 +157,8 @@ const jobRunner = createJobRunner();
 const evaluationJobModels = new Map<string, ModelSnapshot>();
 const evaluationJobDeadlines = new Map<string, number>();
 const persistState=createJsonStateWriter(stateFile,()=>state);
-function saveState(): Promise<void> { throwIfJobCancelled(); return persistState(); }
+let afterStateSaved:(()=>Promise<void>)|undefined;
+async function saveState(): Promise<void> { throwIfJobCancelled(); await persistState();await afterStateSaved?.(); }
 await saveState();
 const owned = (item: { ownerId?: string }, ownerId: string) => item.ownerId === ownerId;
 const getSession = (id: string, ownerId?: string) => state.sessions.find((session) => session.id === id && (!ownerId || owned(session, ownerId)));
@@ -932,12 +933,12 @@ async function processQueuedJob(job: Job) {
       }catch{console.warn('Completion notification could not be recorded.');}
 }
 
-async function enqueueAgentMessage(session: Session, text: string, attachmentIds: string[], voiceTicket?: string, modelSnapshot?:ModelSnapshot, interaction?: Job['interaction'], researchMode?:Job['researchMode'], stickerTask?:Job['stickerTask']): Promise<Job> {
+async function enqueueAgentMessage(session: Session, text: string, attachmentIds: string[], voiceTicket?: string, modelSnapshot?:ModelSnapshot, interaction?: Job['interaction'], researchMode?:Job['researchMode'], stickerTask?:Job['stickerTask'],imageAdmission?:string): Promise<Job> {
   const selection = interaction === 'chat' || interaction === 'explore'
     ? { kind: 'plan' as const, template: undefined }
     : resolveTemplateRequest(text, session, videoTemplates);
   const template = selection.template && await loadVideoTemplate(selection.template);
-  const creditTaskId = isEvaluationOwner(session.ownerId) ? undefined : await credits.admit(session.ownerId!, text, voiceTicket);
+  const creditTaskId = isEvaluationOwner(session.ownerId) ? undefined : imageAdmission??await credits.admit(session.ownerId!, text, voiceTicket);
   const createdAt = now();
   const message: ChatMessage = { id: randomUUID(), role: 'user', text, createdAt, attachmentIds };
   const job: Job = { id: randomUUID(), ownerId: session.ownerId, sessionId: session.id, messageId: message.id, kind: selection.kind, status: 'queued', createdAt, updatedAt: createdAt, progress: 0, ...(template ? { template: templateSelection(template) } : {}) };
@@ -1032,6 +1033,8 @@ const notifications=await createNotifications(path.join(dataDir,'notifications.j
 const notificationTimer=setInterval(()=>{void notifications.flush().catch(()=>console.warn('Completion notification delivery deferred.'));},10000);notificationTimer.unref();
 const credits = createCredits(dataDir);
 await credits.load(auth.listUsers());
+await credits.releaseInactiveImages(state.jobs.filter(isActiveJob).map(j=>j.creditTaskId).filter((id):id is string=>Boolean(id)));
+afterStateSaved=()=>credits.releaseTerminalImages(state.jobs.filter(j=>!isActiveJob(j)).map(j=>j.creditTaskId).filter((id):id is string=>Boolean(id)));
 const adminAuth = createAdminAuth(dataDir);
 await adminAuth.load();
 adminAuth.mount(app);
@@ -1088,6 +1091,8 @@ mountStickerRoutes(app,{base:publicBase,
   }finally{startingStickerSessions.delete(session.id);}
 }});
 mountStickerStudioRoutes(app,{studio:stickerStudio,
+  pricing:async()=>{const model=await getModelConfig('image');if(!model)return null;const p=await credits.imagePricing(model.modelId);return {...p,staticSamples:p.pointsPerImage*3,dynamicSamples:p.pointsPerImage*4,batch:p.pointsPerImage*21};},
+  quote:async(user,task)=>{const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');return credits.imageQuote(user.id,model.modelId,await stickerStudio.pendingImageIds(user.id,task));},
   version:async()=>{const entry=videoTemplates.find(item=>item.workflow==='sticker-pack');return entry?(await loadVideoTemplate(entry)).skillHash:undefined;},
   ready:async()=>{const model=await getModelConfig('image');return Boolean(model?.enabled&&/^doubao-seedream-/.test(model.modelId));},
   reference:async(user,sessionId,recipe)=>{
@@ -1098,18 +1103,21 @@ mountStickerStudioRoutes(app,{studio:stickerStudio,
     if(bytes.length>20*1024*1024||!detectImage(bytes))throw Error('角色图片无效或超过20MB。');
     return stateHash(bytes.toString('base64'));
   },
-  start:async(user,projectId,task)=>{
+  start:async(user,projectId,task,pricingHash)=>{
     const project=await stickerStudio.load(user.id,projectId),session=getSession(project.sessionId,user.id);
     if(!session||session.archivedAt)throw Object.assign(Error('项目会话不存在或已归档，请重新创建。'),{status:404});
     const previous=state.jobs.find(job=>job.ownerId===user.id&&job.stickerGenerationTask?.projectId===projectId&&job.stickerGenerationTask.phase===task.phase);
     if(previous){if(JSON.stringify(previous.stickerGenerationTask)!==JSON.stringify(task))throw Object.assign(Error('此阶段已提交不同制作选项，请在完成后另行制作视频。'),{status:409});return {...await publicState(user),stickerJobId:previous.id};}
     if(startingStickerSessions.has(session.id)||state.jobs.some(job=>job.sessionId===session.id&&isActiveJob(job)))throw Object.assign(Error('当前会话已有任务，请稍后再试。'),{status:409});
     startingStickerSessions.add(session.id);
+    let admission:string|undefined;
     try {
+      const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');
+      admission=await credits.admitImages(user.id,model.modelId,await stickerStudio.pendingImageIds(user.id,task),pricingHash);
       const pack=await loadStickerPack(),story=task.phase==='batch'?{...defaultStickerTask(pack),packId:'custom-'+projectId,title:project.recipe.name,makeVideo:task.makeVideo,bgm:task.bgm}:undefined;
-      const job=await enqueueAgentMessage(session,'@动态表情套装 '+(task.phase==='samples'?'为新角色生成3个样张，等待确认。':'使用已确认样张生成24套'+(project.recipe.mode==='static'?'静态':'动态')+'表情。'),[project.recipe.referenceMediaId],undefined,undefined,'create',undefined,story);
+      const job=await enqueueAgentMessage(session,'@动态表情套装 '+(task.phase==='samples'?'为新角色生成3个样张，等待确认。':'使用已确认样张生成24套'+(project.recipe.mode==='static'?'静态':'动态')+'表情。'),[project.recipe.referenceMediaId],undefined,undefined,'create',undefined,story,admission);
       job.stickerGenerationTask=structuredClone(task);await saveState();const receipt={...await publicState(user),stickerJobId:job.id};void processQueue();return receipt;
-    }finally{startingStickerSessions.delete(session.id);}
+    }catch(error){if(admission)await credits.releaseImages(admission);throw error;}finally{startingStickerSessions.delete(session.id);}
   },
 });
 app.get('/api/notifications/config',(q,r)=>r.json(notifications.configuration(userOf(q).id)));
@@ -1485,7 +1493,10 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   const needsLessonRepair=job.status==='succeeded'&&candidate?.plan?.lesson&&candidate.review?.status==='needs-review';
   if (job.status !== 'failed'&&!needsLessonRepair) return response.status(409).json({ error: '只有失败的任务或未通过审查的教学成片可以重试。' });
   if(job.stickerGenerationTask&&job.template){const entry=videoTemplates.find(item=>item.id===job.template!.id);if(!entry||(await loadVideoTemplate(entry)).skillHash!==job.template.skillHash)return response.status(409).json({error:'表情制作方式已更新，请在表情工坊点击“调整设定，重新制作样张”，保留角色图后提交新任务。',code:'STICKER_TEMPLATE_UPDATED'});}
-  job.creditTaskId = await credits.admit(user.id);
+  if(job.stickerGenerationTask){
+    const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');
+    job.creditTaskId=await credits.admitImages(user.id,model.modelId,await stickerStudio.pendingImageIds(user.id,job.stickerGenerationTask),request.body?.pricingHash);
+  }else job.creditTaskId = await credits.admit(user.id);
   // An unavailable auditor has no content correction to make. Recheck the
   // existing artifact instead of restarting today's research and rendering.
   if(needsLessonRepair&&candidate?.review)job.kind=reviewNeedsContentRepair(candidate.review)?'export':'review';

@@ -2,13 +2,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { PublicUser } from './auth';
-import type { CreditAdminState, CreditCheckInResult, CreditEntry, CreditWallet, TokenPrice, TokenUsage } from '../shared/creditTypes';
+import type { CreditAdminState, CreditCheckInResult, CreditEntry, CreditWallet, TokenPrice, TokenUsage, ImagePrice } from '../shared/creditTypes';
+import { defaultImagePrices, validateImagePrice, imageCostMicros, imagePriceHash } from './imagePricing';
 import { DAILY_POINTS, REGISTRATION_POINTS, SPECIAL_INITIAL_POINTS, POINT_MICROS, POINT_VALUE_RMB, defaultTokenPrices, tokenCostMicros, validateTokenPrice } from './tokenPricing';
 
-interface Wallet { balanceMicros: number; spentMicros: number; special: boolean; specialGranted: boolean; initialGrantPoints: number; lastCheckInDate: string | null; }
+interface Wallet { balanceMicros: number; reservedMicros?: number; spentMicros: number; special: boolean; specialGranted: boolean; initialGrantPoints: number; lastCheckInDate: string | null; }
 interface LegacyWallet { balanceMicros: number; spentMicros: number; special: boolean; specialGranted: boolean; lastGrantDate: string; }
 interface Ticket { userId: string; taskId: string; textHash: string; expiresAt: number; }
-interface Store { version: 2; initialized: boolean; specialUsers: string[]; wallets: Record<string, Wallet>; entries: CreditEntry[]; prices: TokenPrice[]; seen: Record<string, true>; tickets: Record<string, Ticket>; }
+interface ImageReservation { userId:string; price:ImagePrice; remaining:string[]; }
+interface Store { version: 2; initialized: boolean; specialUsers: string[]; wallets: Record<string, Wallet>; entries: CreditEntry[]; prices: TokenPrice[]; imagePrices?:ImagePrice[]; imageReservations?:Record<string,ImageReservation>; seen: Record<string, true>; tickets: Record<string, Ticket>; }
 type LegacyStore = Omit<Store, 'version' | 'wallets'> & { version: 1; wallets: Record<string, LegacyWallet>; };
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const day = (at: number) => new Date(at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
@@ -22,7 +24,7 @@ export class CreditError extends Error {
 
 export function createCredits(dataDir: string, options: { now?: () => number; initialSpecialName?: string } = {}) {
   const filename = path.join(dataDir, 'credits.json'), now = options.now ?? Date.now;
-  let store: Store = { version: 2, initialized: false, specialUsers: [], wallets: {}, entries: [], prices: defaultTokenPrices(), seen: {}, tickets: {} };
+  let store: Store = { version: 2, initialized: false, specialUsers: [], wallets: {}, entries: [], prices: defaultTokenPrices(), imagePrices:defaultImagePrices(),imageReservations:{},seen: {}, tickets: {} };
   let tail = Promise.resolve();
   let initialSpecialUserId: string | undefined;
   async function transaction<T>(fn: (draft: Store) => T, forceSave = false): Promise<T> {
@@ -61,7 +63,7 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
   }
   const publicWallet = (w: Wallet): CreditWallet => {
     const today = day(now()), next = nextDay(today);
-    return { balance: w.balanceMicros / POINT_MICROS, dailyGrant: DAILY_POINTS, registrationGrant: REGISTRATION_POINTS, pointValueRmb: POINT_VALUE_RMB, special: w.special, checkInDate: today, canCheckIn: !w.lastCheckInDate || w.lastCheckInDate < today, lastCheckInDate: w.lastCheckInDate, nextCheckInAt: next, totalSpent: w.spentMicros / POINT_MICROS,
+    return { balance: (w.balanceMicros-(w.reservedMicros||0)) / POINT_MICROS, ...(w.reservedMicros?{reserved:w.reservedMicros/POINT_MICROS}:{}),dailyGrant: DAILY_POINTS, registrationGrant: REGISTRATION_POINTS, pointValueRmb: POINT_VALUE_RMB, special: w.special, checkInDate: today, canCheckIn: !w.lastCheckInDate || w.lastCheckInDate < today, lastCheckInDate: w.lastCheckInDate, nextCheckInAt: next, totalSpent: w.spentMicros / POINT_MICROS,
       // Preserve the old response fields for clients with a previous bundle.
       lastGrantDate: w.lastCheckInDate ?? today, nextGrantAt: next };
   };
@@ -83,6 +85,16 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
       return [id, { ...rest, initialGrantPoints: DAILY_POINTS, lastCheckInDate: lastGrantDate }];
     })) } : loaded;
     for (const p of store.prices) validateTokenPrice(p);
+    store.imagePrices ??= defaultImagePrices();store.imageReservations ??= {};
+    if(!Array.isArray(store.imagePrices)||!store.imageReservations||Array.isArray(store.imageReservations))throw Error('图片积分账本无效，不能重置余额。');
+    for(const p of store.imagePrices)validateImagePrice(p);
+    const reserved:Record<string,number>={};
+    for(const r of Object.values(store.imageReservations)){
+      validateImagePrice(r.price);
+      if(!store.wallets[r.userId]||!Array.isArray(r.remaining)||r.remaining.length>25||new Set(r.remaining).size!==r.remaining.length||r.remaining.some(id=>typeof id!=='string'||id.length>200))throw Error('图片预留记录无效。');
+      reserved[r.userId]=(reserved[r.userId]||0)+r.remaining.length*imageCostMicros(r.price);
+    }
+    for(const [id,w] of Object.entries(store.wallets))if(!Number.isSafeInteger(w.reservedMicros||0)||(w.reservedMicros||0)!==(reserved[id]||0))throw Error('图片预留积分与账本不一致。');
     const name = options.initialSpecialName ?? 'shikanon';
     const byEmail = users.filter(u => u.email.toLowerCase().split('@')[0] === name.toLowerCase());
     const candidates = byEmail.length === 1 ? byEmail : users.filter(u => u.displayName.trim().toLowerCase() === name.toLowerCase());
@@ -116,7 +128,7 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
         delete draft.tickets[key];
         return ticket.taskId;
       }
-      if (current.balanceMicros <= 0) throw new CreditError();
+      if (current.balanceMicros-(current.reservedMicros||0) <= 0) throw new CreditError();
       return randomUUID();
     });
   }
@@ -161,18 +173,74 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
     const validated = validateTokenPrice(value);
     return transaction(draft => { draft.prices = [...draft.prices.filter(p => p.modelId !== validated.modelId), validated]; return validated; });
   };
+  const imageKey=(userId:string,modelId:string,requestId:string)=>hash(JSON.stringify([userId,modelId,requestId]));
+  function configuredImagePrice(draft:Store,modelId:string){
+    const p=draft.imagePrices!.find(p=>p.modelId===modelId);
+    if(!p)throw new CreditError('当前图片模型尚未配置积分价格，请联系管理员。','IMAGE_PRICE_UNCONFIGURED',503);
+    return p;
+  }
+  const imagePricing=(modelId:string)=>transaction(draft=>{
+    const p=configuredImagePrice(draft,modelId);return {price:structuredClone(p),pricingHash:imagePriceHash(p),pointsPerImage:imageCostMicros(p)/POINT_MICROS};
+  });
+  const imageQuote=(userId:string,modelId:string,requestIds:string[])=>transaction(draft=>{
+    const price=configuredImagePrice(draft,modelId),remaining=requestIds.filter(id=>!draft.seen[imageKey(userId,modelId,id)]);
+    return {pricingHash:imagePriceHash(price),imageCount:remaining.length,points:remaining.length*imageCostMicros(price)/POINT_MICROS,pointsPerImage:imageCostMicros(price)/POINT_MICROS};
+  });
+  const admitImages=(userId:string,modelId:string,requestIds:string[],pricingHash:string)=>transaction(draft=>{
+    if(requestIds.length>25||new Set(requestIds).size!==requestIds.length||requestIds.some(id=>typeof id!=='string'||!id||id.length>200))throw Error('图片制作额度无效。');
+    const current=wallet(draft,userId),price=configuredImagePrice(draft,modelId);
+    if(!pricingHash||imagePriceHash(price)!==pricingHash)throw new CreditError('图片积分价格已更新，请更新小程序并刷新表情工坊，查看费用后重新提交。','IMAGE_PRICE_CHANGED',409);
+    const remaining=requestIds.filter(id=>!draft.seen[imageKey(userId,modelId,id)]),cost=remaining.length*imageCostMicros(price);
+    if(Object.values(draft.imageReservations!).some(r=>r.userId===userId&&r.price.modelId===modelId&&r.remaining.some(id=>remaining.includes(id))))throw new CreditError('此阶段已在制作中，请查看当前任务。','IMAGE_ALREADY_RESERVED',409);
+    if(current.balanceMicros-(current.reservedMicros||0)<cost)throw new CreditError('本阶段需要 '+cost/POINT_MICROS+' 积分，当前可用余额不足。请前往「我的积分」查看。');
+    // Even a zero-new-image repair has a reservation; it cannot add paid calls.
+    const taskId=randomUUID();draft.imageReservations![taskId]={userId,price:structuredClone(price),remaining};current.reservedMicros=(current.reservedMicros||0)+cost;return taskId;
+  });
+  const assertImageBudget=(userId:string,taskId:string,modelId:string,requestId:string)=>transaction(draft=>{
+    const r=draft.imageReservations![taskId];
+    if(!r||r.userId!==userId||r.price.modelId!==modelId||!r.remaining.includes(requestId))throw new CreditError('图片制作额度已失效，请回到表情工坊刷新费用后重试。','IMAGE_RESERVATION_REQUIRED',409);
+  });
+  const recordImageUsage=(userId:string,taskId:string,modelId:string,requestId:string)=>transaction(draft=>{
+    const key=imageKey(userId,modelId,requestId);if(draft.seen[key])return 0;
+    const r=draft.imageReservations![taskId];
+    if(!r||r.userId!==userId||r.price.modelId!==modelId||!r.remaining.includes(requestId))throw new CreditError('图片计费缺少已确认额度，已停止追加请求。','IMAGE_RESERVATION_REQUIRED',409);
+    const current=wallet(draft,userId),amount=imageCostMicros(r.price);
+    r.remaining=r.remaining.filter(id=>id!==requestId);current.reservedMicros=(current.reservedMicros||0)-amount;
+    entry(draft,userId,'model_usage',-amount,{taskId,modelId,requestId,imagePrice:structuredClone(r.price),imageCount:1,detail:'表情图片生成：1张 × '+amount/POINT_MICROS+'积分；已有图片复用不重复扣费'});
+    current.spentMicros+=amount;if(!Number.isSafeInteger(current.spentMicros))throw Error('累计积分超出可安全记账范围。');draft.seen[key]=true;return amount;
+  });
+  const releaseImages=(taskId:string)=>transaction(draft=>{
+    const r=draft.imageReservations![taskId];if(!r)return;
+    draft.wallets[r.userId].reservedMicros=(draft.wallets[r.userId].reservedMicros||0)-r.remaining.length*imageCostMicros(r.price);delete draft.imageReservations![taskId];
+  });
+  const releaseInactiveImages=(activeTaskIds:string[])=>transaction(draft=>{
+    const active=new Set(activeTaskIds);
+    for(const [id,r] of Object.entries(draft.imageReservations!))if(!active.has(id)){
+      draft.wallets[r.userId].reservedMicros=(draft.wallets[r.userId].reservedMicros||0)-r.remaining.length*imageCostMicros(r.price);delete draft.imageReservations![id];
+    }
+  });
+  const releaseTerminalImages=async(taskIds:string[])=>{
+    await tail;if(!taskIds.some(id=>store.imageReservations?.[id]))return;
+    return transaction(draft=>{
+    const terminal=new Set(taskIds);
+    for(const [id,r] of Object.entries(draft.imageReservations!))if(terminal.has(id)){
+      draft.wallets[r.userId].reservedMicros=(draft.wallets[r.userId].reservedMicros||0)-r.remaining.length*imageCostMicros(r.price);delete draft.imageReservations![id];
+    }
+    });
+  };
+  const setImagePrice=(value:unknown)=>{const p=validateImagePrice(value);return transaction(draft=>{draft.imagePrices=[...draft.imagePrices!.filter(old=>old.modelId!==p.modelId),p];return p;});};
   const history = (userId: string, offset = 0, limit = 20) => transaction(draft => {
     const w = publicWallet(wallet(draft, userId)), all = draft.entries.filter(e => e.userId === userId).reverse();
     return { wallet: w, entries: all.slice(offset, offset + limit), total: all.length };
   });
-  const adminState = (users: PublicUser[]): Promise<CreditAdminState> => transaction(draft => ({ accounts: users.map(user => ({ ...user, wallet: publicWallet(wallet(draft, user.id)) })), prices: structuredClone(draft.prices), dailyGrant: DAILY_POINTS, registrationGrant: REGISTRATION_POINTS, pointValueRmb: POINT_VALUE_RMB, specialInitial: SPECIAL_INITIAL_POINTS }));
+  const adminState = (users: PublicUser[]): Promise<CreditAdminState> => transaction(draft => ({ accounts: users.map(user => ({ ...user, wallet: publicWallet(wallet(draft, user.id)) })), prices: structuredClone(draft.prices), imagePrices:structuredClone(draft.imagePrices!),dailyGrant: DAILY_POINTS, registrationGrant: REGISTRATION_POINTS, pointValueRmb: POINT_VALUE_RMB, specialInitial: SPECIAL_INITIAL_POINTS }));
   async function readiness() {
     await tail;
     const initial = initialSpecialUserId ? store.wallets[initialSpecialUserId] : undefined;
     // A deployment receipt without identifiers, balances or account lists.
     return { ready: store.initialized, initialSpecialAccountApplied: Boolean(initial?.special && initial.specialGranted) };
   }
-  return { load, snapshot, checkIn, admit, voiceTicket, recordUsage, price, setSpecial, setPrice, history, adminState, readiness };
+  return { load, snapshot, checkIn, admit, voiceTicket, recordUsage, price, setSpecial, setPrice, history, adminState, readiness,imagePricing,imageQuote,admitImages,assertImageBudget,recordImageUsage,releaseImages,releaseInactiveImages,releaseTerminalImages,setImagePrice };
 }
 
 export type Credits = ReturnType<typeof createCredits>;

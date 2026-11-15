@@ -45,10 +45,12 @@ test('real HTTP, image provider fixture, queue and static delivery require expli
   const pngFile=path.join(f.directory,'reference.png'),jpegFile=path.join(f.directory,'reference.jpg');await writeFile(pngFile,png());await runFFmpeg(['-v','error','-i',pngFile,'-frames:v','1',jpegFile]);
   const form=new FormData();form.append('files',new Blob([new Uint8Array(await readFile(jpegFile))],{type:'image/jpeg'}),'role.jpg');
   const uploaded=await fetch(f.base+'/api/media',{method:'POST',headers:{Cookie:cookie},body:form});assert.equal(uploaded.status,200);const upload:any=await uploaded.json();
-  const referenceMediaId=upload.uploadedMediaIds[0],body={sessionId,requestId:'phase2_static_request_0001',recipe:{...recipe,referenceMediaId}};
+  const referenceMediaId=upload.uploadedMediaIds[0],config:any=await(await f.request(cookie,'/api/sticker-projects/config')).json(),body={pricingHash:config.pricing.pricingHash,sessionId,requestId:'phase2_static_request_0001',recipe:{...recipe,referenceMediaId}};
   const original=Buffer.from(await(await f.request(cookie,upload.media.find((m:any)=>m.id===referenceMediaId).url)).arrayBuffer());
   assert.equal(original[0],0xff,'exercise the same JPEG reference format as the failed production task');
   const denied=await f.request(other,'/api/sticker-projects',body);assert.equal(denied.status,404);
+  assert.equal(config.pricing.staticSamples,360);assert.equal(config.pricing.dynamicSamples,480);
+  const missingPrice=await f.request(cookie,'/api/sticker-projects',{...body,pricingHash:undefined});assert.equal(missingPrice.status,409);assert.equal(f.providerState.calls,0);
   const first=await f.request(cookie,'/api/sticker-projects',body);assert.equal(first.status,202,await first.clone().text());const sent:any=await first.json(),id=sent.project.id;
   const duplicate=await f.request(cookie,'/api/sticker-projects',body);assert.equal(duplicate.status,202);assert.equal((await duplicate.json() as any).state.stickerJobId,sent.state.stickerJobId);
   assert.equal((await f.request(other,'/api/sticker-projects/'+id)).status,404);
@@ -59,7 +61,11 @@ test('real HTTP, image provider fixture, queue and static delivery require expli
   assert.deepEqual(Buffer.from(await(await f.request(cookie,upload.media.find((m:any)=>m.id===referenceMediaId).url)).arrayBuffer()),original,'request conversion must not rewrite the stored source');
   assert.equal((await f.request(cookie,view.project.samples[0].thumbnailUrl)).status,200);assert.equal((await f.request(other,view.project.samples[0].thumbnailUrl)).status,404);
   assert.equal((await f.request(cookie,'/api/sticker-projects/'+id+'/approve',{previewHash:'f'.repeat(64),makeVideo:false,bgm:false})).status,409);
-  const approve={previewHash:view.project.previewHash,makeVideo:process.env.QINGJIAN_STICKER_RENDER_TEST==='1',bgm:true},batch=await f.request(cookie,'/api/sticker-projects/'+id+'/approve',approve);assert.equal(batch.status,202,await batch.clone().text());const batchReceipt:any=await batch.json();
+  const sampleCredits:any=await(await f.request(cookie,'/api/credits')).json();assert.equal(sampleCredits.wallet.balance,1640);assert.equal(sampleCredits.wallet.totalSpent,360);assert.equal(sampleCredits.wallet.reserved,undefined);
+  const quote:any=await(await f.request(cookie,'/api/sticker-projects/'+id+'/quote?phase=batch')).json();assert.equal(quote.imageCount,21);assert.equal(quote.points,2520);assert.equal((await f.request(other,'/api/sticker-projects/'+id+'/quote?phase=batch')).status,404);
+  const insufficient=await f.request(cookie,'/api/sticker-projects/'+id+'/approve',{pricingHash:quote.pricingHash,previewHash:view.project.previewHash,makeVideo:false,bgm:false});assert.equal(insufficient.status,402);assert.equal(f.providerState.calls,3);
+  assert.equal((await f.request(cookie,'/api/credits/check-in',{date:sampleCredits.wallet.checkInDate})).status,200);
+  const approve={pricingHash:quote.pricingHash,previewHash:view.project.previewHash,makeVideo:process.env.QINGJIAN_STICKER_RENDER_TEST==='1',bgm:true},batch=await f.request(cookie,'/api/sticker-projects/'+id+'/approve',approve);assert.equal(batch.status,202,await batch.clone().text());const batchReceipt:any=await batch.json();
   const finished=await waitJob(batchReceipt.state.stickerJobId),artifact=finished.artifacts.find((a:any)=>a.kind==='sticker-pack');assert.ok(artifact);assert.equal(artifact.sticker.mode,'static');assert.equal(f.providerState.calls,24,'approved samples must be reused');
   const repeated=await f.request(cookie,'/api/sticker-projects/'+id+'/approve',approve);assert.equal(repeated.status,202);assert.equal((await repeated.json() as any).state.stickerJobId,batchReceipt.state.stickerJobId);assert.equal(f.providerState.calls,24);
   const result=await f.request(cookie,artifact.downloadUrl),entries=zipEntries(Buffer.from(await result.arrayBuffer()));assert.equal(entries.size,29);assert.equal([...entries.keys()].filter(k=>k.endsWith('/静态.png')).length,24);assert.equal([...entries.keys()].some(k=>/\.(gif|webp)$/.test(k)),false);
@@ -67,7 +73,7 @@ test('real HTTP, image provider fixture, queue and static delivery require expli
   const packs:any=await(await f.request(cookie,'/api/sticker-packs')).json(),custom=packs.packs.find((p:any)=>p.private);assert.equal(custom.mode,'static');assert.equal(custom.items.length,24);assert.ok(custom.items.every((item:any)=>item.previewUrl.endsWith('/still')));
   assert.equal((await f.request(cookie,'/api/sticker-packs/'+custom.id)).status,200);assert.equal((await f.request(other,'/api/sticker-packs/'+custom.id)).status,404);
   const stranger:any=await(await f.request(other,'/api/sticker-packs')).json();assert.equal(stranger.packs.some((p:any)=>p.id===custom.id),false);
-  const credits:any=await(await f.request(cookie,'/api/credits?offset=0&limit=100')).json();assert.equal(credits.entries.filter((entry:any)=>entry.kind==='usage_pending').length,24);
+  const credits:any=await(await f.request(cookie,'/api/credits?offset=0&limit=100')).json();assert.equal(credits.entries.filter((entry:any)=>entry.imageCount===1).length,24);assert.equal(credits.entries.some((entry:any)=>entry.kind==='usage_pending'),false);assert.equal(credits.wallet.balance,120);assert.equal(credits.wallet.totalSpent,2880);assert.equal(credits.wallet.reserved,undefined);
   const studio=createStickerStudio(f.directory),manifest=await studio.pack('ordinary',custom.id);assert.match(await verifyStickerAssets(manifest!.pack,manifest!.assetsRoot),/^[a-f0-9]{64}$/);
   if(approve.makeVideo){const video=finished.artifacts.find((a:any)=>a.kind==='video');assert.ok(video);assert.equal(video.duration,24);assert.equal(video.hasBgm,true);assert.equal(video.sticker.sourceHash,artifact.sticker.sourceHash);assert.equal(video.sticker.packArtifactId,artifact.id);assert.equal((await f.request(other,video.downloadUrl)).status,404);const project=zipEntries(Buffer.from(await(await f.request(cookie,video.projectUrl)).arrayBuffer())),verification=JSON.parse(project.get('verification.json')!.toString());assert.equal(verification.decodedFrames,720);assert.equal(verification.fullDecode,true);assert.equal(JSON.parse(project.get('config.json')!.toString()).packId,custom.id);}
 });
@@ -96,9 +102,25 @@ test('dynamic generation produces six distinct drawings, ten-frame exports and r
   }finally{await rm(dir,{recursive:true,force:true});}
 });
 
+test('WeChat accounts create without invitations; provider failure releases unused image points',{timeout:60000},async t=>{
+  let f:Awaited<ReturnType<typeof startCreditServer>>;
+  f=await startCreditServer({wechat:true,stickerImages:true,onProviderRequest:async body=>{if(body.image&&f.providerState.calls===2)f.providerState.fail=true;}});t.after(()=>f.close());
+  async function login(code:string){const r=await fetch(f.base+'/api/auth/wechat/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});assert.equal(r.status,201);return r.headers.get('set-cookie')!.split(';')[0];}
+  const cookie=await login('alice-image-credit'),other=await login('bob-image-credit');
+  const config:any=await(await f.request(cookie,'/api/sticker-projects/config')).json(),state:any=await(await f.request(cookie,'/api/sessions',{mode:'work'})).json();
+  const form=new FormData();form.append('files',new Blob([new Uint8Array(png())],{type:'image/png'}),'role.png');
+  const uploaded:any=await(await fetch(f.base+'/api/media',{method:'POST',headers:{Cookie:cookie},body:form})).json();
+  const accepted=await f.request(cookie,'/api/sticker-projects',{sessionId:state.activeSessionId,requestId:'wechat_own_points_001',pricingHash:config.pricing.pricingHash,recipe:{...recipe,referenceMediaId:uploaded.uploadedMediaIds[0]}});assert.equal(accepted.status,202,await accepted.clone().text());
+  const receipt:any=await accepted.json();let finished:any;
+  for(let i=0;i<200;i++){const current:any=await(await f.request(cookie,'/api/state')).json();finished=current.jobs.find((j:any)=>j.id===receipt.state.stickerJobId);if(finished.status==='failed')break;await new Promise(r=>setTimeout(r,100));}
+  assert.equal(finished.status,'failed');const ledger:any=await(await f.request(cookie,'/api/credits')).json();assert.equal(ledger.wallet.balance,1880);assert.equal(ledger.wallet.totalSpent,120);assert.equal(ledger.wallet.reserved,undefined);assert.equal(f.providerState.calls,2);
+  const quote:any=await(await f.request(cookie,'/api/sticker-projects/'+receipt.project.id+'/quote?phase=samples')).json();assert.equal(quote.points,240);assert.equal(quote.imageCount,2);
+  assert.equal((await f.request(other,'/api/sticker-projects/'+receipt.project.id)).status,404);assert.equal((await(await f.request(other,'/api/credits')).json() as any).wallet.balance,2000);
+});
+
 test('studio page submits mode explicitly, preserves request IDs and ignores stale account responses',async()=>{
   const calls:any[]=[],state:any={activeSessionId:'session',sessions:[{id:'session',messages:[]}],media:[],jobs:[],artifacts:[]};let finish:any;
-  const app:any={_generation:1,state,subscribe:()=>()=>{},refresh:async()=>app.state,apply(s:any){app.state=s;},client:{hasSession:()=>true,previewUrl:()=>'',request:async(route:string,body:any)=>{if(route.endsWith('/config'))return {available:true};if(!body)return {projects:[]};calls.push(body);return new Promise(resolve=>{finish=resolve});}}};
+  const app:any={_generation:1,state,subscribe:()=>()=>{},refresh:async()=>app.state,apply(s:any){app.state=s;},client:{hasSession:()=>true,previewUrl:()=>'',request:async(route:string,body:any)=>{if(route.endsWith('/config'))return {available:true,pricing:{pricingHash:'price',staticSamples:360,dynamicSamples:480,pointsPerImage:120}};if(!body)return {projects:[]};calls.push(body);return new Promise(resolve=>{finish=resolve});}}};
   const page=await capturePage('sticker-studio',app,{showShareMenu(){}});page.onLoad({mode:'static'});page.onShow();await new Promise(r=>setTimeout(r,0));
   page.setData({referenceId:'role',name:'我的角色'});const pending=page.start();assert.equal(calls[0].recipe.mode,'static');assert.equal(calls.length,1);await page.start();assert.equal(calls.length,1);
   page.onHide();app._generation++;app.state={...state,activeSessionId:'new'};page.onShow();finish({state,project:{id:'old',samples:[]}});await pending;assert.equal(page.data.project,null);assert.equal(page.data.referenceId,'');assert.equal(page._sessionId,'new');page.onUnload();

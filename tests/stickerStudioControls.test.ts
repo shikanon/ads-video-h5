@@ -12,7 +12,8 @@ async function fixture() {
   let finishRetry:any,failRetry:any;const creations:any[]=[],sessionCreations:any[]=[];
   app.client={hasSession:()=>true,previewUrl:()=>'',request:async(route:string,body:any)=>{
     calls.push(route);
-    if(route.endsWith('/config'))return {available:true};
+    if(route.endsWith('/config'))return {available:true,pricing:{pricingHash:'price',staticSamples:360,dynamicSamples:480,pointsPerImage:120}};
+    if(route.includes('/quote?'))return {pricingHash:'price',points:360,imageCount:3,pointsPerImage:120};
     if(route==='/api/sessions'){sessionCreations.push(body);return {...app.state,activeSessionId:'recovery',sessions:[...app.state.sessions,{id:'recovery',mode:'work',messages:[]}]};}
     if(route==='/api/sticker-projects'){if(!body)return {projects:[project]};creations.push(body);return {project:{...project,id:'new-project',sessionId:body.sessionId,recipe:body.recipe},state:{...app.state,jobs:[...app.state.jobs,{...job,id:'new-job',sessionId:body.sessionId,status:'queued',stickerGenerationTask:{projectId:'new-project',phase:'samples'}}]}};}
     if(route.endsWith('/activate'))return {activeSessionId:'original',sessions:app.state.sessions,jobs:app.state.jobs,media:[],artifacts:[]};
@@ -54,7 +55,7 @@ test('compiled failed-project controls offer a real retry and a visible route ba
 
 test('a rejected retry unlocks its controls and keeps an actionable error instead of leaving the page busy',async()=>{
   const f=await fixture(),page=await capturePage('sticker-studio',f.app,f.platform);page.onLoad({mode:'static'});page.onShow();await waitFor(()=>page.data.projects.length===1);page.openProject({currentTarget:{dataset:{id:'p'}}});
-  const retry=page.retry();assert.equal(page.data.submitting,true);await page.retry();assert.equal(f.calls.filter(c=>c.includes('/retry')).length,1);
+  await waitFor(()=>Boolean(page.data.quote));const retry=page.retry();assert.equal(page.data.submitting,true);await page.retry();assert.equal(f.calls.filter(c=>c.includes('/retry')).length,1);
   f.failRetry(Error('网络暂不可用'));await retry;assert.equal(page.data.submitting,false);assert.match(page.data.error,/网络暂不可用/);assert.equal(page.data.projectJob.retryable,true);
   assert.ok(f.platform.calls.some(c=>c.kind==='toast'&&c.title==='网络暂不可用'));
   page.regenerate();assert.equal(page.data.project,null);assert.equal(f.creations.length,0);page.onUnload();clearTimeout(f.app._cacheTimer);
@@ -81,4 +82,13 @@ test('deleted or archived project conversations retain readable task records and
     assert.equal(f.sessionCreations.length,1);assert.equal(f.sessionCreations[0].mode,'work');assert.equal(f.creations.length,1);assert.equal(f.creations[0].sessionId,'recovery');assert.equal(f.creations[0].recipe.referenceMediaId,'role');assert.equal(f.app._selectedSessionId,'recovery');assert.equal(page.data.project.id,'new-project');assert.equal(page.data.newSessionNeeded,false);assert.equal(page.data.projectSessionUnavailable,false);
     page.onUnload();clearTimeout(f.app._cacheTimer);
   }
+});
+
+
+test('completed samples stay approvable across a billing-only template update without regenerating them',async()=>{
+  const f=await fixture();Object.assign(f.job,{status:'succeeded',template:{id:'qingmao-stickers',skillHash:'before-billing'}});f.project.previewHash='f'.repeat(64);
+  const original=f.app.client.request;f.app.client.request=async(route:string,body:any)=>route.endsWith('/config')?{available:true,templateHash:'with-billing',pricing:{pricingHash:'price'}}:original(route,body);
+  const page=await capturePage('sticker-studio',f.app,f.platform);page.onLoad({mode:'static',projectId:'p'});page.onShow();await waitFor(()=>Boolean(page.data.project&&page.data.quote));
+  assert.equal(page.data.projectTemplateChanged,false);assert.equal(page.data.project.previewHash,f.project.previewHash);assert.equal(f.creations.length,0);assert.equal(f.calls.some(route=>route.includes('/retry')),false);
+  page.onUnload();clearTimeout(f.app._cacheTimer);
 });

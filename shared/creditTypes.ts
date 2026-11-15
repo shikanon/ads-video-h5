@@ -1,5 +1,6 @@
 export interface CreditWallet {
   balance: number;
+  reserved?: number;
   dailyGrant: number;
   registrationGrant: number;
   pointValueRmb: number;
@@ -24,6 +25,13 @@ export interface TokenPrice {
   updatedAt: string;
 }
 
+export interface ImagePrice {
+  modelId: string;
+  rmbPerImage: number;
+  source: string;
+  updatedAt: string;
+}
+
 export interface TokenUsage {
   input: number;
   output: number;
@@ -44,6 +52,8 @@ export interface CreditEntry {
   requestId?: string;
   usage?: TokenUsage;
   price?: TokenPrice;
+  imagePrice?: ImagePrice;
+  imageCount?: number;
   detail?: string;
 }
 
@@ -58,6 +68,7 @@ export interface CreditAccount {
 export interface CreditAdminState {
   accounts: CreditAccount[];
   prices: TokenPrice[];
+  imagePrices: ImagePrice[];
   dailyGrant: number;
   registrationGrant: number;
   pointValueRmb: number;

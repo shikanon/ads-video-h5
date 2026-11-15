@@ -13,7 +13,7 @@ import { throwIfJobCancelled } from './jobExecution';
 import type { StickerGenerationTask } from '../shared/stickerPacks';
 import type { WorkflowEvent } from '../shared/types';
 import { createToolTrace } from './toolTrace';
-import { recordUnpricedImage } from './creditUsage';
+import { recordImageUsage, assertImageBudget } from './creditUsage';
 import { createRequire } from 'node:module';
 import { capture } from './scienceRender';
 import { stickerBackground, stickerBackgroundInstructions, removeStickerBackdrop, stickerFrameFilter, stickerMotionReference, validateStickerMotion } from './stickerBackground';
@@ -88,6 +88,16 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
   }
   return {
     load,pack,view,list,publicPack,folder,previewHash,
+    async pendingImageIds(ownerId:string,task:StickerGenerationTask) {
+      const p=await load(ownerId,task.projectId),ids=task.phase==='samples'?sampleIds:(await loadStickerPack()).items.map(item=>item.id),pending:string[]=[];
+      if(p.generationHash!==await generationHash())throw Object.assign(Error('动作配方已更新，请重新创建并确认样张。'),{status:409});
+      if(p.recipe.mode==='dynamic'){
+        const base=folder(ownerId,p.id),record=await json(path.join(base,'identity-receipt.json')).catch(()=>null);
+        if(!record||record.recipeHash!==p.recipeHash||await fileDigest(path.join(base,'identity.png')).catch(()=>null)!==record.hash)pending.push(p.id+'_identity');
+      }
+      for(const id of ids)try{await receipts(ownerId,p.id,[id]);}catch{pending.push(p.id+'_'+id);}
+      return pending;
+    },
     async create(ownerId: string,sessionId: string,requestId: string,recipe: StickerRecipe,referenceHash: string) {
       const id=stateHash({ownerId,requestId}),base=folder(ownerId,id);await mkdir(base,{recursive:true,mode:0o700});
       return withFileLock(path.join(base,'project-lock'),async()=>{
@@ -129,10 +139,10 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
         let identity=await json(receiptFile).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
         if(!identity)await trace.run('generate_sticker_identity','绘制角色静态底稿',{mode:recipe.mode,modelId:config.modelId},async()=>{
           const prompt=staticPrompt(original.items.find(item=>item.id==='01')!),execution=currentTaskExecution();await execution?.assertModelBudget();
-          const generate=async()=>{const result=await imageGenerator(prompt,config,background.reference,{size:'2048x2048',outputFormat:'png',background:background.background});if(result.mimeType!=='image/png')throw Error('图片模型未返回PNG。');const file=path.join(base,'identity-source.png');await writeFile(file,result.bytes,{mode:0o600});return {file,hash:await fileDigest(file)};};
+          const generate=async()=>{await assertImageBudget(config.modelId,project.id+'_identity');const result=await imageGenerator(prompt,config,background.reference,{size:'2048x2048',outputFormat:'png',background:background.background});if(result.mimeType!=='image/png')throw Error('图片模型未返回PNG。');const file=path.join(base,'identity-source.png');await writeFile(file,result.bytes,{mode:0o600});return {file,hash:await fileDigest(file)};};
           const result=execution?await execution.external('sticker_identity',{recipeHash:project.recipeHash,prompt,modelId:config.modelId},generate,[config.apiKey]):await generate();
           if(await fileDigest(result.file)!==result.hash)throw Error('角色底稿原图记录不一致。');
-          await recordUnpricedImage(config.modelId,project.id+'_identity');
+          await recordImageUsage(config.modelId,project.id+'_identity');
           const source=await readFile(result.file),raw=background.key?removeStickerBackdrop(source,background.key):source;
           if(!hasAvatarAlpha(readAvatarPng(raw)))throw Error('角色底稿没有真实透明背景，请重新制作样张。');
           const rawFile=path.join(base,'identity-transparent.png');await writeFile(rawFile,raw,{mode:0o600});
@@ -154,10 +164,10 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
           const execution=currentTaskExecution();await execution?.assertModelBudget();
           // Six square cells at 832px stay within Seedream Flash's 2K area
           // limit. A 3072x2048 sheet exceeds its 4,624,220-pixel ceiling.
-          const generate=async()=>{const result=await imageGenerator(prompt,config,background.reference,{size:recipe.mode==='dynamic'?'2496x1664':'2048x2048',outputFormat:'png',background:background.background});if(result.mimeType!=='image/png')throw Error('图片模型未返回PNG。');const file=path.join(dir,'source.png');await writeFile(file,result.bytes,{mode:0o600});return {file,hash:await fileDigest(file)};};
+          const generate=async()=>{await assertImageBudget(config.modelId,project.id+'_'+id);const result=await imageGenerator(prompt,config,background.reference,{size:recipe.mode==='dynamic'?'2496x1664':'2048x2048',outputFormat:'png',background:background.background});if(result.mimeType!=='image/png')throw Error('图片模型未返回PNG。');const file=path.join(dir,'source.png');await writeFile(file,result.bytes,{mode:0o600});return {file,hash:await fileDigest(file)};};
           const result=execution?await execution.external('sticker_image_'+id,{recipeHash:project.recipeHash,prompt,modelId:config.modelId},generate,[config.apiKey]):await generate();
           if(await fileDigest(result.file)!==result.hash)throw Error('模型原图记录不一致。');
-          await recordUnpricedImage(config.modelId,project.id+'_'+id);
+          await recordImageUsage(config.modelId,project.id+'_'+id);
           const source=await readFile(result.file),raw=background.key?removeStickerBackdrop(source,background.key):source;let frames:Buffer[];
           if(background.key)await writeFile(path.join(dir,'transparent.png'),raw,{mode:0o600});
           if(recipe.mode==='dynamic'){frames=compileSpriteSheet(raw,{columns:3,rows:2,frameCount:6,fps:6}).frames;validateStickerMotion(frames);}

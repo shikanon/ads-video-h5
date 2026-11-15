@@ -1,11 +1,11 @@
 const { appearanceData } = require('../../utils/appearance');
 const { withSession, hide, requireLogin, privacy } = require('../../utils/page');
-const { shareAppMessage } = require('../../utils/share');
+const { stickerTemplateShare } = require('../../utils/share');
 const { active } = require('../../utils/view');
 const { loadThumbnails } = require('../../utils/thumbnails');
 const captions = ['今天，电量有点低。', '那就，陪陪我嘛。', '摸摸头，烦恼退退。', '手给你，一起走呀。', '再靠近，一点点。', '好啦，又心动了。'];
 Page({
-  onShareAppMessage: shareAppMessage,
+  onShareAppMessage: stickerTemplateShare,
   data: Object.assign(appearanceData(), { pack: null, items: [], scenes: [], selected: null, title: '被你哄好的一天', makeVideo: true, bgm: true, loading: false, submitting: false, saving: false, busy: false, result: null, error: '', previewError: false }),
   onLoad(query) { this._sessionId = query.sessionId || ''; this._artifactId = query.artifactId || ''; this._packId=query.packId||''; },
   onShow() {
