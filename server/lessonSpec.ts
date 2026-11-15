@@ -22,6 +22,7 @@ function durationNumber(value:string):number {
 }
 
 export function lessonSettings(prompt:string):{requestedSeconds:number;explicitDuration:boolean;format:Format}{
+  if(prompt.includes('[轻喵模板:daily-ai-frontier]'))prompt=prompt.split('[轻喵模板:daily-ai-frontier]')[0];
   prompt=intentText(prompt);
   const times=[...prompt.matchAll(/(\d+(?:\.\d+)?|半|[零〇一二两三四五六七八九十百]+)\s*[-–]?\s*(秒|分钟|minutes?\b|seconds?\b|min\b|s\b)/gi)].filter(match=>!/(?:停顿|间隔|转场|入场|出场|片尾空白|transition|pause)[^，。；,;.]{0,10}$/i.test(prompt.slice(Math.max(0,match.index!-24),match.index)));
   const time=times.at(-1);const requestedSeconds=time?durationNumber(time[1])*(/分钟|minute|min/i.test(time[2])?60:1):wantsCurrentResearch(prompt)?45:/从浅入深|由浅入深|变迁史|evolution|history/i.test(prompt)?240:180;
@@ -32,6 +33,7 @@ export function lessonSettings(prompt:string):{requestedSeconds:number;explicitD
   return {requestedSeconds,explicitDuration:Boolean(time),format};
 }
 export function lessonPacing(prompt:string):LessonPacing{
+  if(prompt.includes('[轻喵模板:daily-ai-frontier]'))prompt=prompt.split('[轻喵模板:daily-ai-frontier]')[0];
   const cues:Array<{mode:LessonPacing['mode'];at:number}>=[];
   for(const [mode,pattern] of [['deliberate',/慢一点|慢一些|慢些|放慢语速|慢速讲解/g],['brisk',/更快|快一点|快一些|加快语速|语速.{0,3}快|节奏紧凑|不拖沓|不要拖|快节奏|语速有些慢|语速太慢|有些拖|有点拖/g],['standard',/不要太快|别太快/g]] as const){
     for(const match of prompt.matchAll(pattern)){if(/(?:不要|别)\s*$/.test(prompt.slice(Math.max(0,match.index!-4),match.index)))continue;cues.push({mode,at:match.index!});}
@@ -133,6 +135,7 @@ export function validateLesson(report:LessonReport,prompt:string,plannedPacing?:
   if(!Array.isArray(report.chapters)||report.chapters.length<3||report.chapters.length>24||new Set(report.chapters.map(c=>c.id)).size!==report.chapters.length)throw new Error('教学需要3–24个不同章节。');
   const errors:string[]=[];
   const characters=report.chapters.reduce((n,c)=>n+compactSpeech(c.narration).length,0);
+  if(prompt.includes('[\u8f7b\u55b5\u6a21\u677f:daily-ai-frontier]')){if(report.chapters.length<4||report.chapters.length>6)errors.push('AI\u524d\u6cbf\u77ed\u7247\u9700\u89814-6\u4e2a\u573a\u666f\u3002');if(compactSpeech(report.chapters[0].narration).length>24)errors.push('\u5f00\u573a\u53e3\u64ad\u6700\u591a24\u5b57\uff0c\u5148\u76f4\u63a5\u8bb2\u95ee\u9898\u6216\u7ed3\u679c\u3002');if(characters>220&&settings.requestedSeconds<=40)errors.push('\u77ed\u7247\u65c1\u767d\u8d85\u8fc7220\u5b57\uff0c\u8bf7\u7cbe\u7b80\u91cd\u590d\u89e3\u91ca\u3002');}
   const estimate=characters/pacing.targetCharactersPerSecond+lessonPadding(report.chapters.length,pacing);
   if(estimate-settings.requestedSeconds>Math.max(8,settings.requestedSeconds*.12)||settings.requestedSeconds-estimate>Math.max(pacing.mode==='brisk'?4:8,settings.requestedSeconds*(pacing.mode==='brisk'?.15:.28))){
     const budget=lessonScriptBudget(settings.requestedSeconds,pacing,report.chapters.length),delta=characters-budget.totalCharacters;

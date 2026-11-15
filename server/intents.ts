@@ -1,6 +1,6 @@
 import type { ChatMessage, JobKind, LessonReport } from '../src/types';
 
-export const intentText = (text:string) => text.normalize('NFKC').replace(/\s+/g,' ').trim();
+export const intentText = (text:string) => text.split('[轻喵模板:daily-ai-frontier]')[0].normalize('NFKC').replace(/\s+/g,' ').trim();
 
 // ASR often omits punctuation. An excluded feature immediately followed by a
 // positive action ("不要旁白或音乐直接导出") must not negate that action. Keep

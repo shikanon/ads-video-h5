@@ -1,0 +1,101 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { PNG } from 'pngjs';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { inflateRawSync } from 'node:zlib';
+import { createStickerStudio, validateStickerRecipe } from '../server/stickerStudio';
+import { stateHash } from '../server/durableState';
+import { startCreditServer } from './fixtures/creditServer';
+import { capturePage } from './fixtures/nativeClient';
+import { verifyStickerAssets, defaultStickerTask } from '../server/stickerPacks';
+import { runStickerWorkflow } from '../server/stickerWorkflow';
+import { createRequire } from 'node:module';
+import { capture } from '../server/scienceRender';
+const recipe={referenceMediaId:'role',name:'新角色',style:'保留角色原有服装，柔彩Q版',mode:'static' as const};
+function png(){const p=new PNG({width:128,height:128});for(let y=25;y<105;y++)for(let x=30;x<95;x++){const i=(y*128+x)*4;p.data[i]=190;p.data[i+1]=80;p.data[i+2]=40;p.data[i+3]=255;}return PNG.sync.write(p);}
+function zipEntries(bytes:Buffer){const files=new Map<string,Buffer>();for(let offset=0;bytes.readUInt32LE(offset)===0x04034b50;){const size=bytes.readUInt32LE(offset+18),n=bytes.readUInt16LE(offset+26),extra=bytes.readUInt16LE(offset+28),start=offset+30+n+extra;files.set(bytes.toString('utf8',offset+30,offset+30+n),inflateRawSync(bytes.subarray(start,start+size)));offset=start+size;}return files;}
+
+test('project recipes, idempotency, approval fingerprint and account boundaries are enforced',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'sticker-studio-')),studio=createStickerStudio(dir);
+  try{
+    assert.deepEqual(validateStickerRecipe(recipe),recipe);
+    for(const invalid of [{...recipe,mode:'gif'},{...recipe,style:''},{...recipe,referenceMediaId:'../other'},{...recipe,extra:'path'}])assert.throws(()=>validateStickerRecipe(invalid));
+    const p=await studio.create('one','session','request',recipe,'hash'),again=await studio.create('one','session','request',recipe,'hash');assert.equal(p.id,again.id);
+    await assert.rejects(()=>studio.create('one','session','request',{...recipe,name:'changed'},'hash'),/变化/);
+    await assert.rejects(()=>studio.load('two',p.id),/不存在/);await assert.rejects(()=>studio.load('one','../escape'),/不存在/);
+    await assert.rejects(()=>studio.approve('one',p.id,'forged'));assert.equal((await studio.view('one',p.id)).approved,false);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('real HTTP, image provider fixture, queue and static delivery require explicit samples approval',{timeout:180000},async t=>{
+  const f=await startCreditServer({stickerImages:true});t.after(()=>f.close());const cookie=await f.login(),other=await f.login('shikanon@example.test');
+  assert.equal((await fetch(f.base+'/api/sticker-projects')).status,401);
+  const created=await f.request(cookie,'/api/sessions',{mode:'work'}),state:any=await created.json(),sessionId=state.activeSessionId;
+  const form=new FormData();form.append('files',new Blob([new Uint8Array(png())],{type:'image/png'}),'role.png');
+  const uploaded=await fetch(f.base+'/api/media',{method:'POST',headers:{Cookie:cookie},body:form});assert.equal(uploaded.status,200);const upload:any=await uploaded.json();
+  const referenceMediaId=upload.uploadedMediaIds[0],body={sessionId,requestId:'phase2_static_request_0001',recipe:{...recipe,referenceMediaId}};
+  const denied=await f.request(other,'/api/sticker-projects',body);assert.equal(denied.status,404);
+  const first=await f.request(cookie,'/api/sticker-projects',body);assert.equal(first.status,202,await first.clone().text());const sent:any=await first.json(),id=sent.project.id;
+  const duplicate=await f.request(cookie,'/api/sticker-projects',body);assert.equal(duplicate.status,202);assert.equal((await duplicate.json() as any).state.stickerJobId,sent.state.stickerJobId);
+  assert.equal((await f.request(other,'/api/sticker-projects/'+id)).status,404);
+  async function waitJob(jobId:string){for(let i=0;i<600;i++){const s:any=await(await f.request(cookie,'/api/state').catch(error=>{throw new Error(JSON.stringify(f.diagnostics()),{cause:error});})).json(),job=s.jobs.find((j:any)=>j.id===jobId);if(['succeeded','failed','cancelled'].includes(job.status)){assert.equal(job.status,'succeeded',JSON.stringify({error:job.error,failure:job.failure,diagnostics:f.diagnostics()}));return s;}await new Promise(r=>setTimeout(r,200));}throw Error('Job did not finish');}
+  assert.equal((await f.request(cookie,'/api/sticker-projects/'+id+'/approve',{previewHash:'f'.repeat(64),makeVideo:false,bgm:false})).status,409);
+  await waitJob(sent.state.stickerJobId);const view:any=await(await f.request(cookie,'/api/sticker-projects/'+id)).json();assert.equal(view.project.samples.length,3);assert.equal(view.project.approved,false);assert.equal(view.project.ready,false);assert.equal(f.providerState.calls,3);
+  assert.equal((await f.request(cookie,view.project.samples[0].thumbnailUrl)).status,200);assert.equal((await f.request(other,view.project.samples[0].thumbnailUrl)).status,404);
+  assert.equal((await f.request(cookie,'/api/sticker-projects/'+id+'/approve',{previewHash:'f'.repeat(64),makeVideo:false,bgm:false})).status,409);
+  const approve={previewHash:view.project.previewHash,makeVideo:process.env.QINGJIAN_STICKER_RENDER_TEST==='1',bgm:true},batch=await f.request(cookie,'/api/sticker-projects/'+id+'/approve',approve);assert.equal(batch.status,202,await batch.clone().text());const batchReceipt:any=await batch.json();
+  const finished=await waitJob(batchReceipt.state.stickerJobId),artifact=finished.artifacts.find((a:any)=>a.kind==='sticker-pack');assert.ok(artifact);assert.equal(artifact.sticker.mode,'static');assert.equal(f.providerState.calls,24,'approved samples must be reused');
+  const repeated=await f.request(cookie,'/api/sticker-projects/'+id+'/approve',approve);assert.equal(repeated.status,202);assert.equal((await repeated.json() as any).state.stickerJobId,batchReceipt.state.stickerJobId);assert.equal(f.providerState.calls,24);
+  const result=await f.request(cookie,artifact.downloadUrl),entries=zipEntries(Buffer.from(await result.arrayBuffer()));assert.equal(entries.size,29);assert.equal([...entries.keys()].filter(k=>k.endsWith('/静态.png')).length,24);assert.equal([...entries.keys()].some(k=>/\.(gif|webp)$/.test(k)),false);
+  assert.equal((await f.request(other,artifact.downloadUrl)).status,404);assert.equal((await f.request(cookie,artifact.coverUrl)).status,200);
+  const packs:any=await(await f.request(cookie,'/api/sticker-packs')).json(),custom=packs.packs.find((p:any)=>p.private);assert.equal(custom.mode,'static');assert.equal(custom.items.length,24);assert.ok(custom.items.every((item:any)=>item.previewUrl.endsWith('/still')));
+  assert.equal((await f.request(cookie,'/api/sticker-packs/'+custom.id)).status,200);assert.equal((await f.request(other,'/api/sticker-packs/'+custom.id)).status,404);
+  const stranger:any=await(await f.request(other,'/api/sticker-packs')).json();assert.equal(stranger.packs.some((p:any)=>p.id===custom.id),false);
+  const credits:any=await(await f.request(cookie,'/api/credits?offset=0&limit=100')).json();assert.equal(credits.entries.filter((entry:any)=>entry.kind==='usage_pending').length,24);
+  const studio=createStickerStudio(f.directory),manifest=await studio.pack('ordinary',custom.id);assert.match(await verifyStickerAssets(manifest!.pack,manifest!.assetsRoot),/^[a-f0-9]{64}$/);
+  if(approve.makeVideo){const video=finished.artifacts.find((a:any)=>a.kind==='video');assert.ok(video);assert.equal(video.duration,24);assert.equal(video.hasBgm,true);assert.equal(video.sticker.sourceHash,artifact.sticker.sourceHash);assert.equal(video.sticker.packArtifactId,artifact.id);assert.equal((await f.request(other,video.downloadUrl)).status,404);const project=zipEntries(Buffer.from(await(await f.request(cookie,video.projectUrl)).arrayBuffer())),verification=JSON.parse(project.get('verification.json')!.toString());assert.equal(verification.decodedFrames,720);assert.equal(verification.fullDecode,true);assert.equal(JSON.parse(project.get('config.json')!.toString()).packId,custom.id);}
+});
+
+test('dynamic generation produces six distinct drawings, ten-frame exports and refuses changed approval assets',{timeout:180000},async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'sticker-dynamic-')),reference={bytes:png(),mimeType:'image/png'};let calls=0;
+  const fixture=async()=>{calls++;const p=new PNG({width:384,height:256});for(let n=0;n<6;n++)for(let y=25;y<105;y++)for(let x=30;x<95;x++){const i=((Math.floor(n/3)*128+y)*384+n%3*128+x)*4;p.data[i]=140+n*12;p.data[i+1]=60;p.data[i+2]=30;p.data[i+3]=255;}return {bytes:PNG.sync.write(p),mimeType:'image/png'};};
+  const studio=createStickerStudio(dir,fixture),model:any={modelId:'fixture-image',apiKey:'fixture-secret'},project=await studio.create('one','session','dynamic-request',{...recipe,mode:'dynamic'},stateHash(reference.bytes.toString('base64')));
+  try {
+    await assert.rejects(()=>studio.generate('one',{projectId:project.id,phase:'batch',makeVideo:false,bgm:false},reference,model,async()=>{}),/确认/);
+    const task={projectId:project.id,phase:'samples' as const,makeVideo:false,bgm:false};await studio.generate('one',task,reference,model,async()=>{});assert.equal(calls,3);
+    const view=await studio.view('one',project.id);assert.match(view.previewHash,/^[a-f0-9]{64}$/);await studio.approve('one',project.id,view.previewHash);
+    await studio.generate('one',task,reference,model,async()=>{});assert.equal(calls,3,'retries reuse verified model outputs');
+    const base=path.join(studio.folder('one',project.id),'assets','pack','01'),probe=createRequire(import.meta.url)('ffprobe-static').path;
+    for(const name of ['animation.gif','animation.png']){const report=JSON.parse((await capture(probe,['-v','error','-count_frames','-show_streams','-of','json',path.join(base,name)])).toString());assert.equal(Number(report.streams[0].nb_read_frames),10);assert.equal(report.streams[0].width,512);assert.equal(report.streams[0].height,512);}
+    const bytes=await readFile(path.join(base,'animation.webp'));assert.ok(bytes.includes(Buffer.from('ANIM')));assert.ok(bytes.includes(Buffer.from('ANMF')));
+    const image=PNG.sync.read(await readFile(path.join(base,'still.png')));assert.equal(image.data[3],0);
+    const batch={...task,phase:'batch' as const,approvalHash:view.previewHash};
+    await assert.rejects(()=>studio.generate('one',batch,reference,{...model,modelId:'changed'},async()=>{}),/切换/);assert.equal(calls,3);
+    await studio.generate('one',batch,reference,model,async()=>{});assert.equal(calls,24);
+    const built=await studio.pack('one','custom-'+project.id);assert.ok(built);await verifyStickerAssets(built.pack,built.assetsRoot);
+    const delivered=await runStickerWorkflow({...built,task:{...defaultStickerTask(built.pack),makeVideo:false},directory:path.join(dir,'delivery'),progress:async()=>{}});
+    const entries=zipEntries(await readFile(delivered.archive));assert.equal(entries.size,101);assert.ok(entries.has('贴贴/动画.gif'));assert.ok(entries.has('心动/动画-APNG.png'));
+    await studio.generate('one',batch,reference,model,async()=>{});assert.equal(calls,24);
+    await writeFile(path.join(base,'still.png'),png());await assert.rejects(()=>studio.generate('one',batch,reference,model,async()=>{}));assert.equal(calls,24,'changed approvals stop before a paid call');
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('studio page submits mode explicitly, preserves request IDs and ignores stale account responses',async()=>{
+  const calls:any[]=[],state:any={activeSessionId:'session',sessions:[],media:[],jobs:[],artifacts:[]};let finish:any;
+  const app:any={_generation:1,state,subscribe:()=>()=>{},refresh:async()=>app.state,apply(s:any){app.state=s;},client:{hasSession:()=>true,previewUrl:()=>'',request:async(route:string,body:any)=>{if(route.endsWith('/config'))return {available:true};if(!body)return {projects:[]};calls.push(body);return new Promise(resolve=>{finish=resolve});}}};
+  const page=await capturePage('sticker-studio',app,{showShareMenu(){}});page.onLoad({mode:'static'});page.onShow();await new Promise(r=>setTimeout(r,0));
+  page.setData({referenceId:'role',name:'我的角色'});const pending=page.start();assert.equal(calls[0].recipe.mode,'static');assert.equal(calls.length,1);await page.start();assert.equal(calls.length,1);
+  page.onHide();app._generation++;app.state={...state,activeSessionId:'new'};page.onShow();finish({state,project:{id:'old',samples:[]}});await pending;assert.equal(page.data.project,null);assert.equal(page.data.referenceId,'');assert.equal(page._sessionId,'new');page.onUnload();
+});
+
+test('private pack preview and ZIP sharing cannot complete after an account switch',async()=>{
+  const state:any={activeSessionId:'a',sessions:[{id:'a'}],jobs:[],artifacts:[{id:'bundle',kind:'sticker-pack',name:'私有套装',downloadUrl:'/private.zip',sticker:{packId:'custom-owned'}}]};
+  const pack:any={id:'custom-owned',private:true,mode:'static',name:'自己的角色',count:24,defaultSceneIds:['01','02','03','04','05','06'],items:Array.from({length:24},(_,n)=>({id:String(n+1).padStart(2,'0'),name:'动作'+n,thumbnailUrl:'',previewUrl:'/private-preview'}))};
+  let finish:any,shared=0;
+  const app:any={_generation:1,state,subscribe:()=>()=>{},refresh:async()=>app.state,client:{hasSession:()=>true,request:async()=>({packs:[pack]}),cachedDownload:()=>'',download:()=>new Promise(resolve=>{finish=resolve})}};
+  const page=await capturePage('stickers',app,{showShareMenu(){},shareFileMessage(){shared++;}});page.onLoad({artifactId:'bundle'});page.onShow();await new Promise(r=>setTimeout(r,0));
+  const preview=page.preview({currentTarget:{dataset:{id:'01'}}});page.onHide();app._generation++;page.onShow();finish('old-private-image');await preview;assert.equal(page.data.selected,null);
+  page._artifact=state.artifacts[0];const download=page.download();await new Promise(r=>setTimeout(r,0));page.onHide();app._generation++;finish('old-private.zip');await download;assert.equal(shared,0);page.onUnload();
+});

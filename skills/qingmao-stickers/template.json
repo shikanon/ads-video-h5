@@ -2,9 +2,9 @@
   "id": "qingmao-stickers",
   "name": "动态表情套装",
   "description": "复用轻喵24套透明动态表情，可同步制作带音乐的故事分享视频。",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "workflow": "sticker-pack",
-  "contextFiles": [],
+  "contextFiles": ["references/generation.md"],
   "defaults": {"width":1080,"height":1440,"fps":30,"seconds":24,"panels":0,"narration":false,"bgm":true},
   "sample": {"title":"被你哄好的一天","source":{"author":"轻喵原创","url":"","galleryUrl":""}},
   "testCases": [{"id":"affection-story","name":"表情套装与分享视频","prompt":"@动态表情套装 制作轻喵第2弹表情套装，并同步生成被你哄好的一天分享视频"}]

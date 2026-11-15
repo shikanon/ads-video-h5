@@ -264,7 +264,7 @@ test('every native WXML page renders with the official component compiler and ha
   gallery.attach(document.createElement('div'));
   gallery.instance.onShow();
   await simulate.sleep(0);
-  assert.equal(gallery.data.cards.length, 2);
+  assert.equal(gallery.data.cards.length, 8);
   assert.equal(gallery.data.preview, null);
   gallery.querySelector('.sample-preview-button').dispatchEvent('tap');
   await simulate.sleep(0);

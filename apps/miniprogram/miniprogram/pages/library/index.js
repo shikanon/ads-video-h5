@@ -19,6 +19,10 @@ Page({
   onHide() { hide(this); }, onUnload() { hide(this); },
   render(state) {
     const films = this.data.section === 'films';
+    const source = films ? state.artifacts : state.media.filter(item => !item.character && (this.data.collection === 'clips' ? Boolean(item.archive) && collectionOf(item) === 'library' : collectionOf(item) === this.data.collection));
+    const kindFilters = [{ id: 'all', name: '全部' }, { id: 'video', name: '视频' }, { id: 'image', name: '图片' }, { id: 'audio', name: '音频' }].concat(films ? [{ id: 'sticker-pack', name: '表情包' }, { id: 'game', name: '游戏' }] : []);
+    const kindCounts = { all: source.length }; for (const item of source) kindCounts[item.kind] = (kindCounts[item.kind] || 0) + 1;
+    this.setData({ kindFilters, kindCounts });
     this.setData({ materialCount: state.media.filter(item => !item.character && collectionOf(item) === 'library').length, filmCount: state.artifacts.length });
     if (films) {
       const needle = this.data.query.trim().toLowerCase();
@@ -45,6 +49,20 @@ Page({
   collection(event) { this._limit = 30; this.setData({ collection: event.currentTarget.dataset.collection }); this.render(getApp().state || guestState()); },
   search(event) { this._limit = 30; this.setData({ query: event.detail.value }); this.render(getApp().state || guestState()); },
   film(event) { wx.navigateTo({ url: '/pages/film/index' + (event.currentTarget.dataset.id ? '?id=' + encodeURIComponent(event.currentTarget.dataset.id) : '') }); },
+  async itemMenu(event) {
+    const item = this.data.items.find(item => item.id === event.currentTarget.dataset.id); if (!item) return;
+    const app = getApp(), generation = app._generation, section = this.data.section;
+    const options = [{ name: '预览', run: () => this.play(event) }];
+    if (section === 'materials') {
+      if (!item.production) options.push({ name: '用来创作', run: () => this.use(event) });
+      if (item.kind === 'video' && !item.production) options.push({ name: '拉片分析', run: () => this.film(event) });
+      if (item.production || item.productionSource) options.push({ name: item.production ? '恢复到可用素材' : '移到制作归档', run: () => this.moveCollection({ currentTarget: { dataset: { id: item.id, collection: item.production ? 'library' : 'production' } } }) });
+      options.push({ name: '删除素材', run: () => this.remove(event) });
+    }
+    const index = await new Promise(resolve => wx.showActionSheet({ itemList: options.map(option => option.name), success: result => resolve(result.tapIndex), fail: () => resolve(-1) }));
+    if (!this._visible || app._generation !== generation || this.data.section !== section || !this.data.items.some(current => current.id === item.id)) return;
+    if (options[index]) return options[index].run();
+  },
   async moveCollection(event) { if (!requireLogin()) return; if (!getApp().state.features || !getApp().state.features.filmAnalysis) { notify(new Error('当前服务暂不支持保存素材归档位置。')); return; } try { await getApp().mutate('/api/media/' + encodeURIComponent(event.currentTarget.dataset.id) + '/collection', { collection: event.currentTarget.dataset.collection }, 'PATCH'); wx.showToast({ title: '已更新归档位置', icon: 'none' }); } catch (error) { notify(error); } },
   more() { this._limit += 30; this.render(getApp().state || guestState()); },
   play(event) { wx.navigateTo({ url: '/pages/player/index?type=' + (this.data.section === 'films' ? 'artifact' : 'media') + '&id=' + encodeURIComponent(event.currentTarget.dataset.id) }); },

@@ -180,6 +180,7 @@ export interface LessonPacing {
 }
 
 export interface LessonPresentation {
+    profile?: 'daily-ai';
   mood: 'neutral' | 'urgent';
   bgm: boolean;
 }
@@ -362,6 +363,7 @@ export interface JobAttempt {
 }
 
 export interface Job {
+  stickerGenerationTask?: import('./stickerPacks').StickerGenerationTask;
   stickerTask?: import('./stickerPacks').StickerTask;
   stickerRequestId?: string;
   filmTask?: import('./film').FilmTask;

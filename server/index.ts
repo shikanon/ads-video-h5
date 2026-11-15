@@ -4,7 +4,7 @@ import {analyzeFilm,readFilmReport,filmDirectory,reusableShot,removeFilmData} fr
 import {fileDigest} from './artifactIntegrity';
 import type {FilmTask} from '../shared/film';
 import {loadTaskDraft,saveTaskDraft} from './taskDrafts';
-import {acquireFileLock} from './durableState';
+import {acquireFileLock,stateHash} from './durableState';
 import {createTaskSpec,assertTaskRevision,priorTaskSpec} from './taskContract';
 import {withTaskExecution,captureTaskEnvironment,currentTaskExecution} from './taskRuntime';
 import express, { type ErrorRequestHandler, type Response } from 'express';
@@ -87,6 +87,9 @@ import { wantsConversation } from './intents';
 import { mountStickerRoutes, mountStickerSamples } from './stickerRoutes';
 import { defaultStickerTask, loadStickerPack } from './stickerPacks';
 import { runStickerWorkflow } from './stickerWorkflow';
+import { DAILY_AI_TEMPLATE_ID,dailyAiRequest } from './dailyAiTemplate';
+import { createStickerStudio } from './stickerStudio';
+import { mountStickerStudioRoutes } from './stickerStudioRoutes';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.QINGJIAN_DATA_DIR ? path.resolve(process.env.QINGJIAN_DATA_DIR) : path.join(root, 'data');
@@ -101,6 +104,7 @@ const mediaDir = path.join(dataDir, 'media');
 const artifactDir = path.join(dataDir, 'artifacts');
 const exportDir = path.join(dataDir, 'exports');
 const tmpDir = path.join(dataDir, 'uploads');
+const stickerStudio = createStickerStudio(dataDir);
 const videoTemplates = await loadVideoTemplateCatalog();
 const stateFile = path.join(dataDir, 'app-state.json');
 const port = Number(process.env.PORT || 8787);
@@ -215,7 +219,11 @@ async function performJob(job: Job): Promise<void> {
   const message = session?.messages.find((item) => item.id === job.messageId);
   if (!session || !message || session.ownerId !== job.ownerId) throw new Error('会话或消息已不存在，无法处理此任务。');
   const media = state.media.filter((item) => item.ownerId === job.ownerId);
-  const prompt = message.text;
+  const dailyTemplateEntry=job.template?.id===DAILY_AI_TEMPLATE_ID?videoTemplates.find(t=>t.id===DAILY_AI_TEMPLATE_ID):undefined;
+  const dailyTemplate=dailyTemplateEntry?await loadVideoTemplate(dailyTemplateEntry):undefined;
+  if(dailyTemplate&&dailyTemplate.skillHash!==job.template?.skillHash)throw new Error('模板内容已变化，请重新选择模板后提交。');
+  const recentTopics=dailyTemplate?state.artifacts.filter(a=>owned(a,job.ownerId!)&&a.kind==='video'&&Date.parse(a.createdAt)>=Date.parse(message.createdAt)-14*86400000).flatMap(a=>a.plan?.lesson?.title?[a.plan.lesson.title]:[]):[];
+  const prompt = dailyTemplate?dailyAiRequest(message.text,dailyTemplate.context,recentTopics):message.text;
   if(session.plan&&reportsVoiceMismatch(prompt)){recordVoiceRejection(session.plan,media,prompt);await saveState();}
   const history = session.messages.filter((item) => item.createdAt <= message.createdAt);
   const attached = (message.attachmentIds || []).map((id) => media.find((item) => item.id === id)).filter((item): item is MediaItem => Boolean(item));
@@ -302,23 +310,34 @@ async function performJob(job: Job): Promise<void> {
     return;
   }
 
-  if (job.template) {
+  if (job.template && !dailyTemplate) {
     const entry = videoTemplates.find(t=>t.id===job.template!.id);
     const template = entry && await loadVideoTemplate(entry);
     if (!template || template.skillHash!==job.template.skillHash) throw new Error('模板规则已变化，请重新发送制作要求以使用当前版本。');
     if(template.workflow==='sticker-pack') {
+      if(job.stickerGenerationTask) {
+        const generation=job.stickerGenerationTask,project=await stickerStudio.load(job.ownerId!,generation.projectId);
+        const source=media.find(item=>item.id===project.recipe.referenceMediaId&&item.ownerId===job.ownerId&&item.kind==='image');
+        if(!source)throw Error('角色参考图不存在或无权限，请重新上传。');
+        const config=await getModelConfig('image');if(!config)throw Error('图片模型尚未配置。');
+        const file=path.join(mediaDir,source.id);await oss?.ensure(job.ownerId!,'media',source.id,file);
+        const output=await stickerStudio.generate(job.ownerId!,generation,{bytes:await readFile(file),mimeType:source.mimeType},config,workflowProgress);
+        if(output.samples) { addReply(session,job,'3个动作样张已完成。请返回「表情工坊」确认角色、画风和动作，再继续生成24套；样张不会自动扩成整套。');return; }
+      }
       if(!job.stickerTask) {
         addReply(session,job,'请在「模板 → 动态表情套装」中选择6个动作、填写短句，并设置是否同步制作分享视频，再点击开始制作。当前可复用轻喵第2弹24套表情。');
         return;
       }
-      const made=await runStickerWorkflow({task:job.stickerTask,directory:path.join(dataDir,'sticker-projects',job.id,job.attemptId||randomUUID()),progress:workflowProgress,
+      const customPack=await stickerStudio.pack(job.ownerId!,job.stickerTask.packId);
+      const made=await runStickerWorkflow({...customPack,task:job.stickerTask,directory:path.join(dataDir,'sticker-projects',job.id,job.attemptId||randomUUID()),progress:workflowProgress,
         renderProgress:async(frames,total)=>{job.progress=30+Math.round(frames/total*60);job.stage='渲染表情分享视频 · '+Math.round(frames/total*100)+'%';await saveState();}});
       const packId=randomUUID(),videoId=made.rendered?randomUUID():undefined;
-      const delivery={packId:made.pack.id,packVersion:made.pack.version,sourceHash:made.sourceHash,count:made.pack.items.length,sceneIds:made.task.sceneIds,videoId,task:made.task};
+      const delivery={mode:made.pack.mode||'dynamic' as const,packId:made.pack.id,packVersion:made.pack.version,sourceHash:made.sourceHash,count:made.pack.items.length,sceneIds:made.task.sceneIds,videoId,task:made.task};
       const packFile=packId+'.zip',destinations=[path.join(artifactDir,packFile)];
       const uploads:Array<{category:AssetCategory;id:string;file:string;mime:string}>=[{category:'artifacts',id:packId,file:destinations[0],mime:'application/zip'}];
       try {
         await copyFile(made.archive,destinations[0]);
+        if(customPack){const cover=path.join(exportDir,`${packId}-cover.png`);destinations.push(cover);await copyFile(path.join(customPack.assetsRoot,'poster.png'),cover);uploads.push({category:'covers',id:packId,file:cover,mime:'image/png'});}
         if(made.rendered&&videoId) {
           for(const [source,file,category,key,mime] of [
             [made.rendered.file,`${videoId}.mp4`,'exports',videoId,'video/mp4'],
@@ -337,10 +356,10 @@ async function performJob(job: Job): Promise<void> {
         if(oss)await Promise.allSettled(uploads.map(upload=>oss.remove(job.ownerId!,upload.category,upload.id)));
         throw error;
       }
-      const packArtifact:Artifact={id:packId,ownerId:job.ownerId,sessionId:session.id,messageId:job.messageId,kind:'sticker-pack',name:made.pack.name+'-表情套装.zip',url:`/api/artifacts/${packId}`,downloadUrl:`/api/download/${packId}`,coverUrl:'/api/templates/qingmao-stickers/sample/poster',createdAt:now(),version:state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='sticker-pack').length+1,sticker:delivery};
+      const packArtifact:Artifact={id:packId,ownerId:job.ownerId,sessionId:session.id,messageId:job.messageId,kind:'sticker-pack',name:made.pack.name+(made.pack.mode==='static'?'-静态表情套装.zip':'-动态表情套装.zip'),url:`/api/artifacts/${packId}`,downloadUrl:`/api/download/${packId}`,coverUrl:customPack?`/api/artifacts/${packId}/cover`:'/api/templates/qingmao-stickers/sample/poster',...(customPack?{coverMimeType:'image/png'}:{}),createdAt:now(),version:state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='sticker-pack').length+1,sticker:delivery};
       state.artifacts.push(packArtifact);state.artifactFiles[packId]=packFile;
-      if(made.rendered&&videoId)state.artifacts.push({id:videoId,ownerId:job.ownerId,sessionId:session.id,messageId:job.messageId,kind:'video',name:made.task.title+'.mp4',url:`/api/artifacts/${videoId}`,downloadUrl:`/api/download/${videoId}`,projectUrl:`/api/artifacts/${videoId}/project`,coverUrl:`/api/artifacts/${videoId}/cover`,coverMimeType:'image/png',createdAt:now(),version:state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1,duration:24,hasNarration:false,hasBgm:made.task.bgm,sticker:{...delivery,packArtifactId:packId,width:1080,height:1440},template:{...job.template,panels:0,technicalPassed:true,userAccepted:false,boundary:'复用已确认的轻喵第2弹动态表情，1080×1440分享视频。',basis:[],animationMode:'code',sourceHash:made.sourceHash},workflow:structuredClone(job.workflow)});
-      const reply=`已保存24套动态表情及专辑配套素材${videoId?'，并使用同一批序列帧制作《'+made.task.title+'》：24秒，1080×1440'+(made.task.bgm?'，带音乐':'，无配乐')+'。视频、封面和可编辑工程已保存，技术检查通过，待你审阅。':'。可在资源中预览表情或下载套装，之后继续制作分享视频。'}`;
+      if(made.rendered&&videoId)state.artifacts.push({id:videoId,ownerId:job.ownerId,sessionId:session.id,messageId:job.messageId,kind:'video',name:made.task.title+'.mp4',url:`/api/artifacts/${videoId}`,downloadUrl:`/api/download/${videoId}`,projectUrl:`/api/artifacts/${videoId}/project`,coverUrl:`/api/artifacts/${videoId}/cover`,coverMimeType:'image/png',createdAt:now(),version:state.artifacts.filter(a=>a.sessionId===session.id&&a.kind==='video').length+1,duration:24,hasNarration:false,hasBgm:made.task.bgm,sticker:{...delivery,packArtifactId:packId,width:1080,height:1440},template:{...job.template,panels:0,technicalPassed:true,userAccepted:false,boundary:'复用已确认的'+(made.pack.mode==='static'?'静态':'动态')+'表情素材，1080×1440分享视频。',basis:[],animationMode:'code',sourceHash:made.sourceHash},workflow:structuredClone(job.workflow)});
+      const reply=`已保存24套${made.pack.mode==='static'?'静态':'动态'}表情及专辑配套素材${videoId?'，并使用同一批表情素材制作《'+made.task.title+'》：24秒，1080×1440'+(made.task.bgm?'，带音乐':'，无配乐')+'。视频、封面和可编辑工程已保存，技术检查通过，待你审阅。':'。可在资源中预览表情或下载套装，之后继续制作分享视频。'}`;
       addReply(session,job,reply,packId);if(videoId)addReply(session,job,reply,videoId);
       job.artifactId=videoId||packId;await saveState();return;
     }
@@ -577,7 +596,7 @@ async function performJob(job: Job): Promise<void> {
     if (reply) reply.musicSearch = result;
     return;
   }
-  const creationRoute=(job.kind==='plan'||job.kind==='export')?await planCreationRoute({prompt,history,sourceCount:selectedSources().filter(m=>m.kind!=='audio').length,hasPlan:Boolean(session.plan),lesson:session.lessonDraft||session.plan?.lesson,kind:job.kind},async()=>{
+  const creationRoute=dailyTemplate ? {mode:'lesson' as const,export:job.kind==='export',requiresFootage:false,lessonPrompt:prompt} : (job.kind==='plan'||job.kind==='export')?await planCreationRoute({prompt,history,sourceCount:selectedSources().filter(m=>m.kind!=='audio').length,hasPlan:Boolean(session.plan),lesson:session.lessonDraft||session.plan?.lesson,kind:job.kind},async()=>{
     const config=await getModelConfig('text',session.modelId);if(!config)throw new Error('文本模型尚未配置。');return config;
   },basicProgress):undefined;
   if(creationRoute&&creationRoute.mode!=='editing')job.kind=creationRoute.export?'export':'plan';
@@ -596,7 +615,7 @@ async function performJob(job: Job): Promise<void> {
     addReply(session,job,brief.topics.length?`已查证 ${brief.topics.length} 个可制作选题，新闻窗口为近 ${brief.windowHours} 小时。展开选题可看钩子、图解建议与原文依据；指定标题并说“制作热点视频”即可继续。`:'本次没有找到时效与交叉来源同时满足的选题。已保留实际榜单与来源缺口，暂不能据此制作今日热点视频。');
     const reply=session.messages.find(m=>m.role==='assistant'&&m.jobId===job.id);if(reply)reply.research={brief,references:result.references};return;
   }
-  if(job.kind==='export'&&session.plan?.lesson&&!session.plan.lesson.hotResearch&&!shouldUpdatePlan(prompt,true)){
+  if(!dailyTemplate&&job.kind==='export'&&session.plan?.lesson&&!session.plan.lesson.hotResearch&&!shouldUpdatePlan(prompt,true)){
     const plan=structuredClone(session.plan),result=await renderPlan(plan,media,mediaDir,exportDir);
     const review=await reviewRender(result.file,plan,media,prompt+'，字幕和声音一致性检查');
     await oss?.put(job.ownerId!,'exports',result.id,result.file,'video/mp4');
@@ -1052,7 +1071,11 @@ app.get('/api/templates/:id/sample/:kind', (request, response) => {
 mountStickerSamples(app);
 auth.mount(app, credits.readiness, user => credits.snapshot(user.id));
 const startingStickerSessions=new Set<string>();
-mountStickerRoutes(app,{base:publicBase,async start(user,sessionId,requestId,task){
+mountStickerRoutes(app,{base:publicBase,
+  privatePacks:async user=>Promise.all((await stickerStudio.list(user.id)).filter(p=>p.ready).map(p=>stickerStudio.publicPack(user.id,p.id))),
+  privatePack:(user,id)=>stickerStudio.publicPack(user.id,id.slice(7)),
+  resolvePack:async(user,id)=>(await stickerStudio.pack(user.id,id))?.pack,
+  async start(user,sessionId,requestId,task){
   const session=getSession(sessionId,user.id);if(!session)throw Object.assign(new Error('会话不存在。'),{status:404});
   const previous=state.jobs.find(job=>job.ownerId===user.id&&job.stickerRequestId===requestId);
   if(previous){if(previous.sessionId!==sessionId||JSON.stringify(previous.stickerTask)!==JSON.stringify(task))throw Object.assign(new Error('重复请求的参数已变化，请重新提交。'),{status:409});return {...await publicState(user),stickerJobId:previous.id};}
@@ -1064,6 +1087,30 @@ mountStickerRoutes(app,{base:publicBase,async start(user,sessionId,requestId,tas
     await saveState();const response={...await publicState(user),stickerJobId:job.id};void processQueue();return response;
   }finally{startingStickerSessions.delete(session.id);}
 }});
+mountStickerStudioRoutes(app,{studio:stickerStudio,
+  ready:async()=>{const model=await getModelConfig('image');return Boolean(model?.enabled&&/^doubao-seedream-/.test(model.modelId));},
+  reference:async(user,sessionId,recipe)=>{
+    const session=getSession(sessionId,user.id);if(!session||session.archivedAt)throw Object.assign(Error('会话不存在或已归档。'),{status:404});
+    const source=state.media.find(item=>item.id===recipe.referenceMediaId&&owned(item,user.id)&&item.kind==='image');
+    if(!source||!['image/png','image/jpeg','image/webp'].includes(source.mimeType))throw Error('请选择本账号的PNG、JPEG或WebP角色图片。');
+    const file=path.join(mediaDir,source.id);await oss?.ensure(user.id,'media',source.id,file);const bytes=await readFile(file);
+    if(bytes.length>20*1024*1024||!detectImage(bytes))throw Error('角色图片无效或超过20MB。');
+    return stateHash(bytes.toString('base64'));
+  },
+  start:async(user,projectId,task)=>{
+    const project=await stickerStudio.load(user.id,projectId),session=getSession(project.sessionId,user.id);
+    if(!session||session.archivedAt)throw Object.assign(Error('项目会话不存在或已归档，请重新创建。'),{status:404});
+    const previous=state.jobs.find(job=>job.ownerId===user.id&&job.stickerGenerationTask?.projectId===projectId&&job.stickerGenerationTask.phase===task.phase);
+    if(previous){if(JSON.stringify(previous.stickerGenerationTask)!==JSON.stringify(task))throw Object.assign(Error('此阶段已提交不同制作选项，请在完成后另行制作视频。'),{status:409});return {...await publicState(user),stickerJobId:previous.id};}
+    if(startingStickerSessions.has(session.id)||state.jobs.some(job=>job.sessionId===session.id&&isActiveJob(job)))throw Object.assign(Error('当前会话已有任务，请稍后再试。'),{status:409});
+    startingStickerSessions.add(session.id);
+    try {
+      const pack=await loadStickerPack(),story=task.phase==='batch'?{...defaultStickerTask(pack),packId:'custom-'+projectId,title:project.recipe.name,makeVideo:task.makeVideo,bgm:task.bgm}:undefined;
+      const job=await enqueueAgentMessage(session,'@动态表情套装 '+(task.phase==='samples'?'为新角色生成3个样张，等待确认。':'使用已确认样张生成24套'+(project.recipe.mode==='static'?'静态':'动态')+'表情。'),[project.recipe.referenceMediaId],undefined,undefined,'create',undefined,story);
+      job.stickerGenerationTask=structuredClone(task);await saveState();const receipt={...await publicState(user),stickerJobId:job.id};void processQueue();return receipt;
+    }finally{startingStickerSessions.delete(session.id);}
+  },
+});
 app.get('/api/notifications/config',(q,r)=>r.json(notifications.configuration(userOf(q).id)));
 app.get('/api/notifications',(q,r)=>r.json(notifications.list(userOf(q).id,Number(q.query.limit)||40)));
 app.get('/api/notifications/:id',(q,r)=>{const notice=notifications.get(userOf(q).id,q.params.id);if(!notice)return r.status(404).json({error:'消息不存在。'});r.json(notice);});
@@ -1460,7 +1507,7 @@ app.get('/api/artifacts/:id/project',async(request,response)=>{
   catch{response.status(502).json({error:'模板工程暂时无法下载。'});}
 });
 app.get('/api/artifacts/:id/cover', async (request, response) => {
-  const artifact = state.artifacts.find((item) => item.id === request.params.id && (item.kind === 'video'||item.kind==='game') && owned(item, userOf(request).id));
+  const artifact = state.artifacts.find((item) => item.id === request.params.id && (item.kind === 'video'||item.kind==='game'||item.kind==='sticker-pack') && owned(item, userOf(request).id));
   if (!artifact?.coverMimeType) return response.status(404).json({ error: '封面不存在。' });
   const file = path.join(exportDir, `${artifact.id}-cover.${extFor(artifact.coverMimeType)}`);
   try { await oss?.ensure(userOf(request).id, 'covers', artifact.id, file); response.type(artifact.coverMimeType).sendFile(file); }

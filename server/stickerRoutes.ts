@@ -16,11 +16,16 @@ export function mountStickerSamples(app: Express) {
 export function mountStickerRoutes(app: Express, o: {
   base: string;
   start: (user: PublicUser, sessionId: string, requestId: string, task: StickerTask) => Promise<unknown>;
+  privatePacks?: (user: PublicUser) => Promise<import('../shared/stickerPacks').StickerPack[]>;
+  privatePack?: (user: PublicUser,id:string) => Promise<import('../shared/stickerPacks').StickerPack>;
+  resolvePack?: (user: PublicUser, id: string) => Promise<import('./stickerPacks').PackManifest | undefined>;
 }) {
-  app.get('/api/sticker-packs', async (_q,r) => r.json({ packs: [publicStickerPack(await loadStickerPack())] }));
+  app.get('/api/sticker-packs', async (q,r) => r.json({ packs: [publicStickerPack(await loadStickerPack()),...(await o.privatePacks?.(userOf(q)) || [])], generation: Boolean(o.privatePacks) }));
+  app.get('/api/sticker-packs/:packId',async(q,r)=>{try{const pack=await loadStickerPack();if(q.params.packId===pack.id)return r.json({pack:publicStickerPack(pack)});if(q.params.packId.startsWith('custom-')&&o.privatePack)return r.json({pack:await o.privatePack(userOf(q),q.params.packId)});r.status(404).json({error:'表情套装不存在。'});}catch{r.status(404).json({error:'表情套装不存在或尚未完成。'});}});
   app.post('/api/sticker-packs/:packId/jobs', async (q,r) => {
     try {
-      const pack = await loadStickerPack();
+      const pack = q.params.packId.startsWith('custom-') ? await o.resolvePack?.(userOf(q),q.params.packId) : await loadStickerPack();
+      if(!pack)return r.status(404).json({error:'表情套装不存在。'});
       if(q.params.packId !== pack.id) return r.status(404).json({error:'表情套装不存在。'});
       const {sessionId, requestId, task} = q.body || {};
       if(typeof sessionId !== 'string' || !/^[a-f0-9-]{36}$/.test(sessionId) ||

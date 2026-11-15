@@ -1,0 +1,28 @@
+<view class="screen theme-surface theme-{{theme}} studio-page">
+  <view class="eyebrow">轻喵创作工坊 · 新角色表情</view><view class="title">让你的角色，表达每一种心情。</view>
+  <view class="muted intro">上传角色 → 先看3个样张 → 确认后制作24套表情。</view>
+  <view wx:if="{{guest}}" class="empty"><text>登录后保存自己的角色与表情套装。</text></view>
+  <view wx:if="{{checking}}" class="muted">正在检查制作能力…</view>
+  <view wx:if="{{error}}" class="error">{{error}}<button class="secondary" bindtap="load">刷新状态</button></view>
+  <view wx:if="{{!available && !checking && !error}}" class="notice">图片模型尚未配置，请联系管理员。已完成的套装仍可查看。</view>
+  <block wx:if="{{available}}">
+    <view class="mode-tabs"><button class="{{mode === 'dynamic' ? 'selected' : ''}}" bindtap="mode" data-mode="dynamic">动态表情</button><button class="{{mode === 'static' ? 'selected' : ''}}" bindtap="mode" data-mode="static">静态表情</button></view>
+    <view class="panel"><view class="section-title">1. 角色与画风</view><button class="secondary" bindtap="upload" loading="{{uploading}}" disabled="{{uploading || submitting}}">上传一张角色图 ＋</button><view class="muted">也可从已有图片中选择。只使用你选中的角色图。</view>
+      <scroll-view wx:if="{{references.length}}" scroll-x class="reference-scroll"><view class="reference-track"><button wx:for="{{references}}" wx:key="id" class="reference-card {{referenceId === item.id ? 'selected' : ''}}" bindtap="reference" data-id="{{item.id}}" aria-label="选择{{item.name}}"><image wx:if="{{item.cover}}" src="{{item.cover}}" mode="aspectFit" data-id="{{item.id}}" binderror="coverError"/><view wx:else class="reference-placeholder">角色图</view><text>{{item.name}}</text></button></view></scroll-view>
+      <view class="muted">{{referenceName ? '已选择：' + referenceName : '尚未选择角色图'}}</view><view class="field-label">套装名称</view><input class="input" value="{{name}}" maxlength="16" bindinput="name" placeholder="例如：小橘的日常心情"/>
+      <view class="field-label">画风与角色要求</view><textarea class="input style-input" value="{{style}}" maxlength="240" bindinput="changeStyle" auto-height/>
+      <view class="muted fee-note">先生成3张{{mode === 'dynamic' ? '动作网格' : '静态表情'}}。图片模型会产生费用，图片单价未配置时会记录为待核对用量；不会自动继续批量生成。</view>
+      <button class="primary" bindtap="start" loading="{{submitting}}" disabled="{{submitting || busy || uploading}}">{{busy ? '当前会话有任务进行中' : '生成3个样张 ↗'}}</button>
+    </view>
+  </block>
+  <view wx:if="{{project}}" class="panel"><view class="section-title">2. 确认{{project.recipe.mode === 'static' ? '静态' : '动态'}}样张</view><view class="muted">{{project.recipe.name}} · 点击样张查看，检查角色、画风、透明边缘和动作。</view>
+    <view wx:if="{{projectJob}}" class="notice">{{projectJob.status}}<view>{{projectJob.stage}}</view><view wx:if="{{projectJob.error}}">{{projectJob.error}}</view></view>
+    <view wx:if="{{!project.previewHash}}" class="notice">样张尚未完成。可到会话查看进度、停止或重试任务。</view>
+    <view class="sample-grid"><button wx:for="{{samples}}" wx:key="id" class="sample-card" bindtap="preview" data-id="{{item.id}}"><image wx:if="{{item.image}}" src="{{item.image}}" mode="aspectFit"/><text wx:else>点击加载预览</text></button></view>
+    <block wx:if="{{project.previewHash && !project.ready}}"><view class="row spread"><text>同步制作分享视频</text><switch checked="{{makeVideo}}" color="#c9612f" bindchange="video"/></view><view wx:if="{{makeVideo}}" class="row spread"><text>配乐</text><switch checked="{{bgm}}" color="#c9612f" bindchange="music"/></view><view class="muted fee-note">确认后复用这3个样张，继续生成剩余21个动作。静态套装只交付静态PNG；动态套装交付GIF、WebP、APNG和静态PNG。</view><button class="primary" bindtap="approve" loading="{{submitting}}" disabled="{{submitting || busy}}">角色与画风确认，制作整套 ↗</button></block>
+    <button wx:if="{{project.ready}}" class="primary" bindtap="results">查看整套表情与分享视频选项 ↗</button><button class="secondary" bindtap="progress">查看会话任务</button><button class="small-button" bindtap="regenerate" disabled="{{submitting}}">调整设定，重新制作样张</button>
+  </view>
+  <view wx:if="{{projects.length}}" class="section-title">我的表情项目</view><button wx:for="{{projects}}" wx:key="id" class="project-row panel" bindtap="openProject" data-id="{{item.id}}"><text>{{item.recipe.name}}</text><text class="muted">{{item.recipe.mode === 'static' ? '静态' : '动态'}} · {{item.ready ? '整套已完成' : item.approved ? '已确认样张' : item.previewHash ? '待确认样张' : '样张制作中'}}　›</text></button>
+  <view wx:if="{{selected}}" class="preview-mask" bindtap="closePreview"><image src="{{selected}}" mode="aspectFit"/></view>
+  <privacy-dialog id="privacy"/>
+</view>
