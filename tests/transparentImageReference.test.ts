@@ -11,12 +11,12 @@ const config:ModelConfig={id:'image-fixture',kind:'image',enabled:true,provider:
 function png(){const image=new PNG({width:40,height:32});for(let i=0;i<image.data.length;i+=4){image.data[i]=110;image.data[i+1]=70;image.data[i+2]=30;image.data[i+3]=i<320?0:255;}return PNG.sync.write(image);}
 function encode(format:'mjpeg'|'libwebp',bytes:Buffer){const r=spawnSync(ffmpeg!,['-v','error','-i','pipe:0','-frames:v','1','-threads','1','-c:v',format,'-f','image2pipe','pipe:1'],{input:bytes,maxBuffer:5*1024*1024,windowsHide:true});assert.equal(r.status,0,r.stderr.toString());return r.stdout;}
 
-test('transparent image requests normalize JPEG, WebP and RGB PNG into real RGBA PNG without changing stored input',async()=>{
+test('transparent image requests preserve real alpha, while opaque JPEG and RGB PNG are rejected before the provider',async()=>{
   const originalFetch=globalThis.fetch,output=png(),requests:any[]=[];
   globalThis.fetch=async(_url,init)=>{requests.push(JSON.parse(String(init?.body)));return new Response(JSON.stringify({data:[{b64_json:output.toString('base64')}]}));};
   try{
     const rgb=PNG.sync.write(PNG.sync.read(output),{colorType:2});
-    for(const [bytes,mimeType] of [[encode('mjpeg',output),'image/jpeg'],[encode('libwebp',output),'image/webp'],[rgb,'image/png']] as const){
+    for(const [bytes,mimeType] of [[encode('libwebp',output),'image/webp']] as const){
       const before=Buffer.from(bytes);await generateImage('保留角色，绘制透明贴贴表情',config,{bytes,mimeType},{background:'transparent'});
       const body=requests.at(-1),actual=Buffer.from(body.image.split(',')[1],'base64');assert.ok(body.image.startsWith('data:image/png;base64,'));assert.equal(body.output_format,'png');assert.equal(actual[25],6);
       const decoded=PNG.sync.read(actual,{checkCRC:true});assert.equal(decoded.width,40);assert.equal(decoded.height,32);assert.deepEqual(bytes,before);
@@ -24,6 +24,7 @@ test('transparent image requests normalize JPEG, WebP and RGB PNG into real RGBA
     }
     await generateImage('保留角色',config,{bytes:output,mimeType:'image/png'},{background:'transparent'});
     assert.deepEqual(Buffer.from(requests.at(-1).image.split(',')[1],'base64'),output,'existing RGBA PNG is preserved byte for byte');
+    const count=requests.length;for(const [bytes,mimeType] of [[encode('mjpeg',output),'image/jpeg'],[rgb,'image/png']] as const)await assert.rejects(()=>generateImage('透明背景',config,{bytes,mimeType},{background:'transparent'}),/普通照片/);assert.equal(requests.length,count);
     const jpeg=encode('mjpeg',output);await generateImage('普通不透明图片',config,{bytes:jpeg,mimeType:'image/jpeg'});
     assert.equal(requests.at(-1).output_format,'jpeg');assert.equal(requests.at(-1).image,'data:image/jpeg;base64,'+jpeg.toString('base64'));
   }finally{globalThis.fetch=originalFetch;}

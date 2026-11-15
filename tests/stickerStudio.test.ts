@@ -18,6 +18,13 @@ const recipe={referenceMediaId:'role',name:'新角色',style:'保留角色原有
 function png(){const p=new PNG({width:128,height:128});for(let y=25;y<105;y++)for(let x=30;x<95;x++){const i=(y*128+x)*4;p.data[i]=190;p.data[i+1]=80;p.data[i+2]=40;p.data[i+3]=255;}return PNG.sync.write(p);}
 function zipEntries(bytes:Buffer){const files=new Map<string,Buffer>();for(let offset=0;bytes.readUInt32LE(offset)===0x04034b50;){const size=bytes.readUInt32LE(offset+18),n=bytes.readUInt16LE(offset+26),extra=bytes.readUInt16LE(offset+28),start=offset+30+n+extra;files.set(bytes.toString('utf8',offset+30,offset+30+n),inflateRawSync(bytes.subarray(start,start+size)));offset=start+size;}return files;}
 
+test('an obsolete sticker task is rejected before credit admission or a model request',async t=>{
+  const f=await startCreditServer({obsoleteSticker:true});t.after(()=>f.close());const cookie=await f.login();
+  const before=await(await f.request(cookie,'/api/credits?offset=0&limit=100')).json();
+  const reply=await f.request(cookie,'/api/jobs/failed-job/retry',{});assert.equal(reply.status,409);const body:any=await reply.json();assert.equal(body.code,'STICKER_TEMPLATE_UPDATED');assert.match(body.error,/调整设定/);
+  assert.deepEqual(await(await f.request(cookie,'/api/credits?offset=0&limit=100')).json(),before);assert.equal(f.providerState.calls,0);
+});
+
 test('project recipes, idempotency, approval fingerprint and account boundaries are enforced',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'sticker-studio-')),studio=createStickerStudio(dir);
   try{
@@ -48,7 +55,7 @@ test('real HTTP, image provider fixture, queue and static delivery require expli
   async function waitJob(jobId:string){for(let i=0;i<600;i++){const s:any=await(await f.request(cookie,'/api/state').catch(error=>{throw new Error(JSON.stringify(f.diagnostics()),{cause:error});})).json(),job=s.jobs.find((j:any)=>j.id===jobId);if(['succeeded','failed','cancelled'].includes(job.status)){assert.equal(job.status,'succeeded',JSON.stringify({error:job.error,failure:job.failure,diagnostics:f.diagnostics()}));return s;}await new Promise(r=>setTimeout(r,200));}throw Error('Job did not finish');}
   assert.equal((await f.request(cookie,'/api/sticker-projects/'+id+'/approve',{previewHash:'f'.repeat(64),makeVideo:false,bgm:false})).status,409);
   await waitJob(sent.state.stickerJobId);const view:any=await(await f.request(cookie,'/api/sticker-projects/'+id)).json();assert.equal(view.project.samples.length,3);assert.equal(view.project.approved,false);assert.equal(view.project.ready,false);assert.equal(f.providerState.calls,3);
-  assert.equal(imageRequests.length,3);for(const request of imageRequests){assert.equal(request.background,'transparent');assert.equal(request.output_format,'png');const data=Buffer.from(request.image.split(',')[1],'base64');assert.equal(data[25],6);const p=PNG.sync.read(data,{checkCRC:true});assert.equal(p.width,128);assert.equal(p.height,128);}
+  assert.equal(imageRequests.length,3);for(const request of imageRequests){assert.equal(request.background,'opaque');assert.equal(request.output_format,'png');assert.match(request.prompt,/纯色抠图/);assert.ok(request.image.startsWith('data:image/jpeg;base64,'));assert.deepEqual(Buffer.from(request.image.split(',')[1],'base64'),original);}
   assert.deepEqual(Buffer.from(await(await f.request(cookie,upload.media.find((m:any)=>m.id===referenceMediaId).url)).arrayBuffer()),original,'request conversion must not rewrite the stored source');
   assert.equal((await f.request(cookie,view.project.samples[0].thumbnailUrl)).status,200);assert.equal((await f.request(other,view.project.samples[0].thumbnailUrl)).status,404);
   assert.equal((await f.request(cookie,'/api/sticker-projects/'+id+'/approve',{previewHash:'f'.repeat(64),makeVideo:false,bgm:false})).status,409);
@@ -67,25 +74,25 @@ test('real HTTP, image provider fixture, queue and static delivery require expli
 
 test('dynamic generation produces six distinct drawings, ten-frame exports and refuses changed approval assets',{timeout:180000},async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'sticker-dynamic-')),reference={bytes:png(),mimeType:'image/png'};let calls=0;
-  const fixture=async()=>{calls++;const p=new PNG({width:384,height:256});for(let n=0;n<6;n++)for(let y=25;y<105;y++)for(let x=30;x<95;x++){const i=((Math.floor(n/3)*128+y)*384+n%3*128+x)*4;p.data[i]=140+n*12;p.data[i+1]=60;p.data[i+2]=30;p.data[i+3]=255;}return {bytes:PNG.sync.write(p),mimeType:'image/png'};};
+  const fixture=async(_prompt:string,_model:any,input:any,options:any)=>{calls++;if(calls===1){assert.equal(options.size,'2048x2048');return {bytes:png(),mimeType:'image/png'};}assert.equal(options.size,'2496x1664');assert.equal(options.background,'transparent');const reference=PNG.sync.read(input.bytes);assert.equal(reference.data[3],0);assert.equal(reference.width,2496);assert.equal(reference.height,1664);const p=new PNG({width:384,height:256});for(let n=0;n<6;n++)for(let y=25;y<105;y++)for(let x=30;x<95+n*2;x++){const i=((Math.floor(n/3)*128+y)*384+n%3*128+x)*4;p.data[i]=140+n*12;p.data[i+1]=60;p.data[i+2]=30;p.data[i+3]=255;}return {bytes:PNG.sync.write(p),mimeType:'image/png'};};
   const studio=createStickerStudio(dir,fixture),model:any={modelId:'fixture-image',apiKey:'fixture-secret'},project=await studio.create('one','session','dynamic-request',{...recipe,mode:'dynamic'},stateHash(reference.bytes.toString('base64')));
   try {
     await assert.rejects(()=>studio.generate('one',{projectId:project.id,phase:'batch',makeVideo:false,bgm:false},reference,model,async()=>{}),/确认/);
-    const task={projectId:project.id,phase:'samples' as const,makeVideo:false,bgm:false};await studio.generate('one',task,reference,model,async()=>{});assert.equal(calls,3);
+    const task={projectId:project.id,phase:'samples' as const,makeVideo:false,bgm:false};await studio.generate('one',task,reference,model,async()=>{});assert.equal(calls,4,'one reusable character drawing precedes three action sheets');
     const view=await studio.view('one',project.id);assert.match(view.previewHash,/^[a-f0-9]{64}$/);await studio.approve('one',project.id,view.previewHash);
-    await studio.generate('one',task,reference,model,async()=>{});assert.equal(calls,3,'retries reuse verified model outputs');
+    await studio.generate('one',task,reference,model,async()=>{});assert.equal(calls,4,'retries reuse the character drawing and verified action sheets');
     const base=path.join(studio.folder('one',project.id),'assets','pack','01'),probe=createRequire(import.meta.url)('ffprobe-static').path;
     for(const name of ['animation.gif','animation.png']){const report=JSON.parse((await capture(probe,['-v','error','-count_frames','-show_streams','-of','json',path.join(base,name)])).toString());assert.equal(Number(report.streams[0].nb_read_frames),10);assert.equal(report.streams[0].width,512);assert.equal(report.streams[0].height,512);}
     const bytes=await readFile(path.join(base,'animation.webp'));assert.ok(bytes.includes(Buffer.from('ANIM')));assert.ok(bytes.includes(Buffer.from('ANMF')));
     const image=PNG.sync.read(await readFile(path.join(base,'still.png')));assert.equal(image.data[3],0);
     const batch={...task,phase:'batch' as const,approvalHash:view.previewHash};
-    await assert.rejects(()=>studio.generate('one',batch,reference,{...model,modelId:'changed'},async()=>{}),/切换/);assert.equal(calls,3);
-    await studio.generate('one',batch,reference,model,async()=>{});assert.equal(calls,24);
+    await assert.rejects(()=>studio.generate('one',batch,reference,{...model,modelId:'changed'},async()=>{}),/切换/);assert.equal(calls,4);
+    await studio.generate('one',batch,reference,model,async()=>{});assert.equal(calls,25);
     const built=await studio.pack('one','custom-'+project.id);assert.ok(built);await verifyStickerAssets(built.pack,built.assetsRoot);
     const delivered=await runStickerWorkflow({...built,task:{...defaultStickerTask(built.pack),makeVideo:false},directory:path.join(dir,'delivery'),progress:async()=>{}});
     const entries=zipEntries(await readFile(delivered.archive));assert.equal(entries.size,101);assert.ok(entries.has('贴贴/动画.gif'));assert.ok(entries.has('心动/动画-APNG.png'));
-    await studio.generate('one',batch,reference,model,async()=>{});assert.equal(calls,24);
-    await writeFile(path.join(base,'still.png'),png());await assert.rejects(()=>studio.generate('one',batch,reference,model,async()=>{}));assert.equal(calls,24,'changed approvals stop before a paid call');
+    await studio.generate('one',batch,reference,model,async()=>{});assert.equal(calls,25);
+    await writeFile(path.join(base,'still.png'),png());await assert.rejects(()=>studio.generate('one',batch,reference,model,async()=>{}));assert.equal(calls,25,'changed approvals stop before a paid call');
   }finally{await rm(dir,{recursive:true,force:true});}
 });
 

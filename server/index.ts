@@ -1088,6 +1088,7 @@ mountStickerRoutes(app,{base:publicBase,
   }finally{startingStickerSessions.delete(session.id);}
 }});
 mountStickerStudioRoutes(app,{studio:stickerStudio,
+  version:async()=>{const entry=videoTemplates.find(item=>item.workflow==='sticker-pack');return entry?(await loadVideoTemplate(entry)).skillHash:undefined;},
   ready:async()=>{const model=await getModelConfig('image');return Boolean(model?.enabled&&/^doubao-seedream-/.test(model.modelId));},
   reference:async(user,sessionId,recipe)=>{
     const session=getSession(sessionId,user.id);if(!session||session.archivedAt)throw Object.assign(Error('会话不存在或已归档。'),{status:404});
@@ -1483,6 +1484,7 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   const candidate=state.artifacts.find(a=>a.id===job.artifactId&&owned(a,user.id));
   const needsLessonRepair=job.status==='succeeded'&&candidate?.plan?.lesson&&candidate.review?.status==='needs-review';
   if (job.status !== 'failed'&&!needsLessonRepair) return response.status(409).json({ error: '只有失败的任务或未通过审查的教学成片可以重试。' });
+  if(job.stickerGenerationTask&&job.template){const entry=videoTemplates.find(item=>item.id===job.template!.id);if(!entry||(await loadVideoTemplate(entry)).skillHash!==job.template.skillHash)return response.status(409).json({error:'表情制作方式已更新，请在表情工坊点击“调整设定，重新制作样张”，保留角色图后提交新任务。',code:'STICKER_TEMPLATE_UPDATED'});}
   job.creditTaskId = await credits.admit(user.id);
   // An unavailable auditor has no content correction to make. Recheck the
   // existing artifact instead of restarting today's research and rendering.

@@ -5,11 +5,12 @@ import { validateStickerRecipe, type StickerStudio, type StickerRecipe } from '.
 import type { StickerGenerationTask } from '../shared/stickerPacks';
 const requestIdPattern=/^[a-zA-Z0-9_-]{16,80}$/;
 export function mountStickerStudioRoutes(app:Express,o:{studio:StickerStudio;ready:()=>Promise<boolean>;
+  version?:()=>Promise<string|undefined>;
   start:(user:PublicUser,projectId:string,task:StickerGenerationTask)=>Promise<unknown>;
   reference:(user:PublicUser,sessionId:string,recipe:StickerRecipe)=>Promise<string>;
 }) {
   const wrap=(action:(q:any,r:any)=>Promise<unknown>)=>async(q:any,r:any)=>{try{await action(q,r);}catch(error){const fsError=['ENOENT','EACCES','ENOTDIR'].includes((error as any).code);r.status(fsError?404:(error as any).status||400).json({error:fsError?'项目素材尚不可用，请刷新制作状态。':error instanceof Error?error.message:'表情制作未能开始。'});}};
-  app.get('/api/sticker-projects/config',wrap(async(_q,r)=>r.json({available:await o.ready(),sampleCount:3,totalCount:24,modes:['static','dynamic']})));
+  app.get('/api/sticker-projects/config',wrap(async(_q,r)=>r.json({available:await o.ready(),templateHash:await o.version?.(),sampleCount:3,totalCount:24,modes:['static','dynamic']})));
   app.get('/api/sticker-projects',wrap(async(q,r)=>r.json({projects:await o.studio.list(userOf(q).id)})));
   app.post('/api/sticker-projects',wrap(async(q,r)=>{
     const {sessionId,requestId,recipe}=q.body||{};
