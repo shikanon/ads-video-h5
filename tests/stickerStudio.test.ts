@@ -90,7 +90,7 @@ test('dynamic generation produces six distinct drawings, ten-frame exports and r
 });
 
 test('studio page submits mode explicitly, preserves request IDs and ignores stale account responses',async()=>{
-  const calls:any[]=[],state:any={activeSessionId:'session',sessions:[],media:[],jobs:[],artifacts:[]};let finish:any;
+  const calls:any[]=[],state:any={activeSessionId:'session',sessions:[{id:'session',messages:[]}],media:[],jobs:[],artifacts:[]};let finish:any;
   const app:any={_generation:1,state,subscribe:()=>()=>{},refresh:async()=>app.state,apply(s:any){app.state=s;},client:{hasSession:()=>true,previewUrl:()=>'',request:async(route:string,body:any)=>{if(route.endsWith('/config'))return {available:true};if(!body)return {projects:[]};calls.push(body);return new Promise(resolve=>{finish=resolve});}}};
   const page=await capturePage('sticker-studio',app,{showShareMenu(){}});page.onLoad({mode:'static'});page.onShow();await new Promise(r=>setTimeout(r,0));
   page.setData({referenceId:'role',name:'我的角色'});const pending=page.start();assert.equal(calls[0].recipe.mode,'static');assert.equal(calls.length,1);await page.start();assert.equal(calls.length,1);
