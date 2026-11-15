@@ -857,7 +857,7 @@ async function processQueuedJob(job: Job) {
       let modelSecrets: string[] = [];
       job.status = 'running'; job.updatedAt = now(); job.progress = 5; job.error = undefined;
       const activeSession=getSession(job.sessionId);
-      if(activeSession)updateReply(activeSession,job,'收到请求，正在理解制作要求并规划执行步骤。','commentary','start');
+      if(activeSession)updateReply(activeSession,job,job.interaction==='chat'?'正在回复…':job.interaction==='explore'?'正在梳理你的问题。':'收到请求，正在理解制作要求并规划执行步骤。','commentary','start');
       await saveState();
       try {
         await jobRunner.run(job, async () => {

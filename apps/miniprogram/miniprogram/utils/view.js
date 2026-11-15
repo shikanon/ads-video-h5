@@ -24,19 +24,31 @@ function mediaView(item, client) {
   const coverSource = item.kind === 'image' ? item.thumbnailUrl || item.url : item.thumbnailUrl || item.shots && item.shots[0] && item.shots[0].thumbnailUrl || '';
   return { id: item.id, name: item.name, kind: item.kind, source: item.url, coverSource, cover: client.cachedDownload && client.cachedDownload(coverSource) || client.previewUrl(coverSource), duration: item.duration ? Math.round(item.duration) + ' 秒' : '', date: beijingTime(item.createdAt), author: Boolean(item.character), status: item.analysis ? '原声已分析' : '' };
 }
+function quietChat(job) {
+  return Boolean(job && job.interaction === 'chat' && !job.template && !job.stickerGenerationTask && !job.stickerTask &&
+    !['web', 'deep'].includes(job.researchMode) && !(job.workflow || []).some(step => /research|search|fetch_url|browse/.test(step.tool || '')));
+}
+function chatReplyText(message) {
+  // Answer sections are actual reply content, unlike workflow commentary.
+  // Keep them readable when removing the task-details drawer from plain chat.
+  const paragraphs = (message.parts || []).filter(part => part.phase === 'commentary' && /^answer-\d+$/.test(part.id)).map(part => brandText(part.text));
+  paragraphs.push(brandText(message.text));
+  return [...new Set(paragraphs.flatMap(text => String(text || '').split(/\n\s*\n/)).map(text => text.trim()).filter(Boolean))].join('\n\n');
+}
 function chatView(state, client, expanded, count, offset) {
   const session = state.sessions.find(item => item.id === state.activeSessionId);
   const all = session ? session.messages : [];
   const end = Math.max(0, all.length - (offset || 0)), start = Math.max(0, end - (count || 50));
   const messages = all.slice(start, end).map(message => {
-    const open = Boolean(expanded && expanded[message.id]), parts = (message.parts || []).filter(part => part.phase === 'commentary');
-    const text = (message.role === 'assistant' ? brandText(message.text) : message.text) || '';
     const job = state.jobs.find(job => job.id === message.jobId);
-    return { id: message.id, role: message.role, date: beijingTime(message.createdAt), text: !open && text.length > 1600 ? text.slice(0, 1600) + '…' : text, long: text.length > 1600, open, parts: open ? parts.slice(-40).map(part => ({ id: part.id, text: brandText(part.text).slice(0, 2000) })) : [], partCount: parts.length, recordCount: parts.length + (job && job.workflow || []).length, job: jobView(job, open), artifacts: (message.artifactIds || []).map(id => state.artifacts.find(item => item.id === id)).filter(Boolean).map(item => artifactView(item, client)) };
+    const quiet = quietChat(job), open = Boolean(expanded && expanded[message.id]);
+    const parts = quiet ? [] : (message.parts || []).filter(part => part.phase === 'commentary');
+    const text = (message.role === 'assistant' ? quiet ? chatReplyText(message) : brandText(message.text) : message.text) || '';
+    return { id: message.id, role: message.role, date: beijingTime(message.createdAt), quiet, text: !open && text.length > 1600 ? text.slice(0, 1600) + '…' : text, long: text.length > 1600, open, parts: open ? parts.slice(-40).map(part => ({ id: part.id, text: brandText(part.text).slice(0, 2000) })) : [], partCount: parts.length, recordCount: quiet ? 0 : parts.length + (job && job.workflow || []).length, job: jobView(job, open && !quiet), artifacts: (message.artifactIds || []).map(id => state.artifacts.find(item => item.id === id)).filter(Boolean).map(item => artifactView(item, client)) };
   });
   const currentJobs = state.jobs.filter(job => job.sessionId === state.activeSessionId && active(job));
   if (end === all.length) for (const job of currentJobs) {
-    if (!all.some(m => m.role === 'assistant' && m.jobId === job.id)) messages.push({ id: 'pending-' + job.id, role: 'assistant', date: '', text: '', long: false, open: false, parts: [], partCount: 0, recordCount: 0, job: jobView(job, false), artifacts: [] });
+    if (!all.some(m => m.role === 'assistant' && m.jobId === job.id)) messages.push({ id: 'pending-' + job.id, role: 'assistant', date: '', quiet: quietChat(job), text: '', long: false, open: false, parts: [], partCount: 0, recordCount: 0, job: jobView(job, false), artifacts: [] });
   }
   return { sessionId: state.activeSessionId, title: session && session.title || '新会话', messages, hasOlder: start > 0, hasNewer: end < all.length, empty: !all.length, running: currentJobs.length > 0, balance: points(state.credits && state.credits.balance || 0), insufficient: Boolean(state.credits && state.credits.balance <= 0) };
 }

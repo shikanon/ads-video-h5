@@ -84,6 +84,13 @@ test('question research reads the actual source and never promotes a search snip
   assert.equal(unavailable.references.length,0);assert(unavailable.failures.length);
 });
 
+test('ordinary greeting reaches the actual reply model with conversational examples rather than a section-and-summary report requirement',async()=>{
+  const saved=globalThis.fetch;let system='';
+  globalThis.fetch=async(_url,init)=>{const body=JSON.parse(String(init?.body));system=body.messages.filter((m:any)=>m.role==='system').map((m:any)=>m.content).join('\n');return stream({sections:[],summary:'嗯？叫我啦。'});};
+  try{const visible:string[]=[];assert.equal(await answerWithPi('轻喵～',primary,[],[],async(_id,text)=>{visible.push(text);}), '嗯？叫我啦。');assert.deepEqual(visible,[]);assert.match(system,/普通闲聊sections为空/);assert.match(system,/不默认追问/);assert.match(system,/猫是人设，AI是真的/);assert.doesNotMatch(system,/sections通常2–4段|summary给出最终独立总结/);}
+  finally{globalThis.fetch=saved;}
+});
+
 test('a real question reply validates source IDs before publishing and adds actual source links to the final answer',async()=>{
   const saved=globalThis.fetch;let calls=0;const visible:string[]=[];
   globalThis.fetch=async()=>{calls++;return stream({sections:['已核对用途与限制。'],summary:'应以官方说明为准。',sourceIds:[calls===1?'invented':'ref-1']});};

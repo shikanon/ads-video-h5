@@ -13,6 +13,7 @@ import { verifyStickerAssets, defaultStickerTask } from '../server/stickerPacks'
 import { runStickerWorkflow } from '../server/stickerWorkflow';
 import { createRequire } from 'node:module';
 import { capture } from '../server/scienceRender';
+import { runFFmpeg } from '../server/core';
 const recipe={referenceMediaId:'role',name:'新角色',style:'保留角色原有服装，柔彩Q版',mode:'static' as const};
 function png(){const p=new PNG({width:128,height:128});for(let y=25;y<105;y++)for(let x=30;x<95;x++){const i=(y*128+x)*4;p.data[i]=190;p.data[i+1]=80;p.data[i+2]=40;p.data[i+3]=255;}return PNG.sync.write(p);}
 function zipEntries(bytes:Buffer){const files=new Map<string,Buffer>();for(let offset=0;bytes.readUInt32LE(offset)===0x04034b50;){const size=bytes.readUInt32LE(offset+18),n=bytes.readUInt16LE(offset+26),extra=bytes.readUInt16LE(offset+28),start=offset+30+n+extra;files.set(bytes.toString('utf8',offset+30,offset+30+n),inflateRawSync(bytes.subarray(start,start+size)));offset=start+size;}return files;}
@@ -30,12 +31,16 @@ test('project recipes, idempotency, approval fingerprint and account boundaries 
 });
 
 test('real HTTP, image provider fixture, queue and static delivery require explicit samples approval',{timeout:180000},async t=>{
-  const f=await startCreditServer({stickerImages:true});t.after(()=>f.close());const cookie=await f.login(),other=await f.login('shikanon@example.test');
+  const imageRequests:any[]=[];
+  const f=await startCreditServer({stickerImages:true,onProviderRequest:async body=>{if(body.image)imageRequests.push(body);}});t.after(()=>f.close());const cookie=await f.login(),other=await f.login('shikanon@example.test');
   assert.equal((await fetch(f.base+'/api/sticker-projects')).status,401);
   const created=await f.request(cookie,'/api/sessions',{mode:'work'}),state:any=await created.json(),sessionId=state.activeSessionId;
-  const form=new FormData();form.append('files',new Blob([new Uint8Array(png())],{type:'image/png'}),'role.png');
+  const pngFile=path.join(f.directory,'reference.png'),jpegFile=path.join(f.directory,'reference.jpg');await writeFile(pngFile,png());await runFFmpeg(['-v','error','-i',pngFile,'-frames:v','1',jpegFile]);
+  const form=new FormData();form.append('files',new Blob([new Uint8Array(await readFile(jpegFile))],{type:'image/jpeg'}),'role.jpg');
   const uploaded=await fetch(f.base+'/api/media',{method:'POST',headers:{Cookie:cookie},body:form});assert.equal(uploaded.status,200);const upload:any=await uploaded.json();
   const referenceMediaId=upload.uploadedMediaIds[0],body={sessionId,requestId:'phase2_static_request_0001',recipe:{...recipe,referenceMediaId}};
+  const original=Buffer.from(await(await f.request(cookie,upload.media.find((m:any)=>m.id===referenceMediaId).url)).arrayBuffer());
+  assert.equal(original[0],0xff,'exercise the same JPEG reference format as the failed production task');
   const denied=await f.request(other,'/api/sticker-projects',body);assert.equal(denied.status,404);
   const first=await f.request(cookie,'/api/sticker-projects',body);assert.equal(first.status,202,await first.clone().text());const sent:any=await first.json(),id=sent.project.id;
   const duplicate=await f.request(cookie,'/api/sticker-projects',body);assert.equal(duplicate.status,202);assert.equal((await duplicate.json() as any).state.stickerJobId,sent.state.stickerJobId);
@@ -43,6 +48,8 @@ test('real HTTP, image provider fixture, queue and static delivery require expli
   async function waitJob(jobId:string){for(let i=0;i<600;i++){const s:any=await(await f.request(cookie,'/api/state').catch(error=>{throw new Error(JSON.stringify(f.diagnostics()),{cause:error});})).json(),job=s.jobs.find((j:any)=>j.id===jobId);if(['succeeded','failed','cancelled'].includes(job.status)){assert.equal(job.status,'succeeded',JSON.stringify({error:job.error,failure:job.failure,diagnostics:f.diagnostics()}));return s;}await new Promise(r=>setTimeout(r,200));}throw Error('Job did not finish');}
   assert.equal((await f.request(cookie,'/api/sticker-projects/'+id+'/approve',{previewHash:'f'.repeat(64),makeVideo:false,bgm:false})).status,409);
   await waitJob(sent.state.stickerJobId);const view:any=await(await f.request(cookie,'/api/sticker-projects/'+id)).json();assert.equal(view.project.samples.length,3);assert.equal(view.project.approved,false);assert.equal(view.project.ready,false);assert.equal(f.providerState.calls,3);
+  assert.equal(imageRequests.length,3);for(const request of imageRequests){assert.equal(request.background,'transparent');assert.equal(request.output_format,'png');const data=Buffer.from(request.image.split(',')[1],'base64');assert.equal(data[25],6);const p=PNG.sync.read(data,{checkCRC:true});assert.equal(p.width,128);assert.equal(p.height,128);}
+  assert.deepEqual(Buffer.from(await(await f.request(cookie,upload.media.find((m:any)=>m.id===referenceMediaId).url)).arrayBuffer()),original,'request conversion must not rewrite the stored source');
   assert.equal((await f.request(cookie,view.project.samples[0].thumbnailUrl)).status,200);assert.equal((await f.request(other,view.project.samples[0].thumbnailUrl)).status,404);
   assert.equal((await f.request(cookie,'/api/sticker-projects/'+id+'/approve',{previewHash:'f'.repeat(64),makeVideo:false,bgm:false})).status,409);
   const approve={previewHash:view.project.previewHash,makeVideo:process.env.QINGJIAN_STICKER_RENDER_TEST==='1',bgm:true},batch=await f.request(cookie,'/api/sticker-projects/'+id+'/approve',approve);assert.equal(batch.status,202,await batch.clone().text());const batchReceipt:any=await batch.json();
