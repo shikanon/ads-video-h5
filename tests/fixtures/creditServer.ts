@@ -35,6 +35,12 @@ export async function startCreditServer(options: { stickerImages?: boolean; wech
     if (providerState.delay) await new Promise(r => setTimeout(r, providerState.delay));
     if (response.destroyed) return;
     if(options.stickerImages&&request.url==='/fixture-image'){
+      // Mirror the real Seedream 5.0 boundary so JPEG uploads cannot pass
+      // fixture-only tests while failing transparent generation in production.
+      const reference=typeof body.image==='string'&&body.image.startsWith('data:image/png;base64,')?Buffer.from(body.image.slice('data:image/png;base64,'.length),'base64'):Buffer.alloc(0);
+      let valid=false;
+      try { const p=PNG.sync.read(reference,{checkCRC:true});valid=reference[25]===6&&p.width>0&&p.height>0; } catch {}
+      if(body.background!=='transparent'||body.output_format!=='png'||!valid){response.writeHead(400,{'Content-Type':'application/json'});response.end(JSON.stringify({error:{code:'InvalidParameter',message:'transparent background requires a PNG input with an alpha channel'}}));return;}
       const dynamic=body.size==='3072x2048',w=dynamic?384:128,h=dynamic?256:128,png=new PNG({width:w,height:h});
       for(let n=0;n<(dynamic?6:1);n++)for(let y=30;y<100;y++)for(let x=35;x<90;x++){const p=((Math.floor(n/3)*128+y)*w+n%3*128+x)*4;png.data[p]=150+n*10;png.data[p+1]=70+n*4;png.data[p+2]=30;png.data[p+3]=255;}
       response.writeHead(200,{'Content-Type':'application/json'});response.end(JSON.stringify({data:[{b64_json:PNG.sync.write(png).toString('base64')}]}));return;

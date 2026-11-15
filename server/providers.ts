@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { ModelConfig } from './modelRegistry';
 import { markAudioConnectTimeout, markAudioRateLimitRefusal, markMediaTransientFailure, recoverAudioRequest, recoverMediaRequest, type AudioRecovery } from './audioRateLimit';
 import { safeErrorText } from './executionErrors';
+import { transparentImageReference } from './transparentImageReference';
 
 const IMAGE_URL = 'https://ark.cn-beijing.volces.com/api/v3/images/generations';
 const AUDIO_URL = 'https://openspeech.bytedance.com/api/v3/tts/create';
@@ -217,12 +218,13 @@ export async function generateImage(prompt: string, config: ModelConfig, referen
   const url = endpoint(config, IMAGE_URL);
   const cleanPrompt = prompt.trim();
   if (!cleanPrompt || cleanPrompt.length > 3000) throw new ProviderError('图片提示词应为 1 到 3000 个字符。', 'INVALID_INPUT');
+  if (options?.background === 'transparent' && options.outputFormat === 'jpeg') throw new ProviderError('透明背景需要 PNG 输出。', 'INVALID_INPUT');
   const body: Record<string, unknown> = {
     model: config.modelId,
     prompt: cleanPrompt,
     size: options?.size || '2K',
     response_format: 'b64_json',
-    output_format: options?.outputFormat || 'jpeg',
+    output_format: options?.outputFormat || (options?.background === 'transparent' ? 'png' : 'jpeg'),
     watermark: false,
   };
   if (options?.background) body.background = options.background;
@@ -231,7 +233,12 @@ export async function generateImage(prompt: string, config: ModelConfig, referen
         imageMime(reference.bytes) !== reference.mimeType) {
       throw new ProviderError('参考图片格式或大小不受支持。', 'INVALID_INPUT');
     }
-    body.image = `data:${reference.mimeType};base64,${reference.bytes.toString('base64')}`;
+    let bytes = reference.bytes, mimeType = reference.mimeType;
+    if (options?.background === 'transparent') {
+      try { bytes = await transparentImageReference(bytes); mimeType = 'image/png'; }
+      catch (error) { throwIfJobCancelled(); throw new ProviderError(error instanceof Error ? error.message : '参考图片转换失败。', 'INVALID_INPUT'); }
+    }
+    body.image = `data:${mimeType};base64,${bytes.toString('base64')}`;
   }
   const {value:result}=await recoverMediaRequest('image',url,key,requestId=>postJson(url,key,body,'image',requestId));
   const first = Array.isArray(result.data) ? asRecord(result.data[0]) : null;

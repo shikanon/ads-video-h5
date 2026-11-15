@@ -106,6 +106,19 @@ test('native points and message timestamps agree with H5, and process data is bo
   assert.equal(older.messages.at(-1).job.workflow.length, 40); assert.ok(Buffer.byteLength(JSON.stringify(older)) < 1024 * 1024); assert.equal(JSON.stringify(older).includes('textModel'), false);
 });
 
+test('ordinary chat hides job audit chrome but preserves answer sections, long text, pending state and failed retry', () => {
+  const job:any={id:'j',sessionId:'s',interaction:'chat',researchMode:'off',status:'succeeded',progress:100,workflow:[{tool:'answer_user',stage:'整理答复',status:'succeeded'}]};
+  const message:any={id:'m',role:'assistant',jobId:'j',text:'在呢。',parts:[{id:'start',phase:'commentary',text:'收到请求，正在理解制作要求并规划执行步骤。'},{id:'workflow-0',phase:'commentary',text:'整理答复已完成。'}]};
+  const state:any={activeSessionId:'s',sessions:[{id:'s',messages:[message]}],jobs:[job],artifacts:[]};
+  const view=()=>chatView(state,{previewUrl:()=>''},{m:true},50,0).messages[0];
+  let item=view();assert.equal(item.quiet,true);assert.equal(item.text,'在呢。');assert.equal(item.recordCount,0);assert.deepEqual(item.parts,[]);assert.deepEqual(item.job.workflow,[]);
+  message.parts.push({id:'answer-0',phase:'commentary',text:'这是具体解法。\n\n在呢。'});item=view();assert.equal(item.text,'这是具体解法。\n\n在呢。','answer sections remain in the visible reply, exact paragraphs are not repeated');
+  message.text='长回答'.repeat(1000);assert.equal(view().long,true);assert.ok(view().text.endsWith(message.text));
+  job.status='failed';job.error='暂时无法回复';item=view();assert.equal(item.job.failed,true);assert.equal(item.job.error,'暂时无法回复');
+  for(const extra of [{researchMode:'web'},{researchMode:'deep'},{template:{id:'template'}},{stickerGenerationTask:{phase:'samples'}},{interaction:'create'},{workflow:[{tool:'research_question'}]}]){state.jobs[0]={...job,...extra};item=view();assert.equal(item.quiet,false);assert.ok(item.recordCount>0);}
+  state.jobs[0]={...job,status:'running'};state.sessions[0].messages=[];item=view();assert.equal(item.quiet,true);assert.equal(item.job.active,true);assert.equal(item.text,'');
+});
+
 test('permission completion after release never starts recording, cancel sends nothing, and unmount during start stops the microphone', async () => {
   const recorder = recorderFixture(), phases: string[] = [], sent: any[] = []; let permit: any;
   const voice = createVoice({ getRecorderManager: () => recorder }, { onState: (state: string) => phases.push(state), onError: assert.fail,
