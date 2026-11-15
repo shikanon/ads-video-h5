@@ -5,6 +5,7 @@
   <view wx:if="{{loading}}" class="muted">正在读取表情套装…</view>
   <view wx:if="{{error}}" class="error">{{error}}<button wx:if="{{!pack}}" class="secondary" bindtap="load">重新加载</button></view>
   <block wx:if="{{pack}}">
+    <button class="secondary" open-type="share" data-sticker-template="true" data-sticker-mode="{{pack.mode}}">分享模板，让好友做同款</button>
     <view class="sticker-grid"><button wx:for="{{items}}" wx:key="id" class="sticker-tile" bindtap="preview" data-id="{{item.id}}" aria-label="预览{{item.name}}"><image src="{{item.cover || item.thumb}}" mode="aspectFit" lazy-load/><text>{{item.name}}</text></button></view>
     <view wx:if="{{result}}" class="panel result"><view class="section-title">表情套装已保存</view><view class="muted">{{pack.mode === 'static' ? '包含24套透明静态PNG与专辑配套素材。' : '包含GIF、WebP、APNG、静态PNG与专辑配套素材。'}}</view><button class="primary" bindtap="download" loading="{{saving}}" disabled="{{saving}}">下载并分享表情ZIP</button><button wx:if="{{result.videoId}}" class="secondary" bindtap="videoResult">查看配套分享视频 ↗</button></view>
     <view class="panel story-form">

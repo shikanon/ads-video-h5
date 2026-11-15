@@ -44,3 +44,24 @@ test('a guest tab exposes both share menus before login without requesting netwo
   assert.deepEqual(Array.from(menus[0].menus), ['shareAppMessage', 'shareTimeline']);
   assert.equal(page.data.guest, true); page.onHide();
 });
+
+
+test('explicit sticker template sharing passes only a public mode; recipients create with their own account',async()=>{
+  for(const name of ['sticker-studio','stickers']){
+    const page=await capturePage(name,{state:{activeSessionId:'private-session'}},{});
+    page.data={project:{id:'private-project',recipe:{name:'private-name',referenceMediaId:'private-photo',style:'private-style'}},pack:{id:'private-pack'}};
+    for(const mode of ['static','dynamic']){
+      const card=page.onShareAppMessage({from:'button',target:{dataset:{stickerTemplate:'true',stickerMode:mode}}});
+      assert.equal(card.path,'/pages/sticker-studio/index?mode='+mode+'&from=template');assert.equal(JSON.stringify(card).includes('private-'),false);assert.equal(card.imageUrl,'/assets/lightmao-logo.png');
+      const recipient=await capturePage('sticker-studio',{_generation:1,state:null,client:{hasSession:()=>false}}, {showShareMenu(){},setNavigationBarTitle(){}});recipient.onLoad({mode,from:'template'});recipient.onShow();assert.equal(recipient.data.mode,mode);assert.equal(recipient.data.fromTemplate,true);assert.equal(recipient.data.guest,true);assert.equal(recipient.data.referenceId,'');recipient.onUnload();
+    }
+  }
+});
+
+test('guest template login returns to the chosen mode and never accepts an arbitrary return URL',async()=>{
+ const navigations:any[]=[],platform={navigateTo:(o:any)=>navigations.push(o.url),redirectTo:(o:any)=>navigations.push(o.url),switchTab:(o:any)=>navigations.push(o.url)};
+ const app:any={client:{hasSession:()=>false,wechatLogin:async()=>({user:{id:'own-account'}})},refresh:async()=>({})};
+ const studio=await capturePage('sticker-studio',app,platform);studio.onLoad({mode:'static',from:'template'});studio.login();assert.equal(navigations.pop(),'/pages/auth/index?stickerMode=static');
+ const auth=await capturePage('auth',app,platform);auth.onLoad({stickerMode:'static'});await auth.submit();assert.equal(navigations.pop(),'/pages/sticker-studio/index?mode=static&from=template');assert.equal(app.user.id,'own-account');
+ auth.onLoad({stickerMode:'https://untrusted.test/'});await auth.submit();assert.equal(navigations.pop(),'/pages/chat/index');
+});

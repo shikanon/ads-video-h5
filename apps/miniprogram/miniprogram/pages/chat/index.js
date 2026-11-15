@@ -299,7 +299,7 @@ Page({
     finally { this.setData({ creatingSession: false }); }
   },
   async stop() { try { await getApp().mutate('/api/sessions/' + encodeURIComponent(this.data.sessionId) + '/stop', {}); } catch (error) { notify(error); } },
-  async retry(event) { try { await getApp().mutate('/api/jobs/' + encodeURIComponent(event.currentTarget.dataset.id) + '/retry', {}); } catch (error) { notify(error); } },
+  async retry(event) { const app=getApp(),job=app.state&&(app.state.jobs||[]).find(j=>j.id===event.currentTarget.dataset.id);if(job&&job.stickerGenerationTask){wx.navigateTo({url:'/pages/sticker-studio/index?sessionId='+encodeURIComponent(job.sessionId)+'&projectId='+encodeURIComponent(job.stickerGenerationTask.projectId)});return;}try { await app.mutate('/api/jobs/' + encodeURIComponent(event.currentTarget.dataset.id) + '/retry', {}); } catch (error) { notify(error); } },
   play(event) { wx.navigateTo({ url: '/pages/player/index?type=artifact&id=' + encodeURIComponent(event.currentTarget.dataset.id) }); },
   credits() { wx.navigateTo({ url: '/pages/credits/index' }); },
   livePhotoHelp,

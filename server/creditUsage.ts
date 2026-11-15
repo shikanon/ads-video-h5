@@ -10,14 +10,13 @@ interface Context { credits: Credits; userId: string; taskId: string; }
 const context = new AsyncLocalStorage<Context>();
 export const withCreditUsage = <T>(credits: Credits, userId: string, taskId: string, action: () => Promise<T>) => context.run({ credits, userId, taskId }, action);
 
-// Per-image generation is not token-priced. Keep an explicit pending receipt;
-// never silently treat a successful provider request as free or invent token use.
-export async function recordUnpricedImage(modelId:string,requestId:string) {
+export async function assertImageBudget(modelId:string,requestId:string) {
+  const owner=context.getStore();if(owner)await owner.credits.assertImageBudget(owner.userId,owner.taskId,modelId,requestId);
+}
+export async function recordImageUsage(modelId:string,requestId:string) {
   const owner=context.getStore();if(!owner)return;
-  await owner.credits.recordUsage(owner.userId,owner.taskId,modelId,requestId,undefined,
-    {modelId,input:0,cachedInput:0,output:0,source:'per-image pricing pending',updatedAt:new Date().toISOString()},
-    '角色表情图片生成：按张计价，尚未配置图片单价，费用待管理员核对；未按token估算扣分。');
-  await currentTaskExecution()?.recordCost(modelId+':'+requestId,undefined);
+  const micros=await owner.credits.recordImageUsage(owner.userId,owner.taskId,modelId,requestId);
+  await currentTaskExecution()?.recordCost(modelId+':'+requestId,micros);
 }
 
 // All token providers pass through jobFetch, including Pi's streaming transport.

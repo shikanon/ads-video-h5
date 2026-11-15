@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { CreditAdminState, CreditAccount, CreditEntry, CreditWallet, TokenPrice } from '../../../shared/creditTypes';
+import type { CreditAdminState, CreditAccount, CreditEntry, CreditWallet, TokenPrice, ImagePrice } from '../../../shared/creditTypes';
 import { formatPoints } from '../../../shared/creditFormat';
 import { api } from './api';
 import './credits.css';
@@ -10,6 +10,7 @@ const priceFields = { input: '输入', cachedInput: '缓存输入', output: '输
 export default function CreditAdmin({ token }: { token: string }) {
   const [state, setState] = useState<CreditAdminState | null>(null), [search, setSearch] = useState(''), [form, setForm] = useState<TokenPrice | null>(null);
   const [selected, setSelected] = useState<CreditAccount | null>(null), [ledger, setLedger] = useState<Ledger | null>(null);
+  const [imageForm,setImageForm]=useState<ImagePrice|null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const load = useCallback(async (signal?: AbortSignal) => setState(await api<CreditAdminState>('/api/admin/credits', token, { signal })), [token]);
   useEffect(() => {
@@ -43,6 +44,11 @@ export default function CreditAdmin({ token }: { token: string }) {
     } catch (cause) { setError(cause instanceof Error ? cause.message : '保存失败。'); }
     finally { setBusy(false); }
   }
+  async function saveImage(event:FormEvent){
+    event.preventDefault();if(!imageForm)return;setBusy(true);setError('');setNotice('');
+    try{await api(`/api/admin/credits/image-prices/${encodeURIComponent(imageForm.modelId)}`,token,{method:'PUT',body:JSON.stringify(imageForm)});await load();setImageForm(null);setNotice('图片价格已保存；已接收阶段仍按提交时价格结算。');}
+    catch(cause){setError(cause instanceof Error?cause.message:'保存失败。');}finally{setBusy(false);}
+  }
   return <div className="credit-admin">
     <div className="admin-heading"><div><h1>用户与积分</h1><p>注册赠送 {formatPoints(state?.registrationGrant ?? 2000)} · 每日签到领取 {formatPoints(state?.dailyGrant ?? 1000)} 积分 · 1 积分 = ¥0.001</p></div></div>
     <p className="credit-admin-policy">特殊账户初始额度 {formatPoints(state?.specialInitial ?? 1000000)} 积分。余额 ≤ 0 时拦截新指令；已接收任务继续执行，可产生负余额。每天按北京时间签到并领取一次，未签到的日期不补领；已领取积分可累计。</p>
@@ -52,7 +58,7 @@ export default function CreditAdmin({ token }: { token: string }) {
       <div className="admin-panel-heading"><h2>用户账户</h2><input className="credit-search" aria-label="搜索用户" placeholder="搜索邮箱、昵称或用户 ID" value={search} onChange={e => setSearch(e.target.value)} /></div>
       <div className="credit-table-wrap"><table><thead><tr><th>用户</th><th>积分余额</th><th>累计消费</th><th>特殊账户</th><th>记录</th></tr></thead><tbody>
         {state?.accounts.filter(a => `${a.email} ${a.displayName} ${a.id}`.toLowerCase().includes(search.toLowerCase())).map(a => <tr key={a.id}>
-          <td><strong>{a.displayName}</strong><small>{a.authProvider === 'wechat' ? '微信账号' : a.email}</small><small>{a.id}</small></td><td className={a.wallet.balance <= 0 ? 'credit-negative' : ''}>{formatPoints(a.wallet.balance)}</td><td>{formatPoints(a.wallet.totalSpent)}</td>
+          <td><strong>{a.displayName}</strong><small>{a.authProvider === 'wechat' ? '微信账号' : a.email}</small><small>{a.id}</small></td><td className={a.wallet.balance <= 0 ? 'credit-negative' : ''}>{formatPoints(a.wallet.balance)}{a.wallet.reserved?<small>制作预留 {formatPoints(a.wallet.reserved)}</small>:null}</td><td>{formatPoints(a.wallet.totalSpent)}</td>
           <td><input type="checkbox" aria-label={`${a.displayName} 特殊账户`} checked={a.wallet.special} disabled={busy} onChange={() => void special(a)} /></td><td><button type="button" disabled={busy} onClick={() => void records(a)}>查看</button></td>
         </tr>)}
       </tbody></table></div>{!state ? <p>正在读取账户…</p> : null}
@@ -61,10 +67,16 @@ export default function CreditAdmin({ token }: { token: string }) {
       <div className="admin-panel-heading"><h2>{selected.displayName} · 积分记录</h2><button type="button" onClick={() => { setSelected(null); setLedger(null); }}>关闭记录</button></div>
       <div className="credit-table-wrap"><table><thead><tr><th>时间 / 类型</th><th>积分</th><th>余额</th><th>用量与价格</th></tr></thead><tbody>{ledger.entries.map(e => <tr key={e.id}>
         <td>{new Date(e.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}<small>{labels[e.kind]}</small></td><td>{e.points > 0 ? '+' : ''}{formatPoints(e.points)}</td><td>{formatPoints(e.balance)}</td>
-        <td>{e.modelId ? <code>{e.modelId}</code> : null}{e.usage ? <small>输入 {e.usage.input} / 输出 {e.usage.output} / 缓存 {e.usage.cachedInput}{e.usage.audioInput ? ` / 音频 ${e.usage.audioInput}` : ''} token</small> : null}{e.price ? <small>输入 ¥{e.price.input} / 缓存 ¥{e.price.cachedInput} / 输出 ¥{e.price.output} 每百万 token</small> : null}{e.detail ? <small>{e.detail}</small> : null}</td>
+        <td>{e.modelId ? <code>{e.modelId}</code> : null}{e.usage ? <small>输入 {e.usage.input} / 输出 {e.usage.output} / 缓存 {e.usage.cachedInput}{e.usage.audioInput ? ` / 音频 ${e.usage.audioInput}` : ''} token</small> : null}{e.price ? <small>输入 ¥{e.price.input} / 缓存 ¥{e.price.cachedInput} / 输出 ¥{e.price.output} 每百万 token</small> : null}{e.imagePrice?<small>{e.imageCount} 张 · ¥{e.imagePrice.rmbPerImage}/张</small>:null}{e.detail ? <small>{e.detail}</small> : null}</td>
       </tr>)}</tbody></table></div>
       {ledger.entries.length < ledger.total ? <button type="button" disabled={busy} onClick={() => void records(selected, true)}>更多记录</button> : null}
     </section> : null}
+    <section className="admin-panel">
+      <h2>表情图片价格</h2><p>单位：元 / 张。制作前预留阶段积分，按实际生成张数扣分，未使用部分释放；已有图片复用不重复扣费。</p>
+      <div className="credit-table-wrap"><table><thead><tr><th>模型</th><th>单价</th><th>积分 / 张</th><th>操作</th></tr></thead><tbody>{state?.imagePrices?.map(p=><tr key={p.modelId}><td><code>{p.modelId}</code></td><td>¥{p.rmbPerImage}</td><td>{formatPoints(p.rmbPerImage/(state?.pointValueRmb||.001))}</td><td><button type="button" onClick={()=>setImageForm(p)}>编辑图片价格</button></td></tr>)}</tbody></table></div>
+      <button type="button" onClick={()=>setImageForm({modelId:'',rmbPerImage:.12,source:'',updatedAt:''})}>添加图片模型价格</button>
+      {imageForm?<form className="credit-price-form" onSubmit={e=>void saveImage(e)}><label>图片模型 ID<input required maxLength={160} value={imageForm.modelId} onChange={e=>setImageForm({...imageForm,modelId:e.target.value})}/></label><label>元 / 张<input type="number" required min="0.001" max="1000" step="0.001" value={imageForm.rmbPerImage} onChange={e=>setImageForm({...imageForm,rmbPerImage:Number(e.target.value)})}/></label><button className="admin-save" disabled={busy} type="submit">保存图片价格</button><button type="button" onClick={()=>setImageForm(null)}>取消</button></form>:null}
+    </section>
     <section className="admin-panel">
       <div className="admin-panel-heading"><h2>模型 token 价格</h2><a href="https://docs.volcengine.com/docs/ark/model-pricing?lang=zh" target="_blank" rel="noreferrer">官方价格参考</a></div>
       <p>单位：元 / 百万 token，普通在线推理。每次调用按供应商返回的实际用量扣分，输出用量包含推理 token。缺少用量会记录为待核对。</p>
