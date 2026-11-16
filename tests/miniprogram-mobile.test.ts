@@ -114,7 +114,7 @@ test('welcome stays at the top; new conversation renders the returned session wi
   p.onUnload();
 });
 
-test('composer model switch targets the displayed session, preserves the draft, saves the next-session default and blocks sending while saving', async () => {
+test('composer model switch preserves drafts and permits future-message changes during a running job', {timeout:10000}, async () => {
   const f = await fixture(), p = f.page, requests: any[] = [];
   f.state.models = [{ id: 'a', name: '模型 A', enabled: true, kind: 'text' }, { id: 'b', name: '模型 B', enabled: true, kind: 'text' }];
   f.state.settings = { defaultModelId: 'a' }; f.state.sessions[0].modelId = 'a'; p.render(f.state);
@@ -131,7 +131,10 @@ test('composer model switch targets the displayed session, preserves the draft, 
   assert.equal(requests[0].route, '/api/sessions/old/model'); assert.equal(requests[1].route, '/api/settings');
   assert.equal(p.data.modelName, '模型 B'); assert.equal(p.data.prompt, '保留这段草稿'); assert.equal(p.data.modelChanging, false);
   assert.equal(f.state.settings.defaultModelId, 'b');
-  p.setData({ running: true }); await p.changeModel({ detail: { value: 0 } }); assert.equal(requests.length, 2);
+  f.state.jobs.push({id:'running',sessionId:'old',status:'running',progress:42}); p.render(f.state);
+  const next = p.changeModel({ detail: { value: 0 } }); assert.equal(requests.length, 3);
+  finish(); await next; assert.equal(requests.length, 4); assert.equal(p.data.modelName, '模型 A');
+  assert.equal(p.data.prompt, '保留这段草稿'); assert.equal(f.state.jobs[0].status, 'running');
   p.onUnload();
 });
 
