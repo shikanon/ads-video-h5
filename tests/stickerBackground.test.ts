@@ -8,6 +8,7 @@ function rect(p:PNG,x:number,y:number,w:number,h:number,c:number[]){for(let yy=y
 test('opaque references use an explicit non-colliding backdrop; real alpha stays in transparent mode',async()=>{
   const p=image([160,80,40]),bytes=PNG.sync.write(p),plan=await stickerBackground({bytes,mimeType:'image/png'});assert.equal(plan.background,'opaque');assert.equal(plan.key?.hex,'#00FF00');assert.deepEqual(plan.reference.bytes,bytes);
   const grass=image([0,230,0]),other=await stickerBackground({bytes:PNG.sync.write(grass),mimeType:'image/png'});assert.equal(other.key?.hex,'#FF00FF');
+  const pinkProp=await stickerBackground({bytes:PNG.sync.write(grass),mimeType:'image/png'},false,['#FF00FF']);assert.equal(pinkProp.key?.hex,'#00FFFF','reserve the pink family for new hearts and cushions');
   const transparent=image([160,80,40]);rect(transparent,0,0,128,16,[0,0,0,0]);const original=PNG.sync.write(transparent),alpha=await stickerBackground({bytes:original,mimeType:'image/png'});assert.equal(alpha.background,'transparent');assert.equal(alpha.key,undefined);assert.deepEqual(alpha.reference.bytes,original);
 });
 test('matting removes outer canvas and enclosed limb gaps, preserves subject colors and refuses an unspecified background',()=>{

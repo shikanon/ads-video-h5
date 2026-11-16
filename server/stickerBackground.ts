@@ -12,13 +12,13 @@ function chroma(png:PNG,p:number,key:StickerChroma){
 // Match the saturated studio key, not every pastel sharing its hue. Broad
 // hue removal punched holes through pink cushions on magenta backdrops.
 function backdropPixel(png:PNG,p:number,key:StickerChroma){const c=chroma(png,p,key);return c.high>=100&&c.low<=75&&c.excess>=80;}
-export async function stickerBackground(reference:ImageReference,forceOpaque=false):Promise<{background:'transparent'|'opaque';key?:StickerChroma;reference:ImageReference}>{
+export async function stickerBackground(reference:ImageReference,forceOpaque=false,excludedKeys:string[]=[]):Promise<{background:'transparent'|'opaque';key?:StickerChroma;reference:ImageReference}>{
   const bytes=await transparentImageReference(reference.bytes),png=readAvatarPng(bytes);
   if(hasAvatarAlpha(png)&&!forceOpaque)return {background:'transparent',reference:{bytes,mimeType:'image/png'}};
   // An ordinary photo must not be passed to Seedream 5.0's transparent mode.
   // Select a deliberate studio backdrop with little overlap in the reference.
-  const ranked=keys.map((key,index)=>{let count=0;for(let p=0;p<png.data.length;p+=64){const c=chroma(png,p,key);if(c.high>100&&c.excess>45)count++;}return {key,count,index};}).sort((a,b)=>a.count-b.count||a.index-b.index);
-  if(ranked[0].count/Math.ceil(png.data.length/64)>.005)throw Error('角色图片包含全部可用抠图背景色，无法安全去背景。请使用已抠除背景的角色PNG。');
+  const ranked=keys.filter(key=>!excludedKeys.includes(key.hex)).map((key,index)=>{let count=0;for(let p=0;p<png.data.length;p+=64){const c=chroma(png,p,key);if(c.high>100&&c.excess>45)count++;}return {key,count,index};}).sort((a,b)=>a.count-b.count||a.index-b.index);
+  if(!ranked.length||ranked[0].count/Math.ceil(png.data.length/64)>.005)throw Error('角色与道具颜色占用了可用抠图背景色，无法安全去背景。请使用已抠除背景的角色PNG。');
   return {background:'opaque',key:ranked[0].key,reference};
 }
 export function stickerBackgroundInstructions(key?:StickerChroma){

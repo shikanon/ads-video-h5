@@ -17,7 +17,7 @@ import { stickerQualityFixture } from './stickerQuality';
 export async function startCreditServer(options: { prepare?: (directory:string)=>Promise<void>;extraTextModel?:boolean;stickerImages?: boolean; obsoleteSticker?: boolean; wechat?: boolean; onProviderRequest?: (body: any) => Promise<void>; structuredReply?: (body:any)=>unknown } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'qj-credit-service-'));
   const password = 'Credit-QA-user-123', adminPassword = 'Credit-QA-admin-123';
-  const providerState = { calls: 0, qualityCalls:0, outputTokens: 100, delay: 0, multiTurn: false, fail: false, wechatCalls: 0 };
+  const providerState = { calls: 0, qualityCalls:0, identityCalls:0, outputTokens: 100, delay: 0, multiTurn: false, fail: false, wechatCalls: 0 };
   const provider = createServer(async (request, response) => {
     if (options.wechat && request.url?.startsWith('/wechat-session?')) {
       providerState.wechatCalls++;
@@ -31,6 +31,7 @@ export async function startCreditServer(options: { prepare?: (directory:string)=
     }
     let raw = ''; for await (const chunk of request) raw += chunk;
     const body = JSON.parse(raw);
+    if(body.response_format?.type==='json_object'&&body.messages?.[0]?.content?.startsWith('你是轻喵角色外观记录员。')){providerState.identityCalls++;response.writeHead(200,{'Content-Type':'application/json'});response.end(JSON.stringify({choices:[{message:{content:JSON.stringify({identity:'受控管线测试：参考是单个矩形角色，保留颜色和轮廓。',uncertainties:''})}}],usage:{prompt_tokens:1000,completion_tokens:500}}));return;}
     if(body.response_format?.type==='json_object'&&body.messages?.[0]?.content?.startsWith('你是独立的轻喵表情画面质检员。')){
       providerState.qualityCalls++;
       const info=JSON.parse(body.messages[1].content.at(-1).text),review=stickerQualityFixture({frames:Array.from({length:info.frameCount},()=>Buffer.from('fixture'))});
