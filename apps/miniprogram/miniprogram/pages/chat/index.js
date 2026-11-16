@@ -126,8 +126,8 @@ Page({
     const cache = this._renderCache || (this._renderCache = {}), delta = {};
     for (const key of Object.keys(patch)) { const encoded = JSON.stringify(patch[key]); if (cache[key] !== encoded || JSON.stringify(this.data[key]) !== encoded) { cache[key] = encoded; delta[key] = patch[key]; } }
     if (Object.keys(delta).length) this.setData(delta);
-    const covers=view.messages.flatMap(message=>(message.attachments||[]).map(item=>Object.assign({},item,{messageId:message.id}))).slice(-40);
-    this.setData({messageAttachments:covers});loadThumbnails(this,'messageAttachments',getApp().client);
+    const covers=view.messages.flatMap(message=>(message.attachments||[]).map(item=>Object.assign({},item,{id:message.id+':'+item.id,mediaId:item.id,messageId:message.id})));
+    this.setData({messageAttachments:covers});loadThumbnails(this,'messageAttachments',getApp().client,40);
     if (this._visible && !this.data.sidebarOpen && getApp()._foreground !== false && !getApp()._pendingNotice && !getApp()._openingNotice) markSessionRead(getApp(), view.sessionId);
     if (this._lastCount !== view.messages.length || this._lastSession !== view.sessionId) { this._lastCount = view.messages.length; this._lastSession = view.sessionId; this.scroll(); }
     this.consumeTemplate();

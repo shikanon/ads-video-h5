@@ -3,7 +3,7 @@ import {createNotifications,disabledNotifications} from './wechatNotifications';
 import {analyzeFilm,readFilmReport,filmDirectory,reusableShot,removeFilmData} from './filmAnalysis';
 import {fileDigest} from './artifactIntegrity';
 import { documentText, DOCX_MIME } from './chatDocuments';
-import { readChatImage } from './chatAttachments';
+import { readChatImage,chatImagePages } from './chatAttachments';
 import { transparentImageReference } from './transparentImageReference';
 import { stickerStyleFile } from './stickerStyles';
 import { createStickerShares } from './stickerShares';
@@ -321,12 +321,10 @@ async function performJob(job: Job): Promise<void> {
       const source=path.join(mediaDir,item.id);await oss?.ensure(job.ownerId!,'media',item.id,source);const hash=await fileDigest(source);
       if(item.visualText?.sourceHash===hash)continue;
       const vision=await getModelConfig('understanding');if(!vision)throw Error('图片阅读模型尚未配置，请联系管理员。');
-      const thumbnail=path.join(tmpDir,'chat-image-'+item.id+'.jpg');
-      await runFFmpeg(['-y','-v','error','-i',source,'-frames:v','1','-vf','scale=1600:1600:force_original_aspect_ratio=decrease','-q:v','2',thumbnail]);
-      const bytes=await readFile(thumbnail),execution=currentTaskExecution();
+      const bytes=await chatImagePages(source,path.join(tmpDir,'chat-image-'+item.id)),execution=currentTaskExecution();
       const read=()=>readChatImage(bytes,'image/jpeg',vision,basicProgress);
       const text=execution?await execution.external('read_chat_image',{sourceHash:hash,modelId:vision.modelId},read,[vision.apiKey]):await read();
-      item.visualText={sourceHash:hash,text,modelId:vision.modelId};await saveState();await rm(thumbnail,{force:true});
+      item.visualText={sourceHash:hash,text,modelId:vision.modelId};await saveState();
     }
     addReply(session, job, await answerForSessionWithPi({ prompt, instruction, researchMode:job.researchMode, onResearch:async evidence=>{ throwIfJobCancelled(); const folder=path.join(dataDir,'question-research',job.id);await mkdir(folder,{recursive:true,mode:0o700});const temporary=path.join(folder,randomUUID()+'.tmp');await writeFile(temporary,JSON.stringify(evidence),{mode:0o600});await rename(temporary,path.join(folder,'snapshot.json')); }, config, media, history, plan: session.plan, attached, progress: basicProgress, onSection: async (id, text) => { updateReply(session, job, text, 'commentary', id); await saveState(); } }));
     return;

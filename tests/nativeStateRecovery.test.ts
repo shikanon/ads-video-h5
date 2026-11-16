@@ -14,7 +14,8 @@ test('an old poll cannot remove uploaded images, selected attachments or a newly
 });
 test('sent images remain visible as attachments and account-scoped drafts survive reopening',async t=>{
  const f=await fixture();t.after(()=>{f.page.onUnload();f.app.onHide();});const s=initial();s.media=[{id:'image',kind:'image',name:'Role',url:config.apiBase+'/media/image'}];(s.sessions[0].messages[0] as any).attachmentIds=['image'];f.app.commit(s);
- assert.equal(f.page.data.messageAttachments[0].id,'image');assert.equal(f.page.data.messages[0].attachments[0].id,'image');
+ assert.equal(f.page.data.messageAttachments[0].mediaId,'image');assert.equal(f.page.data.messages[0].attachments[0].id,'image');
+ (s.sessions[0].messages as any[]).push({...s.sessions[0].messages[0],id:'u2'});f.app.commit(s);assert.equal(f.page.data.messageAttachments.length,2);assert.notEqual(f.page.data.messageAttachments[0].id,f.page.data.messageAttachments[1].id,'repeated image attachments have separate message keys');
  f.page.setData({prompt:'角色设定与下一段剧情',attachmentIds:['image'],cursor:8});f.page.onHide();const second=await capturePage('chat',f.app,f.wx);second.onLoad();second.render(f.app.state);assert.equal(second.data.prompt,'角色设定与下一段剧情');assert.equal(second.data.attachmentIds[0],'image');second.onUnload();
  const {readDrafts}=miniRequire('./miniprogram/utils/chat-drafts');assert.equal(Object.keys(readDrafts(f.wx,'stranger')).length,0);
 });
