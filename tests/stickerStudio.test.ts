@@ -14,6 +14,7 @@ import { runStickerWorkflow } from '../server/stickerWorkflow';
 import { createRequire } from 'node:module';
 import { capture } from '../server/scienceRender';
 import { runFFmpeg } from '../server/core';
+import { stickerQualityFixture } from './fixtures/stickerQuality';
 const recipe={referenceMediaId:'role',name:'新角色',style:'保留角色原有服装，柔彩Q版',mode:'static' as const};
 function png(){const p=new PNG({width:128,height:128});for(let y=25;y<105;y++)for(let x=30;x<95;x++){const i=(y*128+x)*4;p.data[i]=190;p.data[i+1]=80;p.data[i+2]=40;p.data[i+3]=255;}return PNG.sync.write(p);}
 function zipEntries(bytes:Buffer){const files=new Map<string,Buffer>();for(let offset=0;bytes.readUInt32LE(offset)===0x04034b50;){const size=bytes.readUInt32LE(offset+18),n=bytes.readUInt16LE(offset+26),extra=bytes.readUInt16LE(offset+28),start=offset+30+n+extra;files.set(bytes.toString('utf8',offset+30,offset+30+n),inflateRawSync(bytes.subarray(start,start+size)));offset=start+size;}return files;}
@@ -74,6 +75,7 @@ test('real HTTP, image provider fixture, queue and static delivery require expli
   assert.equal((await f.request(cookie,'/api/sticker-packs/'+custom.id)).status,200);assert.equal((await f.request(other,'/api/sticker-packs/'+custom.id)).status,404);
   const stranger:any=await(await f.request(other,'/api/sticker-packs')).json();assert.equal(stranger.packs.some((p:any)=>p.id===custom.id),false);
   const credits:any=await(await f.request(cookie,'/api/credits?offset=0&limit=100')).json();assert.equal(credits.entries.filter((entry:any)=>entry.imageCount===1).length,24);assert.equal(credits.entries.some((entry:any)=>entry.kind==='usage_pending'),false);assert.equal(credits.wallet.balance,120);assert.equal(credits.wallet.totalSpent,2880);assert.equal(credits.wallet.reserved,undefined);
+  assert.equal(f.providerState.qualityCalls,24,'every new image is visually inspected; review tokens are included rather than debited to the user');
   const studio=createStickerStudio(f.directory),manifest=await studio.pack('ordinary',custom.id);assert.match(await verifyStickerAssets(manifest!.pack,manifest!.assetsRoot),/^[a-f0-9]{64}$/);
   if(approve.makeVideo){const video=finished.artifacts.find((a:any)=>a.kind==='video');assert.ok(video);assert.equal(video.duration,24);assert.equal(video.hasBgm,true);assert.equal(video.sticker.sourceHash,artifact.sticker.sourceHash);assert.equal(video.sticker.packArtifactId,artifact.id);assert.equal((await f.request(other,video.downloadUrl)).status,404);const project=zipEntries(Buffer.from(await(await f.request(cookie,video.projectUrl)).arrayBuffer())),verification=JSON.parse(project.get('verification.json')!.toString());assert.equal(verification.decodedFrames,720);assert.equal(verification.fullDecode,true);assert.equal(JSON.parse(project.get('config.json')!.toString()).packId,custom.id);}
 });
@@ -81,7 +83,7 @@ test('real HTTP, image provider fixture, queue and static delivery require expli
 test('dynamic generation produces six distinct drawings, ten-frame exports and refuses changed approval assets',{timeout:180000},async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'sticker-dynamic-')),reference={bytes:png(),mimeType:'image/png'};let calls=0;
   const fixture=async(_prompt:string,_model:any,input:any,options:any)=>{calls++;if(calls===1){assert.equal(options.size,'2048x2048');return {bytes:png(),mimeType:'image/png'};}assert.equal(options.size,'2496x1664');assert.equal(options.background,'transparent');const reference=PNG.sync.read(input.bytes);assert.equal(reference.data[3],0);assert.equal(reference.width,2496);assert.equal(reference.height,1664);const p=new PNG({width:384,height:256});for(let n=0;n<6;n++)for(let y=25;y<105;y++)for(let x=30;x<95+n*2;x++){const i=((Math.floor(n/3)*128+y)*384+n%3*128+x)*4;p.data[i]=140+n*12;p.data[i+1]=60;p.data[i+2]=30;p.data[i+3]=255;}return {bytes:PNG.sync.write(p),mimeType:'image/png'};};
-  const studio=createStickerStudio(dir,fixture),model:any={modelId:'fixture-image',apiKey:'fixture-secret'},project=await studio.create('one','session','dynamic-request',{...recipe,mode:'dynamic'},stateHash(reference.bytes.toString('base64')));
+  const studio=createStickerStudio(dir,fixture,async input=>stickerQualityFixture(input)),model:any={modelId:'fixture-image',apiKey:'fixture-secret'},project=await studio.create('one','session','dynamic-request',{...recipe,mode:'dynamic'},stateHash(reference.bytes.toString('base64')));
   try {
     await assert.rejects(()=>studio.generate('one',{projectId:project.id,phase:'batch',makeVideo:false,bgm:false},reference,model,async()=>{}),/确认/);
     const task={projectId:project.id,phase:'samples' as const,makeVideo:false,bgm:false};await studio.generate('one',task,reference,model,async()=>{});assert.equal(calls,4,'one reusable character drawing precedes three action sheets');

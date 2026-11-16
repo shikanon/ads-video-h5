@@ -1129,7 +1129,7 @@ mountStickerStudioRoutes(app,{studio:stickerStudio,base:publicBase,
   pricing:async()=>{const model=await getModelConfig('image');if(!model)return null;const p=await credits.imagePricing(model.modelId);return {...p,staticSamples:p.pointsPerImage*3,dynamicSamples:p.pointsPerImage*4,batch:p.pointsPerImage*21};},
   quote:async(user,task)=>{const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');return credits.imageQuote(user.id,model.modelId,await stickerStudio.pendingImageIds(user.id,task));},
   version:async()=>{const entry=videoTemplates.find(item=>item.workflow==='sticker-pack');return entry?(await loadVideoTemplate(entry)).skillHash:undefined;},
-  ready:async()=>{const model=await getModelConfig('image');return Boolean(model?.enabled&&/^doubao-seedream-/.test(model.modelId));},
+  ready:async()=>{const model=await getModelConfig('image'),review=await getModelConfig('understanding');return Boolean(model?.enabled&&/^doubao-seedream-/.test(model.modelId)&&review?.enabled&&/^doubao-seed-2-1-/.test(review.modelId));},
   reference:async(user,sessionId,recipe)=>{
     const session=getSession(sessionId,user.id);if(!session||session.archivedAt)throw Object.assign(Error('会话不存在或已归档。'),{status:404});
     const source=state.media.find(item=>item.id===recipe.referenceMediaId&&owned(item,user.id)&&item.kind==='image');

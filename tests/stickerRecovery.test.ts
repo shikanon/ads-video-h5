@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import express from 'express';
 import { PNG } from 'pngjs';
 import { createStickerStudio } from '../server/stickerStudio';
+import { stickerQualityFixture } from './fixtures/stickerQuality';
 import { createStickerShares } from '../server/stickerShares';
 import { createCredits } from '../server/credits';
 import { documentText } from '../server/chatDocuments';
@@ -50,7 +51,7 @@ test('partial completed images are available and explicit share previews are own
 });
 test('post-processing repair reuses the paid original without another image request or debit',{timeout:60000},async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'sticker-source-repair-'));t.after(()=>rm(dir,{recursive:true,force:true}));const p=new PNG({width:128,height:128});for(let y=20;y<108;y++)for(let x=25;x<103;x++){const n=(y*128+x)*4;p.data[n]=200;p.data[n+1]=100;p.data[n+3]=255;}const bytes=PNG.sync.write(p);let calls=0;
- const studio=createStickerStudio(dir,async()=>{calls++;return {bytes,mimeType:'image/png'};}),project=await studio.create('owner','session','request',{referenceMediaId:'role',name:'修复验收',style:'柔彩Q版',mode:'static'},stateHash(bytes.toString('base64'))),credits=createCredits(dir);await credits.load([{id:'owner',email:'a@fixture.test',displayName:'Owner'}]);const model={id:'image',kind:'image' as const,enabled:true,provider:'ark',modelId:'doubao-seedream-5-0-flash-260915',apiKey:'fixture',baseUrl:'https://fixture.test'},task={projectId:project.id,phase:'samples' as const,makeVideo:false,bgm:false};
+ const studio=createStickerStudio(dir,async()=>{calls++;return {bytes,mimeType:'image/png'};},async input=>stickerQualityFixture(input)),project=await studio.create('owner','session','request',{referenceMediaId:'role',name:'修复验收',style:'柔彩Q版',mode:'static'},stateHash(bytes.toString('base64'))),credits=createCredits(dir);await credits.load([{id:'owner',email:'a@fixture.test',displayName:'Owner'}]);const model={id:'image',kind:'image' as const,enabled:true,provider:'ark',modelId:'doubao-seedream-5-0-flash-260915',apiKey:'fixture',baseUrl:'https://fixture.test'},task={projectId:project.id,phase:'samples' as const,makeVideo:false,bgm:false};
  const price=await credits.imagePricing(model.modelId),admission=await credits.admitImages('owner',model.modelId,await studio.pendingImageIds('owner',task),price.pricingHash);await withCreditUsage(credits,'owner',admission,()=>studio.generate('owner',task,{bytes,mimeType:'image/png'},model,async()=>{}));await credits.releaseImages(admission);assert.equal(calls,3);
  const folder=path.join(studio.folder('owner',project.id),'assets','pack','03');await rm(path.join(folder,'receipt.json'));await rm(path.join(folder,'still.png'));const pending=await studio.pendingImageIds('owner',task);assert.deepEqual(pending,[project.id+'_03']);assert.equal((await credits.imageQuote('owner',model.modelId,pending)).points,0);
  const retry=await credits.admitImages('owner',model.modelId,pending,price.pricingHash);await withCreditUsage(credits,'owner',retry,()=>studio.generate('owner',task,{bytes,mimeType:'image/png'},model,async()=>{}));await credits.releaseImages(retry);assert.equal(calls,3);assert.equal((await credits.snapshot('owner')).balance,1640);assert.equal((await studio.view('owner',project.id)).samples.length,3);

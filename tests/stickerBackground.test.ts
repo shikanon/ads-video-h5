@@ -20,6 +20,17 @@ test('a green character selects a magenta background and keeps its green clothin
   const generated=image([255,0,255]);rect(generated,25,25,75,85,[0,220,0,255]);const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),plan.key!));assert.deepEqual([...result.data.subarray((60*128+60)*4,(60*128+60)*4+4)],[0,220,0,255]);
 });
 
+test('matting a magenta canvas preserves a pastel pink pillow instead of punching transparent holes',()=>{
+ const magenta={name:'洋红色',hex:'#FF00FF',channels:[0,2]},generated=image([255,0,255]);rect(generated,25,20,75,90,[255,140,205,255]);rect(generated,40,40,40,35,[240,105,175,255]);
+ const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),magenta));assert.equal(result.data[3],0);
+ for(const [x,y] of [[50,50],[70,60],[60,90]]){const p=(y*128+x)*4;assert.equal(result.data[p+3],255);assert.deepEqual([...result.data.subarray(p,p+3)],[...generated.data.subarray(p,p+3)]);}
+});
+
+test('matting removes isolated backdrop flecks but retains meaningful separate heart decorations',()=>{
+ const magenta={name:'洋红色',hex:'#FF00FF',channels:[0,2]},generated=image([255,0,255]);rect(generated,25,20,75,90,[255,140,205,255]);rect(generated,6,6,1,1,[170,30,70,255]);rect(generated,108,20,10,10,[240,130,160,255]);
+ const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),magenta));assert.equal(result.data[(6*128+6)*4+3],0);assert.equal(result.data[(25*128+112)*4+3],255);
+});
+
 test('animation reference pins six complete characters to separate transparent cells',()=>{
   const identity=new PNG({width:512,height:512});rect(identity,190,60,130,390,[180,90,55,255]);const sheet=PNG.sync.read(stickerMotionReference(PNG.sync.write(identity)));assert.equal(sheet.width,2496);assert.equal(sheet.height,1664);
   for(let n=0;n<6;n++){assert.equal(sheet.data[((Math.floor(n/3)*832+220)*2496+n%3*832+350)*4+3],255);assert.equal(sheet.data[((Math.floor(n/3)*832)*2496+n%3*832)*4+3],0);}

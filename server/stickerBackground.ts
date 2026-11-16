@@ -9,6 +9,9 @@ function chroma(png:PNG,p:number,key:StickerChroma){
   let high=255,low=0;for(let c=0;c<3;c++){if(key.channels.includes(c))high=Math.min(high,png.data[p+c]);else low=Math.max(low,png.data[p+c]);}
   return {high,low,excess:high-low};
 }
+// Match the saturated studio key, not every pastel sharing its hue. Broad
+// hue removal punched holes through pink cushions on magenta backdrops.
+function backdropPixel(png:PNG,p:number,key:StickerChroma){const c=chroma(png,p,key);return c.high>=160&&c.low<=75&&c.excess>=110;}
 export async function stickerBackground(reference:ImageReference,forceOpaque=false):Promise<{background:'transparent'|'opaque';key?:StickerChroma;reference:ImageReference}>{
   const bytes=await transparentImageReference(reference.bytes),png=readAvatarPng(bytes);
   if(hasAvatarAlpha(png)&&!forceOpaque)return {background:'transparent',reference:{bytes,mimeType:'image/png'}};
@@ -23,15 +26,25 @@ export function stickerBackgroundInstructions(key?:StickerChroma){
 }
 export function removeStickerBackdrop(bytes:Buffer,key:StickerChroma):Buffer{
   const png=readAvatarPng(bytes),{width:w,height:h}=png,total=w*h,mask=new Uint8Array(total),queue=new Uint32Array(total);let head=0,tail=0;
-  const add=(n:number)=>{if(mask[n])return;const p=n*4,c=chroma(png,p,key);if(png.data[p+3]<16||(c.high>=90&&c.low<170&&c.excess>=35)){mask[n]=1;queue[tail++]=n;}};
+  const add=(n:number)=>{if(mask[n])return;const p=n*4;if(png.data[p+3]<16||backdropPixel(png,p,key)){mask[n]=1;queue[tail++]=n;}};
   for(let x=0;x<w;x++){add(x);add((h-1)*w+x);}for(let y=1;y<h-1;y++){add(y*w);add(y*w+w-1);}
   // First prove the outside canvas actually has the requested backdrop. The
   // chosen color was checked against the reference and reserved for background.
   while(head<tail){const n=queue[head++],x=n%w,y=Math.floor(n/w);if(x)add(n-1);if(x+1<w)add(n+1);if(y)add(n-w);if(y+1<h)add(n+w);}
   if(tail<total*.03||tail>total*.965)throw Error('指定纯色背景未通过抠图检查，已保留模型原图，请调整生成要求后重试。');
   // Arms and legs can enclose background regions disconnected from the border.
-  for(let n=0;n<total;n++)if(!mask[n]){const c=chroma(png,n*4,key);if(c.high>=90&&c.low<170&&c.excess>=35){mask[n]=1;tail++;}}
+  for(let n=0;n<total;n++)if(!mask[n]&&backdropPixel(png,n*4,key)){mask[n]=1;tail++;}
   if(tail>total*.965)throw Error('抠图后主体过小，未通过表情检查。');
+  // The model can dither its studio key into tiny disconnected colored flecks.
+  // Remove only sub-pixel specks at delivery scale, not a similar-hued pillow
+  // connected to the character or meaningful detached hearts/stars.
+  const visited=new Uint8Array(total),speckLimit=Math.max(4,Math.floor(total*.00004));
+  for(let start=0;start<total;start++)if(!mask[start]&&!visited[start]){
+    let first=0,count=1;queue[0]=start;visited[start]=1;
+    const visit=(n:number)=>{if(!mask[n]&&!visited[n]){visited[n]=1;queue[count++]=n;}};
+    while(first<count){const n=queue[first++],x=n%w,y=Math.floor(n/w);if(x)visit(n-1);if(x+1<w)visit(n+1);if(y)visit(n-w);if(y+1<h)visit(n+w);}
+    if(count<speckLimit)for(let n=0;n<count;n++)mask[queue[n]]=1;
+  }
   for(let n=0;n<total;n++){
     const p=n*4;if(mask[n]){png.data.fill(0,p,p+4);continue;}
     const c=chroma(png,p,key);if(c.high<60||c.excess<8)continue;

@@ -9,6 +9,9 @@ import { tokenUsage } from './tokenPricing';
 interface Context { credits: Credits; userId: string; taskId: string; }
 const context = new AsyncLocalStorage<Context>();
 export const withCreditUsage = <T>(credits: Credits, userId: string, taskId: string, action: () => Promise<T>) => context.run({ credits, userId, taskId }, action);
+/** Quality checks are included in the quoted image price. Keep the scope
+ * local to that service request; ordinary author/model calls remain billed. */
+export const withoutCreditUsage = <T>(action:()=>Promise<T>) => context.exit(action);
 
 export async function assertImageBudget(modelId:string,requestId:string) {
   const owner=context.getStore();if(owner)await owner.credits.assertImageBudget(owner.userId,owner.taskId,modelId,requestId);
