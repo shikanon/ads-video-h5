@@ -12,6 +12,7 @@ import {loadTaskDraft,saveTaskDraft} from './taskDrafts';
 import {acquireFileLock,stateHash} from './durableState';
 import {createTaskSpec,assertTaskRevision,priorTaskSpec} from './taskContract';
 import {withTaskExecution,captureTaskEnvironment,currentTaskExecution} from './taskRuntime';
+import {prepareStickerExecutionRetry} from './stickerRetry';
 import express, { type ErrorRequestHandler, type Response } from 'express';
 import { mountAccountAvatar } from './account-avatar';
 import { reusableDraft, summarizeTitle } from './session-management';
@@ -912,6 +913,14 @@ async function processQueuedJob(job: Job) {
             };
             await assertTemplate();
             const environmentHash=await captureTaskEnvironment(root,manifest);
+            if(job.stickerGenerationTask&&attempt.reason==='retry'&&!isEvaluationOwner(job.ownerId)){
+              const task=job.stickerGenerationTask;
+              await prepareStickerExecutionRetry({directory:path.join(dataDir,'agent-runs',job.id),spec:job.taskSpec!,environmentHash,attemptId:attempt.id,timeoutMs:taskTimeoutMs(job.ownerId,undefined),assertCurrent:()=>assertTaskRevision(job.taskSpec!,getSession(job.sessionId)?.taskRevisions),validate:async()=>{
+                const project=await stickerStudio.load(job.ownerId!,task.projectId),source=state.media.find(item=>item.id===project.recipe.referenceMediaId&&owned(item,job.ownerId!)&&item.kind==='image');
+                if(!source)throw Error('角色参考素材不存在，请重新上传后确认样张。');
+                const file=path.join(mediaDir,source.id);await oss?.ensure(job.ownerId!,'media',source.id,file);return stickerStudio.retryProof(job.ownerId!,task,await readFile(file));
+              }});
+            }
             return withTaskExecution({timeoutMs:!isEvaluationOwner(job.ownerId)&&job.researchMode==='deep'?null:taskTimeoutMs(job.ownerId,evaluationJobDeadlines.get(job.id)),ledgerDirectory:path.join(dataDir,'agent-effects',job.taskSpec!.id),maxCredits:process.env.QINGJIAN_TASK_MAX_CREDITS===undefined?undefined:Number(process.env.QINGJIAN_TASK_MAX_CREDITS),spec:job.taskSpec!,directory:path.join(dataDir,'agent-runs',job.id),environmentHash,
               assertCurrent:()=>assertTaskRevision(job.taskSpec!,getSession(job.sessionId)?.taskRevisions),
               assertEnvironment:async()=>{await assertTemplate();await runtime.assertFresh?.();if(environmentHash!==await captureTaskEnvironment(root,manifest))throw Error('执行环境已变化，旧验收不能用于交付。');},
