@@ -2,6 +2,11 @@ import {resolveResearchMode} from './questionResearch';
 import {createNotifications,disabledNotifications} from './wechatNotifications';
 import {analyzeFilm,readFilmReport,filmDirectory,reusableShot,removeFilmData} from './filmAnalysis';
 import {fileDigest} from './artifactIntegrity';
+import { documentText, DOCX_MIME } from './chatDocuments';
+import { readChatImage } from './chatAttachments';
+import { transparentImageReference } from './transparentImageReference';
+import { stickerStyleFile } from './stickerStyles';
+import { createStickerShares } from './stickerShares';
 import type {FilmTask} from '../shared/film';
 import {loadTaskDraft,saveTaskDraft} from './taskDrafts';
 import {acquireFileLock,stateHash} from './durableState';
@@ -181,10 +186,14 @@ const shortName = (name: string) => path.basename(name).replace(/[\u0000-\u001f/
 const extFor = (mime: string) => mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : mime === 'image/png' ? 'png' : mime === 'audio/mpeg' ? 'mp3' : mime === 'audio/wav' || mime === 'audio/x-wav' ? 'wav' : mime === 'audio/ogg' ? 'ogg' : 'bin';
 
 async function publicState(user:PublicUser):Promise<AppState>{const snapshot=await basePublicState(user);return{...snapshot,media:snapshot.media.map(m=>m.kind==='video'?{...m,thumbnailUrl:publicUrl('/api/media/'+m.id+'/thumbnail')}:m),features:{...snapshot.features!,notifications:notifications.ready,filmAnalysis:true},notifications:notifications.list(user.id)};}
+let stickerPublicHash:Promise<string>|undefined;
 async function basePublicState(user: PublicUser): Promise<AppState> {
+  const stickerEntry=videoTemplates.find(t=>t.workflow==='sticker-pack');
+  const stickerHash=stickerEntry?await(stickerPublicHash??=loadVideoTemplate(stickerEntry).then(t=>t.skillHash)):undefined;
+  const visibleJob=(job:Job)=>{const value=publicJob(job);if(job.stickerGenerationTask){if(value.template&&stickerHash)value.template={...value.template,skillHash:stickerHash};if(job.failure&&(/表情制作空间不足|参考图片.*解码/.test(job.failure.message)||job.failure.code==='STICKER_STORAGE_LOW'))value.error=jobFailureMessage(job.failure,job.stage);}return value;};
   const [models, profile, wallet] = await Promise.all([listPublicModels(), profileOf(user), credits.snapshot(user.id)]);
   const textConfig = await getModelConfig('text', getSession(profile.activeSessionId, user.id)?.modelId);
-  return { account: user, features: { conversationModes: true, sessionManagement: true, schedules: true, accountAvatars: true, researchModes: true }, limits: { maxAttachments: MAX_CHAT_ATTACHMENTS }, templates: videoTemplates.map(publicTemplate), credits: wallet, activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, ...(item.kind === 'image' ? { thumbnailUrl: publicUrl('/api/media/' + item.id + '/thumbnail') } : {}), url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.kind==='game'?publicUrl(item.url):assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.projectUrl ? { projectUrl: publicUrl(item.projectUrl) } : {}), ...(item.coverUrl ? { coverUrl: item.kind==='game'?publicUrl(item.coverUrl):assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)).map(publicJob), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
+  return { account: user, features: { conversationModes: true, sessionManagement: true, schedules: true, accountAvatars: true, researchModes: true }, limits: { maxAttachments: MAX_CHAT_ATTACHMENTS }, templates: videoTemplates.map(publicTemplate), credits: wallet, activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, ...(item.kind === 'image' ? { thumbnailUrl: publicUrl('/api/media/' + item.id + '/thumbnail') } : {}), url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.kind==='game'?publicUrl(item.url):assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.projectUrl ? { projectUrl: publicUrl(item.projectUrl) } : {}), ...(item.coverUrl ? { coverUrl: item.kind==='game'?publicUrl(item.coverUrl):assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)).map(visibleJob), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
 }
 
 function addReply(session: Session, job: Job, text: string, artifactId?: string) {
@@ -302,11 +311,23 @@ async function performJob(job: Job): Promise<void> {
     return;
   }
   if (job.interaction === 'chat' || job.interaction === 'explore') {
-    const config = await getModelConfig('text', session.modelId);
+    const config = await getModelConfig('text', job.textModel?.id || session.modelId);
     if (!config) throw new Error('文本模型尚未配置。');
     const instruction = job.interaction === 'explore'
       ? '你是轻喵的工作伙伴。帮助用户思考想实现什么产出：结合上下文逐步澄清目标、受众、交付形式、素材和约束。每轮最多问两个关键问题；信息足够时给出简洁工作简报和下一步建议。此阶段只讨论和写文字，不执行生成视频、图片、音频或发布。用户可点“开始创作”再执行。'
-      : '你是轻喵，友善自然地闲聊、解释问题和帮助思考。当前是对话区，只回复文字，不执行视频、图片、音频制作或发布。需要创作时提示用户切换到工作区。';
+      : '你是轻喵，友善自然地交流。故事、角色扮演、续写、整理文档和写作都可在对话区直接完成。用户已给设定并要求开始时，直接写出正文，不只承诺“我开始写”，不反复索要已经给出的设定。括号中的动作与沉默要结合当前剧情接续。只有生成视频、图片、音频或发布才提示切到工作区。';
+    const selected=sessionSources(prompt,media,attached,session.plan,history);
+    for(const item of selected.filter(m=>m.kind==='image')) {
+      const source=path.join(mediaDir,item.id);await oss?.ensure(job.ownerId!,'media',item.id,source);const hash=await fileDigest(source);
+      if(item.visualText?.sourceHash===hash)continue;
+      const vision=await getModelConfig('understanding');if(!vision)throw Error('图片阅读模型尚未配置，请联系管理员。');
+      const thumbnail=path.join(tmpDir,'chat-image-'+item.id+'.jpg');
+      await runFFmpeg(['-y','-v','error','-i',source,'-frames:v','1','-vf','scale=1600:1600:force_original_aspect_ratio=decrease','-q:v','2',thumbnail]);
+      const bytes=await readFile(thumbnail),execution=currentTaskExecution();
+      const read=()=>readChatImage(bytes,'image/jpeg',vision,basicProgress);
+      const text=execution?await execution.external('read_chat_image',{sourceHash:hash,modelId:vision.modelId},read,[vision.apiKey]):await read();
+      item.visualText={sourceHash:hash,text,modelId:vision.modelId};await saveState();await rm(thumbnail,{force:true});
+    }
     addReply(session, job, await answerForSessionWithPi({ prompt, instruction, researchMode:job.researchMode, onResearch:async evidence=>{ throwIfJobCancelled(); const folder=path.join(dataDir,'question-research',job.id);await mkdir(folder,{recursive:true,mode:0o700});const temporary=path.join(folder,randomUUID()+'.tmp');await writeFile(temporary,JSON.stringify(evidence),{mode:0o600});await rename(temporary,path.join(folder,'snapshot.json')); }, config, media, history, plan: session.plan, attached, progress: basicProgress, onSection: async (id, text) => { updateReply(session, job, text, 'commentary', id); await saveState(); } }));
     return;
   }
@@ -314,7 +335,7 @@ async function performJob(job: Job): Promise<void> {
   if (job.template && !dailyTemplate) {
     const entry = videoTemplates.find(t=>t.id===job.template!.id);
     const template = entry && await loadVideoTemplate(entry);
-    if (!template || template.skillHash!==job.template.skillHash) throw new Error('模板规则已变化，请重新发送制作要求以使用当前版本。');
+    if (!template || template.skillHash!==job.template.skillHash&&!job.stickerGenerationTask) throw new Error('模板规则已变化，请重新发送制作要求以使用当前版本。');
     if(template.workflow==='sticker-pack') {
       if(job.stickerGenerationTask) {
         const generation=job.stickerGenerationTask,project=await stickerStudio.load(job.ownerId!,generation.projectId);
@@ -588,7 +609,7 @@ async function performJob(job: Job): Promise<void> {
       addReply(session, job, `已下载并导入「${downloaded.name}」，试听请到素材库；这首音乐已作为当前对话的 BGM。发送“生成成片”即可混音导出。发布前请核对 Pixabay 许可与曲目限制。`);
       return;
     }
-    const textConfig = await getModelConfig('text', session.modelId);
+    const textConfig = await getModelConfig('text', job.textModel?.id || session.modelId);
     if (!textConfig) throw new Error('文本模型尚未配置，请在管理后台设置 API Key 后重试。');
     const query = await createMusicQueryWithPi(prompt, textConfig, history);
     const result = musicSearchLinks(query);
@@ -693,14 +714,14 @@ async function performJob(job: Job): Promise<void> {
   }
   const useEditorial = /精剪|叙事|选句|分镜.*原话|程序化剪辑/.test(prompt) || Boolean(session.plan?.editorial);
   const editorialOptions = async () => {
-    const config = await getModelConfig('text', session.modelId);
+    const config = await getModelConfig('text', job.textModel?.id || session.modelId);
     if (!config) throw new Error('文本模型尚未配置。');
     const sources = selectedSources().filter((m) => m.kind === 'video');
     if (!sources.length) throw new Error('精剪需要视频素材。');
     return { prompt, config, sources, media, decorate: withCover, previous: session.plan, preserveSelection: Boolean(session.plan?.editorial && /保留当前(?:的)?(?:四段)?(?:分镜|片段)|只(?:修改|修复|调整)字幕/.test(prompt) && !/重新选句|更换|替换|改选/.test(prompt)), transcribe: analyzeAudio, recheckSource, verifySelection: (scenes: Parameters<typeof verifySceneQuotes>[0]) => verifySceneQuotes(scenes,sources,path.join(dataDir,'sentence-audit')), inspect: async (scene: Parameters<typeof inspectScene>[0]) => { await oss?.ensure(job.ownerId!, 'media', scene.sourceId, path.join(mediaDir, scene.sourceId)); return inspectScene(scene, mediaDir, path.join(dataDir, 'scene-understanding')); }, persist: async (plan: NonNullable<Session['plan']>) => { session.plan = plan; await saveState(); }, progress: basicProgress };
   };
   const narrativeOptions = async (exportVideo: boolean, bgmFile?: string): Promise<Parameters<typeof runNarrativeWorkflow>[0]> => {
-    const config = await getModelConfig('text', session.modelId);
+    const config = await getModelConfig('text', job.textModel?.id || session.modelId);
     if (!config) throw new Error('文本模型尚未配置。');
     // Reconstruct from the original inputs, never mistake generated scenes
     // from the previous revision for a person's recorded testimony.
@@ -721,7 +742,7 @@ async function performJob(job: Job): Promise<void> {
       await prepareSpeech();
       const editable = selectedSources().filter((item) => item.kind === 'video' || item.kind === 'image');
       if (!editable.length) throw new Error('请先添加视频或图片素材，再说“生成成片”。');
-      const textConfig = await getModelConfig('text', session.modelId);
+      const textConfig = await getModelConfig('text', job.textModel?.id || session.modelId);
       if (!textConfig) throw new Error('文本模型尚未配置，请在管理后台设置 API Key 后重试。');
       const plan = withCover(await createPlanWithPi(prompt, textConfig, editable, history, session.plan, attached, analyzeAudio, basicProgress));
       session.plan = { ...plan, version: (session.plan?.version || 0) + 1 };
@@ -752,7 +773,7 @@ async function performJob(job: Job): Promise<void> {
         }, review: (file, next) => reviewRender(file, next, media, prompt) });
       plan = session.plan = workflow.plan; result = workflow.rendered!; review = workflow.review!;
     } else {
-    const traceModels = await Promise.all([getModelConfig('text', session.modelId),getModelConfig('understanding')]);
+    const traceModels = await Promise.all([getModelConfig('text', job.textModel?.id || session.modelId),getModelConfig('understanding')]);
     const exportTrace = createToolTrace(basicProgress,traceModels.flatMap(model=>model?.apiKey?[model.apiKey]:[]));
     for (const clip of plan.clips) await oss?.ensure(job.ownerId!, 'media', clip.sourceId, path.join(mediaDir, clip.sourceId));
     if (narrationId && narrationFile) await oss?.ensure(job.ownerId!, 'artifacts', narrationId, narrationFile);
@@ -765,7 +786,7 @@ async function performJob(job: Job): Promise<void> {
     review = await exportTrace.run('review_video','独立检查成片',{artifactId:result.id,planHash:planHash(plan)},()=>reviewRender(result.file, plan, media, prompt));
     const correctable = review.status === 'needs-review' && review.checks.some((c) => !c.passed && ['实际时长', '字幕执行', '字幕原话', '字幕时间映射', '覆盖层执行', '对比关键词覆盖', '推镜执行', '转场执行', '响度归一化执行', '完整句子', '人声响度', '分段人声响度一致性', '段落衔接音量跳变', '段内音量稳定性', '声音峰值与削波', '成片语义审查'].includes(c.name) && c.detail !== '未完成，不能视为通过');
     if (correctable) {
-      const textConfig = await getModelConfig('text', session.modelId);
+      const textConfig = await getModelConfig('text', job.textModel?.id || session.modelId);
       if (textConfig) {
         try {
           const findings = review.checks.filter((c) => !c.passed).map((c) => `${c.name}：${c.detail}`).join('；');
@@ -800,7 +821,7 @@ async function performJob(job: Job): Promise<void> {
     addReply(session, job, `成片 v${version} 已生成，${renderReviewSummary(review)}，可以预览并下载。${narrationFile ? '已合入口播音频。' : ''}${bgmFile ? '已合入背景音乐。' : ''}`, id);
     return;
   }
-  const textConfig = await getModelConfig('text', session.modelId);
+  const textConfig = await getModelConfig('text', job.textModel?.id || session.modelId);
   if (!textConfig) throw new Error('文本模型尚未配置，请在管理后台设置 API Key 后重试。');
   if (job.kind === 'image') {
     const imageConfig = await getModelConfig('image');
@@ -887,7 +908,7 @@ async function processQueuedJob(job: Job) {
             const assertTemplate = async () => {
               if (!job.template) return;
               const entry = videoTemplates.find(t => t.id === job.template!.id);
-              if (!entry || (await loadVideoTemplate(entry)).skillHash !== job.template.skillHash) {
+              if (!entry || (await loadVideoTemplate(entry)).skillHash !== job.template.skillHash&&!job.stickerGenerationTask) {
                 throw new Error('模板执行文件已变化，请使用最新模板重新运行。');
               }
             };
@@ -1034,7 +1055,11 @@ const notificationTimer=setInterval(()=>{void notifications.flush().catch(()=>co
 const credits = createCredits(dataDir);
 await credits.load(auth.listUsers());
 await credits.releaseInactiveImages(state.jobs.filter(isActiveJob).map(j=>j.creditTaskId).filter((id):id is string=>Boolean(id)));
-afterStateSaved=()=>credits.releaseTerminalImages(state.jobs.filter(j=>!isActiveJob(j)).map(j=>j.creditTaskId).filter((id):id is string=>Boolean(id)));
+afterStateSaved=async()=>{
+  await credits.releaseTerminalImages(state.jobs.filter(j=>!isActiveJob(j)).map(j=>j.creditTaskId).filter((id):id is string=>Boolean(id)));
+  for(const job of state.jobs)if(job.status==='failed'&&job.stickerGenerationTask&&job.ownerId&&(job.failure?.code==='STICKER_STORAGE_LOW'||/表情制作空间不足/.test(job.failure?.message||'')))await credits.refundImageProject(job.ownerId,job.stickerGenerationTask.projectId,job.stickerGenerationTask.phase,'服务器制作空间故障，退回本次失败阶段已扣图片积分；已保存图片继续保留，复用不重复扣费。');
+};
+await afterStateSaved();
 const adminAuth = createAdminAuth(dataDir);
 await adminAuth.load();
 adminAuth.mount(app);
@@ -1072,7 +1097,10 @@ app.get('/api/templates/:id/sample/:kind', (request, response) => {
   return response.sendFile(asset, { root: path.join(template.directory, 'assets'), maxAge: '1h' });
 });
 mountStickerSamples(app);
+const stickerShares=createStickerShares(dataDir,stickerStudio,publicBase);stickerShares.mountPublic(app);
+app.get('/api/sticker-styles/:id',(_q,r)=>{const file=stickerStyleFile(_q.params.id);if(!file)return r.status(404).end();r.sendFile(file,{maxAge:'1h'});});
 auth.mount(app, credits.readiness, user => credits.snapshot(user.id));
+stickerShares.mountPrivate(app);
 const startingStickerSessions=new Set<string>();
 mountStickerRoutes(app,{base:publicBase,
   privatePacks:async user=>Promise.all((await stickerStudio.list(user.id)).filter(p=>p.ready).map(p=>stickerStudio.publicPack(user.id,p.id))),
@@ -1090,7 +1118,7 @@ mountStickerRoutes(app,{base:publicBase,
     await saveState();const response={...await publicState(user),stickerJobId:job.id};void processQueue();return response;
   }finally{startingStickerSessions.delete(session.id);}
 }});
-mountStickerStudioRoutes(app,{studio:stickerStudio,
+mountStickerStudioRoutes(app,{studio:stickerStudio,base:publicBase,
   pricing:async()=>{const model=await getModelConfig('image');if(!model)return null;const p=await credits.imagePricing(model.modelId);return {...p,staticSamples:p.pointsPerImage*3,dynamicSamples:p.pointsPerImage*4,batch:p.pointsPerImage*21};},
   quote:async(user,task)=>{const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');return credits.imageQuote(user.id,model.modelId,await stickerStudio.pendingImageIds(user.id,task));},
   version:async()=>{const entry=videoTemplates.find(item=>item.workflow==='sticker-pack');return entry?(await loadVideoTemplate(entry)).skillHash:undefined;},
@@ -1100,7 +1128,7 @@ mountStickerStudioRoutes(app,{studio:stickerStudio,
     const source=state.media.find(item=>item.id===recipe.referenceMediaId&&owned(item,user.id)&&item.kind==='image');
     if(!source||!['image/png','image/jpeg','image/webp'].includes(source.mimeType))throw Error('请选择本账号的PNG、JPEG或WebP角色图片。');
     const file=path.join(mediaDir,source.id);await oss?.ensure(user.id,'media',source.id,file);const bytes=await readFile(file);
-    if(bytes.length>20*1024*1024||!detectImage(bytes))throw Error('角色图片无效或超过20MB。');
+    if(bytes.length>20*1024*1024||!detectImage(bytes))throw Error('角色图片无效或超过20MB。');await transparentImageReference(bytes);
     return stateHash(bytes.toString('base64'));
   },
   start:async(user,projectId,task,pricingHash)=>{
@@ -1113,7 +1141,7 @@ mountStickerStudioRoutes(app,{studio:stickerStudio,
     let admission:string|undefined;
     try {
       const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');
-      admission=await credits.admitImages(user.id,model.modelId,await stickerStudio.pendingImageIds(user.id,task),pricingHash);
+      const pending=await stickerStudio.pendingImageIds(user.id,task);await stickerStudio.assertCapacity(pending.length);admission=await credits.admitImages(user.id,model.modelId,pending,pricingHash);
       const pack=await loadStickerPack(),story=task.phase==='batch'?{...defaultStickerTask(pack),packId:'custom-'+projectId,title:project.recipe.name,makeVideo:task.makeVideo,bgm:task.bgm}:undefined;
       const job=await enqueueAgentMessage(session,'@动态表情套装 '+(task.phase==='samples'?'为新角色生成3个样张，等待确认。':'使用已确认样张生成24套'+(project.recipe.mode==='static'?'静态':'动态')+'表情。'),[project.recipe.referenceMediaId],undefined,undefined,'create',undefined,story,admission);
       job.stickerGenerationTask=structuredClone(task);await saveState();const receipt={...await publicState(user),stickerJobId:job.id};void processQueue();return receipt;
@@ -1242,7 +1270,6 @@ app.patch('/api/sessions/:id/model', async (request, response) => {
   if (!session) return response.status(404).json({ error: '对话不存在。' });
   const id = request.body?.modelId;
   if (typeof id !== 'string' || !id || !(await getModelConfig('text', id))) return response.status(400).json({ error: '请选择已启用且配置了密钥的文本模型。' });
-  if (state.jobs.some(job => job.sessionId === session.id && isActiveJob(job))) return response.status(409).json({ error: '请等当前任务完成或停止后再切换模型。' });
   session.modelId = id;
   session.updatedAt = now();
   await saveState();
@@ -1263,7 +1290,8 @@ app.post('/api/chat', async (request, response) => {
   const session = getSession(String(request.body?.sessionId || ''), user.id);
   if (!session) return response.status(404).json({ error: '对话不存在，请刷新后重试。' });
   if (session.archivedAt) return response.status(409).json({ error: '请先取消归档，再继续对话。' });
-  const text = typeof request.body?.message === 'string' ? request.body.message.trim().slice(0, 2000) : '';
+  const text = typeof request.body?.message === 'string' ? request.body.message.trim() : '';
+  if(text.length>20000)return response.status(400).json({error:'单条消息不能超过20000字；更长的设定请上传Word或文本文件。'});
   if (!text) return response.status(400).json({ error: '请输入想让轻剪完成的内容。' });
   const attachments = Array.isArray(request.body?.attachmentIds) ? request.body.attachmentIds : [];
   if (attachments.length > MAX_CHAT_ATTACHMENTS || attachments.some((id: unknown) => typeof id !== 'string' || !state.media.some((item) => item.id === id && owned(item, user.id)))) return response.status(400).json({ error: '附件不存在或一次添加过多。' });
@@ -1290,12 +1318,17 @@ app.post('/api/media', upload.array('files', 6), async (request, response) => {
   let staged = false;
   try {
     for (const file of files) {
-      let mimeType = await uploadMediaType(file.path, file.mimetype); let duration: number | undefined; let hasAudio: boolean | undefined; let kind: MediaItem['kind'];
-      if (mimeType.startsWith('image/')) { const detected = detectImage(await readFile(file.path)); if (!detected) throw new Error('图片格式仅支持 PNG、JPEG 或 WebP。'); mimeType = detected; }
+      const originalName=files.length===1&&typeof request.body?.originalName==='string'?path.basename(request.body.originalName).slice(0,180):file.originalname;
+      let doc:MediaItem['document'];let mimeType:string;
+      if(/\.(?:docx|txt|md)$/i.test(originalName)){doc=documentText(await readFile(file.path),originalName);mimeType=/\.docx$/i.test(originalName)?DOCX_MIME:'text/plain';}
+      else if(/\.doc$/i.test(originalName))throw Error('请将旧版.doc另存为.docx后上传。');
+      else mimeType=await uploadMediaType(file.path,file.mimetype);
+      let duration: number | undefined; let hasAudio: boolean | undefined; let kind: MediaItem['kind'];
+      if (mimeType.startsWith('image/')) { const bytes=await readFile(file.path),detected = detectImage(bytes); if (!detected) throw new Error('图片格式仅支持 PNG、JPEG 或 WebP。');await transparentImageReference(bytes); mimeType = detected; }
       else if (mimeType.startsWith('video/')) { const probed = await probeVideo(file.path); duration = probed.duration; hasAudio = probed.hasAudio; }
       else if (mimeType.startsWith('audio/')) { if (!['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg'].includes(mimeType)) throw new Error('音频仅支持 MP3、WAV 或 OGG。'); duration = await probeAudio(file.path); }
-      else throw new Error('仅支持视频、图片和音频素材。');
-      kind = mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : 'image';
+      else if(!doc)throw new Error('支持视频、图片、音频及.docx/.txt/.md文档。');
+      kind = doc?'document':mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : 'image';
       const shots = kind === 'video' ? await detectShots(file.path, duration!, file.filename) : undefined;
       if (shots?.length) {
         for (const [index, shot] of shots.entries()) {
@@ -1313,7 +1346,7 @@ app.post('/api/media', upload.array('files', 6), async (request, response) => {
           if (oss) stored.push(`shots/${file.filename}-${index}`);
         }
       }
-      items.push({ id: file.filename, ownerId: user.id, name: shortName(file.originalname), mimeType, kind, ...(duration ? { duration } : {}), ...(hasAudio !== undefined ? { hasAudio } : {}), ...(shots ? { shots } : {}), url: `/api/media/${file.filename}`, createdAt: now(), origin: 'upload' });
+      items.push({ id: file.filename, ownerId: user.id, name: shortName(originalName), mimeType, kind, ...(doc?{document:doc}:{}), ...(duration ? { duration } : {}), ...(hasAudio !== undefined ? { hasAudio } : {}), ...(shots ? { shots } : {}), url: `/api/media/${file.filename}`, createdAt: now(), origin: 'upload' });
     }
     state.media.push(...items);
     staged = true;
@@ -1492,10 +1525,10 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   const candidate=state.artifacts.find(a=>a.id===job.artifactId&&owned(a,user.id));
   const needsLessonRepair=job.status==='succeeded'&&candidate?.plan?.lesson&&candidate.review?.status==='needs-review';
   if (job.status !== 'failed'&&!needsLessonRepair) return response.status(409).json({ error: '只有失败的任务或未通过审查的教学成片可以重试。' });
-  if(job.stickerGenerationTask&&job.template){const entry=videoTemplates.find(item=>item.id===job.template!.id);if(!entry||(await loadVideoTemplate(entry)).skillHash!==job.template.skillHash)return response.status(409).json({error:'表情制作方式已更新，请在表情工坊点击“调整设定，重新制作样张”，保留角色图后提交新任务。',code:'STICKER_TEMPLATE_UPDATED'});}
   if(job.stickerGenerationTask){
+    try{await stickerStudio.load(user.id,job.stickerGenerationTask.projectId);}catch{return response.status(409).json({error:'旧项目记录不可用，请在表情工坊点击“调整设定”后重新提交。',code:'STICKER_TEMPLATE_UPDATED'});}
     const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');
-    job.creditTaskId=await credits.admitImages(user.id,model.modelId,await stickerStudio.pendingImageIds(user.id,job.stickerGenerationTask),request.body?.pricingHash);
+    const pending=await stickerStudio.pendingImageIds(user.id,job.stickerGenerationTask);await stickerStudio.assertCapacity(pending.length);job.creditTaskId=await credits.admitImages(user.id,model.modelId,pending,request.body?.pricingHash);
   }else job.creditTaskId = await credits.admit(user.id);
   // An unavailable auditor has no content correction to make. Recheck the
   // existing artifact instead of restarting today's research and rendering.

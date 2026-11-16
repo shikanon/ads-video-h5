@@ -38,6 +38,7 @@ App({
     this.client.request('/api/notifications/presence', { device: this._presenceDevice, sequence: this._presenceSequence, foreground }).catch(() => {});
   },
   applyWallet(wallet) { this._walletRevision++; if (this.state) this.apply(Object.assign({}, this.state, { credits: wallet })); },
+  commit(state) { this._revision++; return this.apply(state); },
   applyAccount(user) { this._revision++; this.user = user; if (this.state) this.apply(Object.assign({}, this.state, { account: user })); },
   preserveWallet(state, revision) { return this.state && revision !== this._walletRevision ? Object.assign({}, state, { credits: this.state.credits }) : state; },
   async refresh(options) {

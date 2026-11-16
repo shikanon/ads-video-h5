@@ -58,7 +58,7 @@ test('a pending submission is excluded from draft reuse on both sides and empty 
 test('a blocked chat does not delay a second conversation of the same user, and activation uses a lightweight owner-scoped receipt', async t => {
   let release!:()=>void, began!:()=>void;
   const blocked=new Promise<void>(r=>{release=r;}),started=new Promise<void>(r=>{began=r;});
-  const f=await creditFixture({onProviderRequest:async body=>{if(JSON.stringify(body.messages).includes('CHAT-A-BLOCK')){began();await blocked;}}});
+  const f=await creditFixture({extraTextModel:true,onProviderRequest:async body=>{if(JSON.stringify(body.messages).includes('CHAT-A-BLOCK')){began();await blocked;}}});
   t.after(f.close);
   try{
     const cookie=await f.login(),foreign=await f.login('shikanon@example.test');
@@ -66,6 +66,7 @@ test('a blocked chat does not delay a second conversation of the same user, and 
     const first:any=await(await f.request(cookie,'/api/chat',{sessionId:a.activeSessionId,message:'你好 CHAT-A-BLOCK',interaction:'chat'})).json();
     const aJob=first.jobs.at(-1).id;
     await Promise.race([started,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Chat did not reach fixture provider')),10000);timer.unref();})]);
+    const change=await f.request(cookie,`/api/sessions/${a.activeSessionId}/model`,{modelId:'backup'},'PATCH');assert.equal(change.status,200);const changed:any=await change.json();assert.equal(changed.sessions.find((s:any)=>s.id===a.activeSessionId).modelId,'backup');assert.equal(changed.jobs.find((j:any)=>j.id===aJob).textModel.id,'text','running task keeps its admitted model');
     const b:any=await(await f.request(cookie,'/api/sessions',{mode:'chat',reuseEmpty:true})).json();
     assert.notEqual(a.activeSessionId,b.activeSessionId);assert.equal(b.features.researchModes,true);
     assert.equal((await f.request(foreign,`/api/sessions/${a.activeSessionId}/activate`,{receiptOnly:true})).status,404);

@@ -9,9 +9,9 @@ function chroma(png:PNG,p:number,key:StickerChroma){
   let high=255,low=0;for(let c=0;c<3;c++){if(key.channels.includes(c))high=Math.min(high,png.data[p+c]);else low=Math.max(low,png.data[p+c]);}
   return {high,low,excess:high-low};
 }
-export async function stickerBackground(reference:ImageReference):Promise<{background:'transparent'|'opaque';key?:StickerChroma;reference:ImageReference}>{
+export async function stickerBackground(reference:ImageReference,forceOpaque=false):Promise<{background:'transparent'|'opaque';key?:StickerChroma;reference:ImageReference}>{
   const bytes=await transparentImageReference(reference.bytes),png=readAvatarPng(bytes);
-  if(hasAvatarAlpha(png))return {background:'transparent',reference:{bytes,mimeType:'image/png'}};
+  if(hasAvatarAlpha(png)&&!forceOpaque)return {background:'transparent',reference:{bytes,mimeType:'image/png'}};
   // An ordinary photo must not be passed to Seedream 5.0's transparent mode.
   // Select a deliberate studio backdrop with little overlap in the reference.
   const ranked=keys.map((key,index)=>{let count=0;for(let p=0;p<png.data.length;p+=64){const c=chroma(png,p,key);if(c.high>100&&c.excess>45)count++;}return {key,count,index};}).sort((a,b)=>a.count-b.count||a.index-b.index);

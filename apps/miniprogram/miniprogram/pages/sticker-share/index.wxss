@@ -1,0 +1,2 @@
+@import "../../styles/theme.wxss";
+.share-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16rpx;margin:32rpx 0}.share-grid button{padding:12rpx;background:var(--lm-soft);font-size:22rpx;min-width:0}.share-grid image{width:100%;height:180rpx}.preview-mask{position:fixed;inset:0;z-index:80;background:rgba(35,25,20,.8);display:flex;align-items:center;justify-content:center}.preview-mask image{width:92vw;height:80vh}

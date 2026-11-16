@@ -7,7 +7,7 @@ async function fixture() {
   const platform=nativePlatform('http://127.0.0.1:1','/unused'),app=await loadNativeApp(platform),calls:string[]=[];
   const project={id:'p',sessionId:'original',recipe:{mode:'static',name:'纯纯的日常心情',style:'柔彩Q版',referenceMediaId:'role'},createdAt:'2026-11-15T06:12:10Z',samples:[],previewHash:'',approved:false,ready:false};
   const job={id:'failed-samples',sessionId:'original',status:'failed',stage:'绘制贴贴静态表情',error:'样张未完成',workflow:[{tool:'generate_sticker_01',status:'failed',stage:'绘制贴贴静态表情',detail:'历史模型请求失败，需要调整参考图格式。'}],stickerGenerationTask:{projectId:'p',phase:'samples'}};
-  app.state={activeSessionId:'current',sessions:[{id:'current',mode:'chat',messages:[{id:'m',role:'user',text:'你好'}]},{id:'original',mode:'work',messages:[]}],jobs:[job],media:[],artifacts:[]};
+  app.state={credits:{balance:3000},activeSessionId:'current',sessions:[{id:'current',mode:'chat',messages:[{id:'m',role:'user',text:'你好'}]},{id:'original',mode:'work',messages:[]}],jobs:[job],media:[],artifacts:[]};
   app._selectedSessionId='current';app.refresh=async()=>app.state;
   let finishRetry:any,failRetry:any;const creations:any[]=[],sessionCreations:any[]=[];
   app.client={hasSession:()=>true,previewUrl:()=>'',request:async(route:string,body:any)=>{
@@ -49,7 +49,7 @@ test('compiled failed-project controls offer a real retry and a visible route ba
   assert.equal(page.data.project,null);assert.equal(page.data.referenceId,'role');assert.equal(page.data.name,f.project.recipe.name);assert.equal(page.data.style,f.project.recipe.style);assert.equal(page.data.mode,'static');assert.ok(page.querySelector('.start-samples'));assert.equal(scrolls,1);
   assert.equal(f.creations.length,0,'viewing, retrying and editing do not submit a new project');assert.equal(f.calls.filter(c=>c.includes('/retry')).length,1);
   page.querySelector('.start-samples').dispatchEvent('tap');page.querySelector('.start-samples').dispatchEvent('tap');await simulate.sleep(0);await simulate.sleep(0);
-  assert.equal(f.creations.length,1);assert.equal(f.creations[0].sessionId,'original');assert.deepEqual(JSON.parse(JSON.stringify(f.creations[0].recipe)),f.project.recipe);assert.match(f.creations[0].requestId,/^sticker_studio_/);assert.equal(page.data.project.id,'new-project');
+  assert.equal(f.creations.length,1);assert.equal(f.creations[0].sessionId,'original');assert.deepEqual(JSON.parse(JSON.stringify(f.creations[0].recipe)),{...f.project.recipe,styleId:'custom'});assert.match(f.creations[0].requestId,/^sticker_studio_/);assert.equal(page.data.project.id,'new-project');
   page.instance.onUnload();page.detach();clearTimeout(f.app._cacheTimer);dom.window.close();
 });
 
@@ -62,7 +62,7 @@ test('a rejected retry unlocks its controls and keeps an actionable error instea
 });
 
 test('outdated generation versions keep settings editable and block obsolete retries and approvals',async()=>{
-  const f=await fixture();Object.assign(f.job,{template:{id:'qingmao-stickers',skillHash:'old'}});
+  const f=await fixture();Object.assign(f.job,{template:{id:'qingmao-stickers',skillHash:'old'}});Object.assign(f.project,{compatible:false});
   const original=f.app.client.request;f.app.client.request=async(route:string,body:any)=>route.endsWith('/config')?{available:true,templateHash:'current'}:original(route,body);
   const page=await capturePage('sticker-studio',f.app,f.platform);page.onLoad({mode:'static'});page.onShow();await waitFor(()=>page.data.projects.length===1);page.openProject({currentTarget:{dataset:{id:'p'}}});
   assert.equal(page.data.projectTemplateChanged,true);assert.equal(page.data.projectJob.retryable,false);

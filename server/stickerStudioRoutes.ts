@@ -3,8 +3,10 @@ import path from 'node:path';
 import { userOf, type PublicUser } from './auth';
 import { validateStickerRecipe, type StickerStudio, type StickerRecipe } from './stickerStudio';
 import type { StickerGenerationTask } from '../shared/stickerPacks';
+import { stickerStyles } from './stickerStyles';
 const requestIdPattern=/^[a-zA-Z0-9_-]{16,80}$/;
 export function mountStickerStudioRoutes(app:Express,o:{studio:StickerStudio;ready:()=>Promise<boolean>;
+  base?:string;
   version?:()=>Promise<string|undefined>;
   pricing:()=>Promise<unknown>;
   quote:(user:PublicUser,task:StickerGenerationTask)=>Promise<unknown>;
@@ -12,7 +14,7 @@ export function mountStickerStudioRoutes(app:Express,o:{studio:StickerStudio;rea
   reference:(user:PublicUser,sessionId:string,recipe:StickerRecipe)=>Promise<string>;
 }) {
   const wrap=(action:(q:any,r:any)=>Promise<unknown>)=>async(q:any,r:any)=>{try{await action(q,r);}catch(error){const fsError=['ENOENT','EACCES','ENOTDIR'].includes((error as any).code);r.status(fsError?404:(error as any).status||400).json({error:fsError?'项目素材尚不可用，请刷新制作状态。':error instanceof Error?error.message:'表情制作未能开始。'});}};
-  app.get('/api/sticker-projects/config',wrap(async(_q,r)=>{let pricing=null,pricingError='';try{pricing=await o.pricing();}catch(e){pricingError=(e as Error).message;}r.json({available:await o.ready()&&Boolean(pricing),pricing,pricingError,templateHash:await o.version?.(),sampleCount:3,totalCount:24,modes:['static','dynamic']});}));
+  app.get('/api/sticker-projects/config',wrap(async(_q,r)=>{let pricing=null,pricingError='';try{pricing=await o.pricing();await o.studio.assertCapacity(4);}catch(e){pricingError=(e as Error).message;}r.json({available:await o.ready()&&Boolean(pricing)&&!pricingError,pricing,pricingError,styles:stickerStyles.map(({file,...s})=>({...s,sampleUrl:file?(o.base||'')+'/api/sticker-styles/'+s.id:''})),templateHash:await o.version?.(),sampleCount:3,totalCount:24,modes:['static','dynamic']});}));
   app.get('/api/sticker-projects',wrap(async(q,r)=>r.json({projects:await o.studio.list(userOf(q).id)})));
   app.post('/api/sticker-projects',wrap(async(q,r)=>{
     const {sessionId,requestId,recipe,pricingHash}=q.body||{};

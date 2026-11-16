@@ -67,6 +67,8 @@ export function jobFailureMessage(error: unknown, stage: string | undefined, sec
   const failure = executionFailure(error, secrets), where = safeErrorText(failure.origin?.stage || stage || '处理步骤', secrets);
   const parts = (value: JobFailure): JobFailure[] => [value, ...(value.causes ?? []).flatMap(parts)];
   const failures = parts(failure);
+  if(failures.some(value=>value.code==='STICKER_STORAGE_LOW'||/表情制作空间不足/.test(value.message)))return '服务端制作空间暂时不足，任务已暂停。已完成图片保留，未生成部分的预留积分会释放。请稍后再试。';
+  if(failures.some(value=>/参考图片.*(?:解码|转换|无效)|角色图片.*(?:读取|无效)/.test(value.message)))return '角色图片无法正常读取，请重新上传完整的PNG、JPEG或WebP图片；本次未生成图片的部分不会扣费。';
   if (/CreditError/.test(failure.name)) return failure.message;
   const boundary = failures.find(value => value.code === 'SEMANTIC_UTTERANCE_BOUNDARY');
   if (boundary) return boundary.message;

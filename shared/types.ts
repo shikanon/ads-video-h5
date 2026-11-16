@@ -1,5 +1,5 @@
 export type Format = '9:16' | '16:9' | '1:1';
-export type MediaKind = 'video' | 'image' | 'audio';
+export type MediaKind = 'video' | 'image' | 'audio' | 'document';
 export type ArtifactKind = 'image' | 'audio' | 'video' | 'game' | 'sticker-pack';
 export type JobKind = 'plan' | 'image' | 'audio' | 'export' | 'music' | 'effect' | 'understanding' | 'review' | 'avatar';
 export type JobStatus = 'queued' | 'running' | 'stopping' | 'cancelled' | 'succeeded' | 'failed';
@@ -13,6 +13,8 @@ export interface Shot {
 }
 
 export interface MediaItem {
+  document?: {text:string;truncated:boolean};
+  visualText?: {sourceHash:string;text:string;modelId:string};
   filmAnalysis?: import('./film').FilmIndex;
   libraryCollection?: 'library' | 'production';
   archive?: {sourceId:string;sourceHash:string;reportId:string;shotId:string;start:number;end:number;tags:string[]};

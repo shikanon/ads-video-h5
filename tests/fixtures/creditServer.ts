@@ -13,7 +13,7 @@ import { PNG } from 'pngjs';
 
 // Real Express/queue/Pi transport, disposable local users and a controllable
 // token provider. No production credentials or external services are used.
-export async function startCreditServer(options: { stickerImages?: boolean; obsoleteSticker?: boolean; wechat?: boolean; onProviderRequest?: (body: any) => Promise<void>; structuredReply?: (body:any)=>unknown } = {}) {
+export async function startCreditServer(options: { extraTextModel?:boolean;stickerImages?: boolean; obsoleteSticker?: boolean; wechat?: boolean; onProviderRequest?: (body: any) => Promise<void>; structuredReply?: (body:any)=>unknown } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'qj-credit-service-'));
   const password = 'Credit-QA-user-123', adminPassword = 'Credit-QA-admin-123';
   const providerState = { calls: 0, outputTokens: 100, delay: 0, multiTurn: false, fail: false, wechatCalls: 0 };
@@ -51,7 +51,8 @@ export async function startCreditServer(options: { stickerImages?: boolean; obso
     const usage = { prompt_tokens: 1000, completion_tokens: providerState.outputTokens, prompt_tokens_details: { cached_tokens: 500, ...(audioRequest ? { audio_tokens: 1000, audio_cached_tokens: 500 } : {}) } };
     if (!body.stream) { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ id, usage, choices: [{ message: { content: JSON.stringify(options.structuredReply?.(body)??{text:'用一句话介绍功能'}) } }] })); return; }
     const reply = !providerState.multiTurn || body.messages.some((m: any) => m.role === 'assistant');
-    const delta = reply ? { role: 'assistant', tool_calls: [{ index: 0, id: 'call-' + id, type: 'function', function: { name: 'reply', arguments: JSON.stringify({ sections: [], summary: '测试任务已完成。' }) } }] } : { role: 'assistant', content: '继续完成指令。' };
+    const readingImage=body.tools?.some((tool:any)=>tool.function?.name==='read_picture');
+    const delta = reply ? { role: 'assistant', tool_calls: [{ index: 0, id: 'call-' + id, type: 'function', function: { name: readingImage?'read_picture':'reply', arguments: JSON.stringify(readingImage?{text:'图片实际文字：人物甲是首辅，人物乙是大小姐。按第一人称续写。'}:{ sections: [], summary: '测试任务已完成。' }) } }] } : { role: 'assistant', content: '继续完成指令。' };
     const base = { id, object: 'chat.completion.chunk', model: body.model, created: 1 };
     const chunks = [{ ...base, choices: [{ index: 0, delta, finish_reason: null }] }, { ...base, usage, choices: [{ index: 0, delta: {}, finish_reason: reply ? 'tool_calls' : 'stop' }] }];
     response.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -73,6 +74,7 @@ export async function startCreditServer(options: { stickerImages?: boolean; obso
   const verification = { email: registrationEmail, salt: verificationSalt, hash: scryptSync(verificationCode, Buffer.from(verificationSalt, 'hex'), 32).toString('hex'), sentAt: Date.now(), expiresAt: Date.now() + 10 * 60_000, attempts: 0 };
   const models = [{ id: 'text', name: 'QA text', kind: 'text', provider: 'ark', modelId: defaultTokenPrices()[0].modelId, baseUrl: providerBase, apiKeyCiphertext, enabled: true }, { id: 'understanding', name: 'QA ASR', kind: 'understanding', provider: 'ark', modelId: defaultTokenPrices()[3].modelId, baseUrl: providerBase, apiKeyCiphertext, enabled: true }];
   if(options.stickerImages)models.push({id:'image',name:'Fixture image',kind:'image',provider:'ark',modelId:'doubao-seedream-5-0-flash-260915',baseUrl:'https://ark.cn-beijing.volces.com',apiKeyCiphertext,enabled:true});
+  if(options.extraTextModel)models.push({id:'backup',name:'QA backup',kind:'text',provider:'ark',modelId:defaultTokenPrices()[3].modelId,baseUrl:providerBase,apiKeyCiphertext,enabled:true});
   const session = { id: 'ordinary-session', ownerId: 'ordinary', title: '新会话', modelId: 'text', createdAt, updatedAt: createdAt, messages: [{ id: 'failed-message', role: 'user', text: '你好', attachmentIds: [], jobId: 'failed-job', createdAt }], plan: null };
   const seeded = { sessions: [session], activeSessionId: session.id, media: [{ id: 'video-fixture', ownerId: 'ordinary', name: '视频', kind: 'video', mimeType: 'video/mp4', url: '/api/media/video-fixture', createdAt }, { id: 'avatar-fixture', ownerId: 'ordinary', name: '作者', kind: 'image', mimeType: 'image/png', url: '/api/media/avatar-fixture', createdAt, character: { role: 'reference' } }], artifacts: [], jobs: [{ id: 'failed-job', ownerId: 'ordinary', sessionId: session.id, messageId: 'failed-message', kind: 'chat', status: 'failed', createdAt, updatedAt: createdAt }], settings: { language: 'zh-CN', chatBackground: null }, profiles: { ordinary: { activeSessionId: session.id, settings: { language: 'zh-CN', chatBackground: null, defaultModelId: 'text' } } }, artifactFiles: {}, narrationBySession: {}, bgmBySession: {} };
   if(options.obsoleteSticker)Object.assign(seeded.jobs[0],{stickerGenerationTask:{projectId:'a'.repeat(64),phase:'samples',makeVideo:false,bgm:false},template:{id:'qingmao-stickers',skillHash:'obsolete-before-real-transparency'}});

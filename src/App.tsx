@@ -77,6 +77,7 @@ const messageTimeFormatters = Object.fromEntries(
 ) as Record<Locale, Intl.DateTimeFormat>;
 type MediaFilter = "all" | MediaKind;
 const mediaAccept: Record<MediaFilter, string> = {
+  document: '.docx,.txt,.md',
   all: "video/*,image/jpeg,image/png,image/webp,audio/mpeg,audio/wav,audio/x-wav,audio/ogg",
   video: "video/*",
   image: "image/jpeg,image/png,image/webp",

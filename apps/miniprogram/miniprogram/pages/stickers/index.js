@@ -1,11 +1,13 @@
 const { appearanceData } = require('../../utils/appearance');
 const { withSession, hide, requireLogin, privacy } = require('../../utils/page');
 const { stickerTemplateShare } = require('../../utils/share');
+const {prepareWorkShare,loadWorkShares,revokeWorkShares,workShare}=require('../../utils/sticker-work-share');
 const { active } = require('../../utils/view');
 const { loadThumbnails } = require('../../utils/thumbnails');
 const captions = ['今天，电量有点低。', '那就，陪陪我嘛。', '摸摸头，烦恼退退。', '手给你，一起走呀。', '再靠近，一点点。', '好啦，又心动了。'];
 Page({
-  onShareAppMessage: stickerTemplateShare,
+  onShareAppMessage(event){return workShare(event,this)||stickerTemplateShare(event);},
+  prepareShare(){return prepareWorkShare(this,getApp(),wx);},revokeShare(){return revokeWorkShares(this,getApp(),wx);},
   data: Object.assign(appearanceData(), { pack: null, items: [], scenes: [], selected: null, title: '被你哄好的一天', makeVideo: true, bgm: true, loading: false, submitting: false, saving: false, busy: false, result: null, error: '', previewError: false }),
   onLoad(query) { this._sessionId = query.sessionId || ''; this._artifactId = query.artifactId || ''; this._packId=query.packId||''; },
   onShow() {
@@ -52,7 +54,7 @@ Page({
       this._packGeneration = generation;
       this.setData({ pack: Object.assign({}, pack, { sample: pack.sampleUrl?app.client.templateAssetUrl(pack.sampleUrl):'', poster: pack.private?'':app.client.templateAssetUrl(pack.posterUrl) }), items,
         scenes: pack.defaultSceneIds.map((id, index) => ({ id, choice: items.findIndex(item => item.id === id), name: items.find(item => item.id === id).name, caption: captions[index] })) });
-      this.restoreTask();
+      this.restoreTask();if(pack.private)loadWorkShares(this,app);
       if(pack.private)loadThumbnails(this,'items',app.client);
     } catch (error) { if (this._visible && generation === app._generation) this.setData({ error: error.message }); }
     finally { if(generation===app._generation)this.setData({ loading: false }); }
