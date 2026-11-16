@@ -15,7 +15,7 @@ App({
       if (component) component.open(resolve); else resolve({ event: 'disagree' });
     });
   },
-  onShow(options) { this._foreground = true; if (options && options.query && typeof options.query.noticeId === 'string') this._pendingNotice = options.query.noticeId; if (this.client && this.client.hasSession()) { this.sendPresence(true); this.refresh().catch(() => {}); } },
+  onShow(options) { this._foreground = true; if(options && typeof options.path==='string')this._entryPath=options.path; if (options && options.query && typeof options.query.noticeId === 'string') this._pendingNotice = options.query.noticeId; if (this.client && this.client.hasSession()) { this.sendPresence(true); this.refresh().catch(() => {}); } },
   onHide() { this._foreground = false; this.sendPresence(false); clearTimeout(this._timer); this.saveStartup(); },
   subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); },
   apply(state) {
@@ -73,7 +73,10 @@ App({
   },
   reset() { this.pendingTemplate = null; this.templateOrigin = null; this.pendingResourceSection = null; this.pendingLibraryCollection = null; this._readingNotices = new Set(); this._openingNotice = false; this._presenceForeground = undefined; this._presenceAt = 0; if (wx.removeTabBarBadge) wx.removeTabBarBadge({ index:0, fail(){} }); clearTimeout(this._cacheTimer); this._restored = false; this._lastRefreshAt = 0; this._refreshFailed = false; this._activationSync = null; this._activationDesired = null; this._selectionRevision = 0; this._pendingMessageSessions = new Set(); this._generation++; this._revision++; this._refreshing = null; this._selectedSessionId = null; this.state = null; this.user = null; this.voiceConsent = null; this.pendingAttachments = null; clearTimeout(this._timer); this.client.clear(); },
   expired() {
+    const pages=typeof getCurrentPages==='function'?getCurrentPages():[],current=pages[pages.length-1];
+    const publicWork=(current?current.route:this._entryPath)==='pages/sticker-share/index';
     this.reset();
+    if(publicWork)return;
     if (this._redirecting) return;
     this._redirecting = true; wx.reLaunch({ url: '/pages/chat/index', complete: () => { this._redirecting = false; } });
   },

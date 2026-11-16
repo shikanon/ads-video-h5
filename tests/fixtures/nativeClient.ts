@@ -56,11 +56,11 @@ export function nativePlatform(base: string, directory: string) {
   return platform;
 }
 
-export async function loadNativeApp(platform: any) {
+export async function loadNativeApp(platform: any, currentPages:()=>any[]=()=>[]) {
   let app: any;
   const appFile = path.join(miniRoot, 'app.js');
   runInNewContext(await readFile(appFile, 'utf8'), { App: (definition: any) => { app = definition; }, wx: platform,
-    getCurrentPages: () => [], require: createRequire(appFile), setTimeout, clearTimeout }, { filename: appFile });
+    getCurrentPages: currentPages, require: createRequire(appFile), setTimeout, clearTimeout }, { filename: appFile });
   app.onLaunch();
   return app;
 }
