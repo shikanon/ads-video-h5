@@ -4,7 +4,8 @@ import { mkdtemp,mkdir,readFile,writeFile,rm } from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {PNG} from 'pngjs';
-import {reviewStickerImage,stickerAction,stickerQualityChecks,validateStickerQuality} from '../server/stickerQuality';
+import {getStickerReviewConfig,reviewStickerImage,stickerAction,stickerQualityChecks,validateStickerQuality} from '../server/stickerQuality';
+import {withModelSnapshot} from '../server/modelContext';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {loadStickerPack,stickerAssets} from '../server/stickerPacks';
@@ -17,6 +18,13 @@ import {stateHash} from '../server/durableState';
 
 function image(){const png=new PNG({width:128,height:128});for(let y=20;y<108;y++)for(let x=25;x<103;x++){const p=(y*128+x)*4;png.data[p]=190;png.data[p+1]=80;png.data[p+3]=255;}return PNG.sync.write(png);}
 const model={id:'image',kind:'image' as const,enabled:true,provider:'ark',modelId:'doubao-seedream-5-0-flash-260915',apiKey:'fixture',baseUrl:'https://fixture.test'};
+
+test('quality review prefers configured Pro from the frozen snapshot and cannot follow a later registry change',async()=>{
+ const text={...model,id:'deepseek',kind:'text' as const,modelId:'deepseek-v4-pro-ga-260813'},pro={...text,id:'pro',modelId:'doubao-seed-2-1-pro-260915'},lite={...model,id:'lite',kind:'understanding' as const,modelId:'doubao-seed-2-1-lite-260915'};
+ assert.equal(await withModelSnapshot({text,image:model,audio:null,understanding:lite,textFallbacks:[pro]},async()=> (await getStickerReviewConfig())?.id),'pro');
+ assert.equal(await withModelSnapshot({text,image:model,audio:null,understanding:lite,textFallbacks:[]},async()=> (await getStickerReviewConfig())?.id),'lite');
+ assert.equal(await withModelSnapshot({text:null,image:model,audio:null,understanding:null,textFallbacks:[]},async()=>getStickerReviewConfig()),null);
+});
 
 test('visual verdict rejects detached heads, extra tails, uncertainty, missing checks and omitted dynamic frames',()=>{
  const good=stickerQualityFixture({frames:[image()]});assert.equal(validateStickerQuality(good,1).passed,true);

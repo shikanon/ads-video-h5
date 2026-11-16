@@ -31,6 +31,16 @@ test('matting removes isolated backdrop flecks but retains meaningful separate h
  const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),magenta));assert.equal(result.data[(6*128+6)*4+3],0);assert.equal(result.data[(25*128+112)*4+3],255);
 });
 
+test('connected dark-magenta floor residue is removed without deleting a pastel cushion',()=>{
+ const magenta={name:'洋红色',hex:'#FF00FF',channels:[0,2]},generated=image([255,0,255]);rect(generated,25,20,75,80,[255,140,205,255]);rect(generated,20,100,85,8,[255,25,125,255]);
+ const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),magenta));assert.equal(result.data[(104*128+60)*4+3],0);assert.equal(result.data[(60*128+60)*4+3],255);
+});
+
+test('dark studio key enclosed between feet is cleared with the outside canvas',()=>{
+ const magenta={name:'洋红色',hex:'#FF00FF',channels:[0,2]},generated=image([255,0,255]);rect(generated,25,20,75,90,[255,140,205,255]);rect(generated,50,80,10,15,[255,25,125,255]);
+ const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),magenta));assert.equal(result.data[(88*128+54)*4+3],0);assert.equal(result.data[(50*128+50)*4+3],255);
+});
+
 test('animation reference pins six complete characters to separate transparent cells',()=>{
   const identity=new PNG({width:512,height:512});rect(identity,190,60,130,390,[180,90,55,255]);const sheet=PNG.sync.read(stickerMotionReference(PNG.sync.write(identity)));assert.equal(sheet.width,2496);assert.equal(sheet.height,1664);
   for(let n=0;n<6;n++){assert.equal(sheet.data[((Math.floor(n/3)*832+220)*2496+n%3*832+350)*4+3],255);assert.equal(sheet.data[((Math.floor(n/3)*832)*2496+n%3*832)*4+3],0);}

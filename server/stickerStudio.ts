@@ -6,7 +6,7 @@ import { fileDigest } from './artifactIntegrity';
 import { loadStickerPack, stickerAssets, type PackManifest, publicStickerPack } from './stickerPacks';
 import { compileSpriteSheet, hasAvatarAlpha, readAvatarPng } from './avatarAssets';
 import { generateImage, type ImageReference } from './providers';
-import { getModelConfig, type ModelConfig } from './modelRegistry';
+import type { ModelConfig } from './modelRegistry';
 import { runFFmpeg } from './core';
 import { currentTaskExecution } from './taskRuntime';
 import { throwIfJobCancelled } from './jobExecution';
@@ -18,7 +18,7 @@ import { createRequire } from 'node:module';
 import { capture } from './scienceRender';
 import { stickerStyleFile } from './stickerStyles';
 import { stickerBackground, stickerBackgroundInstructions, removeStickerBackdrop, stickerFrameFilter, stickerMotionReference, validateStickerMotion } from './stickerBackground';
-import { reviewStickerImage, stickerAction, stickerReviewAction, stickerAnatomy, validateStickerQuality, type StickerQualityReceipt, type StickerReviewer } from './stickerQuality';
+import { getStickerReviewConfig, reviewStickerImage, stickerAction, stickerReviewAction, stickerAnatomy, validateStickerQuality, type StickerQualityReceipt, type StickerReviewer } from './stickerQuality';
 
 export interface StickerRecipe {
   referenceMediaId: string; name: string; style: string; styleId?:'soft'|'round'|'lightmao'|'custom'; mode: 'static' | 'dynamic';
@@ -135,7 +135,7 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
       if(project.generationHash!==await generationHash())throw Error('动作配方已更新，请重新创建并确认样张。');
       if(stateHash(reference.bytes.toString('base64'))!==project.referenceHash)throw Error('角色参考图已变化，请重新创建表情项目。');
       const original=await loadStickerPack(),trace=createToolTrace(progress,[config.apiKey]);
-      const reviewConfig=qualityReviewer===reviewStickerImage?await getModelConfig('understanding'):undefined;
+      const reviewConfig=qualityReviewer===reviewStickerImage?await getStickerReviewConfig():undefined;
       if(qualityReviewer===reviewStickerImage&&(!reviewConfig||!/^doubao-seed-2-1-/.test(reviewConfig.modelId)))throw Error('表情画面质检模型尚未配置，已暂停制作，不会提交图片请求。');
       if(task.phase==='batch') {
         const approved=await json(path.join(base,'approval.json')).catch(()=>null);

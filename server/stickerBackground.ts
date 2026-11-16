@@ -11,7 +11,7 @@ function chroma(png:PNG,p:number,key:StickerChroma){
 }
 // Match the saturated studio key, not every pastel sharing its hue. Broad
 // hue removal punched holes through pink cushions on magenta backdrops.
-function backdropPixel(png:PNG,p:number,key:StickerChroma){const c=chroma(png,p,key);return c.high>=160&&c.low<=75&&c.excess>=110;}
+function backdropPixel(png:PNG,p:number,key:StickerChroma){const c=chroma(png,p,key);return c.high>=100&&c.low<=75&&c.excess>=80;}
 export async function stickerBackground(reference:ImageReference,forceOpaque=false):Promise<{background:'transparent'|'opaque';key?:StickerChroma;reference:ImageReference}>{
   const bytes=await transparentImageReference(reference.bytes),png=readAvatarPng(bytes);
   if(hasAvatarAlpha(png)&&!forceOpaque)return {background:'transparent',reference:{bytes,mimeType:'image/png'}};

@@ -9,6 +9,7 @@ import { withoutCreditUsage } from './creditUsage';
 import { currentTaskExecution } from './taskRuntime';
 import { transparentImageReference } from './transparentImageReference';
 import { stickerAssets } from './stickerPacks';
+import { frozenModel, frozenTextFallbacks } from './modelContext';
 
 export const stickerQualityChecks = ['anatomy','identity','style','action','props','framing','matting'] as const;
 type Check = typeof stickerQualityChecks[number];
@@ -23,9 +24,17 @@ export interface StickerQualityInput {
   reference:ImageReference; styleReference?:ImageReference; anchor?:ImageReference; candidate?:ImageReference; frames:Buffer[];
 }
 export interface StickerQualityReceipt extends StickerQualityVerdict {
-  version:1; inputHash:string; policyHash:string; modelId:string; frameHashes:string[]; reviewedAt:string;
+  version:1; inputHash:string; policyHash:string; modelId:string; frameHashes:string[]; candidateHash?:string; reviewedAt:string;
 }
 export type StickerReviewer = (input:StickerQualityInput)=>Promise<StickerQualityReceipt>;
+
+export async function getStickerReviewConfig():Promise<ModelConfig|null>{
+  const text=await getModelConfig('text');
+  // Prefer an explicitly configured vision-capable Pro. During a job only
+  // use the captured model/fallback snapshot, never newly edited credentials.
+  const candidates=frozenModel('understanding')!==undefined?[text,...(text?frozenTextFallbacks(text):[])]:[text,await getModelConfig('text','ark-text')];
+  return candidates.find((m):m is ModelConfig=>Boolean(m?.enabled&&m.modelId==='doubao-seed-2-1-pro-260915'))||await getModelConfig('understanding');
+}
 
 // Server computes the verdict. A model-level "passed":true cannot override
 // a missing frame/check, an uncertain finding, or contradictory head counts.
@@ -64,12 +73,13 @@ export async function stickerInspectionImage(image:ImageReference):Promise<Buffe
 
 export async function reviewStickerImage(input:StickerQualityInput,providedConfig?:ModelConfig):Promise<StickerQualityReceipt>{
   if(![1,6].includes(input.frames.length))throw Error('表情画面质检帧数无效。');
-  const config=providedConfig||await getModelConfig('understanding');
+  const config=providedConfig||await getStickerReviewConfig();
   if(!config||!/^doubao-seed-2-1-/.test(config.modelId))throw Error('表情画面质检模型尚未配置，已暂停交付。');
   const policy=await readFile(path.join(stickerAssets,'..','references','quality.md'),'utf8'),policyHash=stateHash(policy),frameHashes=input.frames.map(bytes=>stateHash(bytes.toString('base64')));
-  const inputHash=stateHash({policyHash,protocol:2,model:[config.provider,config.baseUrl,config.modelId],actionId:input.actionId,action:input.action,style:input.style,reference:stateHash(input.reference.bytes.toString('base64')),styleReference:input.styleReference&&stateHash(input.styleReference.bytes.toString('base64')),anchor:input.anchor&&stateHash(input.anchor.bytes.toString('base64')),candidate:input.candidate&&stateHash(input.candidate.bytes.toString('base64')),frameHashes});
+  const candidateHash=input.candidate&&stateHash(input.candidate.bytes.toString('base64'));
+  const inputHash=stateHash({policyHash,protocol:2,model:[config.provider,config.baseUrl,config.modelId],actionId:input.actionId,action:input.action,style:input.style,reference:stateHash(input.reference.bytes.toString('base64')),styleReference:input.styleReference&&stateHash(input.styleReference.bytes.toString('base64')),anchor:input.anchor&&stateHash(input.anchor.bytes.toString('base64')),candidate:candidateHash,frameHashes});
   const file=path.join(input.directory,`quality-${inputHash}.json`);
-  try{const cached=JSON.parse(await readFile(file,'utf8'));if(cached.version===1&&cached.inputHash===inputHash&&cached.policyHash===policyHash&&cached.modelId===config.modelId&&JSON.stringify(cached.frameHashes)===JSON.stringify(frameHashes))return {...cached,...validateStickerQuality(cached,input.frames.length)};}catch(error){if((error as any).code!=='ENOENT')throw error;}
+  try{const cached=JSON.parse(await readFile(file,'utf8'));if(cached.version===1&&cached.inputHash===inputHash&&cached.policyHash===policyHash&&cached.modelId===config.modelId&&JSON.stringify(cached.frameHashes)===JSON.stringify(frameHashes))return {...cached,candidateHash,...validateStickerQuality(cached,input.frames.length)};}catch(error){if((error as any).code!=='ENOENT')throw error;}
   const content:any[]=[];
   const image=async(label:string,ref:ImageReference)=>{content.push({type:'text',text:label},{type:'image_url',image_url:{url:'data:image/png;base64,'+(await stickerInspectionImage(ref)).toString('base64')}});};
   await image('角色身份参考；只核对所选主角，截图中的旁人、界面和舞台不是输出要求。',input.reference);
@@ -88,7 +98,7 @@ export async function reviewStickerImage(input:StickerQualityInput,providedConfi
     await atomicStateWrite(path.join(input.directory,`quality-response-${inputHash}-${attempt}.json`),{inputHash,modelId:config.modelId,publicContent,finishReason:body.choices?.[0]?.finish_reason,usage:body.usage});
     let verdict:StickerQualityVerdict;
     try{verdict=validateStickerQuality(JSON.parse(publicContent),input.frames.length);}catch(error){throwIfJobCancelled();if(attempt)throw Error('表情画面质检记录不完整，已暂停交付，不会提交额外绘图请求。');formatError=(error as Error).message;continue;}
-    const receipt:StickerQualityReceipt={version:1,inputHash,policyHash,modelId:config.modelId,frameHashes,reviewedAt:new Date().toISOString(),...verdict};
+    const receipt:StickerQualityReceipt={version:1,inputHash,policyHash,modelId:config.modelId,frameHashes,candidateHash,reviewedAt:new Date().toISOString(),...verdict};
     throwIfJobCancelled();execution?.guard();await atomicStateWrite(file,{...receipt,usage:body.usage});return receipt;
   }
   throw Error('表情画面质检未完成，已暂停交付。');
