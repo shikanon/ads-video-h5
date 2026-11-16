@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { capturePage, miniRoot } from './fixtures/nativeClient';
+import { capturePage, miniRoot, miniRequire, loadNativeApp, waitFor } from './fixtures/nativeClient';
 
 test('every native page shares the public home without leaking the active account, conversation or file', async () => {
   const config = JSON.parse(await readFile(path.join(miniRoot, 'app.json'), 'utf8'));
@@ -61,7 +61,23 @@ test('explicit sticker template sharing passes only a public mode; recipients cr
 test('guest template login returns to the chosen mode and never accepts an arbitrary return URL',async()=>{
  const navigations:any[]=[],platform={navigateTo:(o:any)=>navigations.push(o.url),redirectTo:(o:any)=>navigations.push(o.url),switchTab:(o:any)=>navigations.push(o.url)};
  const app:any={client:{hasSession:()=>false,wechatLogin:async()=>({user:{id:'own-account'}})},refresh:async()=>({})};
- const studio=await capturePage('sticker-studio',app,platform);studio.onLoad({mode:'static',from:'template'});studio.login();assert.equal(navigations.pop(),'/pages/auth/index?stickerMode=static');
+ const studio=await capturePage('sticker-studio',app,platform);studio.onLoad({mode:'static',from:'template'});studio.login();assert.equal(navigations.pop(),'/pages/auth/index?stickerMode=static&stickerStyle=soft');
  const auth=await capturePage('auth',app,platform);auth.onLoad({stickerMode:'static'});await auth.submit();assert.equal(navigations.pop(),'/pages/sticker-studio/index?mode=static&from=template');assert.equal(app.user.id,'own-account');
  auth.onLoad({stickerMode:'https://untrusted.test/'});await auth.submit();assert.equal(navigations.pop(),'/pages/chat/index');
+});
+
+test('an expired cached login cannot redirect a public friend preview away, while private pages still reset safely',async t=>{
+ const config=miniRequire('./miniprogram/config'),requests:any[]=[],redirects:any[]=[],pages:any[]=[],storage=new Map();
+ storage.set('qingjian:wechat-session:v1:'+config.apiBase,'qingjian_session='+'a'.repeat(43));
+ const wx:any={getStorageSync:(key:string)=>storage.get(key),setStorageSync:(key:string,value:any)=>storage.set(key,value),removeStorageSync:(key:string)=>storage.delete(key),request:(o:any)=>requests.push(o),reLaunch:(o:any)=>{redirects.push(o.url);o.complete?.();}};
+ const app=await loadNativeApp(wx,()=>pages);t.after(()=>app.onHide());const token='b'.repeat(48);
+ app.onShow({path:'pages/sticker-share/index',query:{token}});const refreshing=app._refreshing;
+ const page=await capturePage('sticker-share',app,wx);page.route='pages/sticker-share/index';pages.push(page);page.onLoad({token});page.onShow();
+ requests[0].success({statusCode:401,data:{error:'登录已过期'},header:{}});await refreshing.catch(()=>{});
+ requests[1].success({statusCode:200,data:{share:{name:'好友作品',mode:'static',styleId:'round',count:1,items:[{id:'01',thumbnailUrl:'/api/sticker-shares/'+token+'/items/01/thumb'}]}},header:{}});
+ await waitFor(()=>requests.length===3);assert.equal(requests[2].header.Cookie,undefined);
+ requests[2].success({statusCode:200,data:{share:{name:'好友作品',mode:'static',styleId:'round',count:1,items:[]}},header:{}});
+ await waitFor(()=>page.data.share?.name==='好友作品');assert.equal(app.client.hasSession(),false);assert.equal(redirects.length,0);page.onHide();
+ pages.pop();app.expired();assert.equal(redirects.length,0,'cold public entry also survives before page creation');
+ pages.push({route:'pages/chat/index'});app.expired();assert.equal(redirects[0],'/pages/chat/index');
 });

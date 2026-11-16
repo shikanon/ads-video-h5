@@ -3,8 +3,8 @@ const { shareAppMessage } = require("../../utils/share");
 Page({
   onShareAppMessage: shareAppMessage,
   data: Object.assign(appearanceData(), { busy: false, error: '' }),
-  onLoad(query){this._stickerMode=['static','dynamic'].includes(query.stickerMode)?query.stickerMode:null;},
-  goAfterLogin(){if(this._stickerMode)wx.redirectTo({url:'/pages/sticker-studio/index?mode='+this._stickerMode+'&from=template'});else wx.switchTab({url:'/pages/chat/index'});},
+  onLoad(query){this._stickerMode=['static','dynamic'].includes(query.stickerMode)?query.stickerMode:null;this._stickerStyle=['soft','round','lightmao','custom'].includes(query.stickerStyle)?query.stickerStyle:null;},
+  goAfterLogin(){if(this._stickerMode)wx.redirectTo({url:'/pages/sticker-studio/index?mode='+this._stickerMode+'&from=template'+(this._stickerStyle?'&styleId='+this._stickerStyle:'')});else wx.switchTab({url:'/pages/chat/index'});},
   async onShow() {
     if (getApp().applyAppearance) getApp().applyAppearance(this);
     const app = getApp(); app._redirecting = false;

@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {PNG} from 'pngjs';
+import {startCreditServer} from './fixtures/creditServer';
+import {waitFor} from './fixtures/nativeClient';
+test('real upload, vision reading, text-file context and long role messages are passed to the chat model and remain owner-scoped',async t=>{
+ const calls:any[]=[],f=await startCreditServer({onProviderRequest:async body=>{calls.push(body);}});t.after(()=>f.close());const cookie=await f.login(),other=await f.login('shikanon@example.test');
+ const created:any=await(await f.request(cookie,'/api/sessions',{mode:'chat'})).json(),id=created.activeSessionId;
+ const p=new PNG({width:64,height:512});p.data.fill(255);const bytes=PNG.sync.write(p),form=new FormData();form.append('files',new Blob([new Uint8Array(bytes)],{type:'image/png'}),'setting.png');
+ const uploaded=await fetch(f.base+'/api/media',{method:'POST',headers:{Cookie:cookie},body:form});assert.equal(uploaded.status,200);const image:any=await uploaded.json(),imageId=image.uploadedMediaIds[0];
+ const sent:any=await(await f.request(cookie,'/api/chat',{sessionId:id,message:'读取图片中的人物设定并开始剧情。',interaction:'chat',attachmentIds:[imageId]})).json(),job=sent.jobs.at(-1);
+ await waitFor(async()=>{const state:any=await(await f.request(cookie,'/api/state')).json(),j=state.jobs.find((j:any)=>j.id===job.id);if(j.status==='failed')throw Error(JSON.stringify(j));return j.status==='succeeded';},800);
+ const vision=calls.find(b=>b.tools?.some((tool:any)=>tool.function?.name==='read_picture'));assert.ok(vision);const images=vision.messages.flatMap((m:any)=>Array.isArray(m.content)?m.content.filter((part:any)=>part.type==='image_url'):[]);assert.equal(images.length,5,'long screenshots retain legibility through ordered crops');assert.ok(images.every((part:any)=>part.image_url.url.startsWith('data:image/jpeg;base64,')));
+ const answer=calls.find(b=>b.tools?.some((tool:any)=>tool.function?.name==='reply'));assert.match(JSON.stringify(answer.messages),/图片实际文字：人物甲是首辅/);
+ const after:any=await(await f.request(cookie,'/api/state')).json();assert.equal(after.sessions.find((s:any)=>s.id===id).messages[0].attachmentIds[0],imageId);
+ const doc=new FormData();doc.append('originalName','role-setting.txt');doc.append('files',new Blob(['人物甲：首辅。人物乙：大小姐。保持人物关系和第一人称。'],{type:'application/octet-stream'}),'tmp-unknown');
+ const response=await fetch(f.base+'/api/media',{method:'POST',headers:{Cookie:cookie},body:doc});assert.equal(response.status,200,await response.clone().text());const document:any=await response.json(),docId=document.uploadedMediaIds[0];assert.equal(document.media.find((m:any)=>m.id===docId).kind,'document');
+ const long='继续剧情，按最初设定。'+'写作设定。'.repeat(500);assert.ok(long.length>2000);
+ const next:any=await(await f.request(cookie,'/api/chat',{sessionId:id,message:long,interaction:'chat',attachmentIds:[docId]})).json(),nextId=next.jobs.at(-1).id;
+ await waitFor(async()=>{const state:any=await(await f.request(cookie,'/api/state')).json();return state.jobs.find((j:any)=>j.id===nextId)?.status==='succeeded';},800);
+ assert.match(JSON.stringify(calls.at(-1).messages),/保持人物关系和第一人称/);const stored:any=await(await f.request(cookie,'/api/state')).json();assert.equal(stored.sessions.find((s:any)=>s.id===id).messages.filter((m:any)=>m.role==='user').at(-1).text.length,long.length);
+ assert.equal((await f.request(other,'/api/media/'+docId)).status,404);assert.equal((await f.request(cookie,'/api/chat',{sessionId:id,message:'x'.repeat(20001),interaction:'chat'})).status,400);
+ const bad=new FormData();bad.append('files',new Blob([new Uint8Array(bytes.subarray(0,40))],{type:'image/png'}),'bad.png');assert.equal((await fetch(f.base+'/api/media',{method:'POST',headers:{Cookie:cookie},body:bad})).status,400);
+});

@@ -1,7 +1,7 @@
 const { brandText } = require('./brand');
 const active = job => ['queued', 'running', 'stopping'].includes(job.status);
 const labels = { queued: '等待处理', running: '制作中', stopping: '正在停止', cancelled: '已停止', succeeded: '已完成', failed: '未完成' };
-const creditKinds = { signup_grant: '注册赠送', daily_checkin: '每日签到', daily_grant: '每日赠送', special_grant: '特殊账户额度', model_usage: '模型调用', usage_pending: '用量待核对' };
+const creditKinds = { service_refund:'服务故障退回',signup_grant: '注册赠送', daily_checkin: '每日签到', daily_grant: '每日赠送', special_grant: '特殊账户额度', model_usage: '模型调用', usage_pending: '用量待核对' };
 function beijingTime(value) {
   const at = new Date(Date.parse(value) + 8 * 3600000);
   if (!Number.isFinite(at.getTime())) return '';
@@ -44,7 +44,7 @@ function chatView(state, client, expanded, count, offset) {
     const quiet = quietChat(job), open = Boolean(expanded && expanded[message.id]);
     const parts = quiet ? [] : (message.parts || []).filter(part => part.phase === 'commentary');
     const text = (message.role === 'assistant' ? quiet ? chatReplyText(message) : brandText(message.text) : message.text) || '';
-    return { id: message.id, role: message.role, date: beijingTime(message.createdAt), quiet, text: !open && text.length > 1600 ? text.slice(0, 1600) + '…' : text, long: text.length > 1600, open, parts: open ? parts.slice(-40).map(part => ({ id: part.id, text: brandText(part.text).slice(0, 2000) })) : [], partCount: parts.length, recordCount: quiet ? 0 : parts.length + (job && job.workflow || []).length, job: jobView(job, open && !quiet), artifacts: (message.artifactIds || []).map(id => state.artifacts.find(item => item.id === id)).filter(Boolean).map(item => artifactView(item, client)) };
+    return { id: message.id, role: message.role, date: beijingTime(message.createdAt), quiet, text: !open && text.length > 1600 ? text.slice(0, 1600) + '…' : text, long: text.length > 1600, open, parts: open ? parts.slice(-40).map(part => ({ id: part.id, text: brandText(part.text).slice(0, 20000) })) : [], partCount: parts.length, recordCount: quiet ? 0 : parts.length + (job && job.workflow || []).length, job: jobView(job, open && !quiet), attachments: (message.attachmentIds || []).map(id => state.media.find(item => item.id === id)).filter(Boolean).map(item => mediaView(item, client)), artifacts: (message.artifactIds || []).map(id => state.artifacts.find(item => item.id === id)).filter(Boolean).map(item => artifactView(item, client)) };
   });
   const currentJobs = state.jobs.filter(job => job.sessionId === state.activeSessionId && active(job));
   if (end === all.length) for (const job of currentJobs) {

@@ -19,8 +19,9 @@ Page({
       return;
     }
     this._item = item;
+    this.setData({documentText:item.document?.text||'',documentTruncated:Boolean(item.document?.truncated),isWord:/\.docx$/i.test(item.name)});
     this.setData({ item: { id: item.id, name: this._type === 'artifact' ? brandText(item.name) : item.name, kind: item.kind, project: Boolean(item.projectUrl), date: beijingTime(item.createdAt), duration: item.duration ? Math.round(item.duration) + ' 秒' : '' }, analysis: item.analysis && item.analysis.transcript || '' });
-    if (!this.data.src && !this.data.loading) this.load();
+    if (item.kind!=='document' && !this.data.src && !this.data.loading) this.load();
   },
   async load() {
     if (!this._item || this.data.loading) return;
@@ -39,12 +40,14 @@ Page({
       }
     } catch (error) { this.setData({ error: error.message }); } finally { this.setData({ loading: false }); }
   },
+  async openDocument(){if(!this._item||this._item.kind!=='document')return;try{const filePath=await getApp().client.download(this._item.url);if(this._visible)wx.openDocument({filePath,fileType:'docx',showMenu:true});}catch(error){notify(error);}},
+  copyDocument(){if(this.data.documentText)wx.setClipboardData({data:this.data.documentText});},
   mediaError() { this.setData({ error: '文件暂时无法播放，请重新加载。' }); },
   retry() { this.setData({ src: '' }); this.load(); },
   toggleAudio() { if (this._audio) this.data.playing ? this._audio.pause() : this._audio.play(); },
   async image() { if (!this.data.src) return; try { await privacy(); wx.previewImage({ urls: [this.data.src], current: this.data.src }); } catch (error) { notify(error); } },
   async save() {
-    if (this.data.saving || !this._item) return;
+    if (this.data.saving || !this._item || this._item.kind==='document') return;
     this.setData({ saving: true, error: '' });
     try {
       await privacy();
@@ -66,7 +69,7 @@ Page({
     finally { this.setData({ saving: false }); }
   },
   async analyze() {
-    if (this.data.analyzing) return; this.setData({ analyzing: true });
+    if (this.data.analyzing || !['audio','video'].includes(this._item?.kind)) return; this.setData({ analyzing: true });
     try { await getApp().mutate('/api/media/' + encodeURIComponent(this._id) + '/analyze', { sessionId: getApp().state.activeSessionId }); wx.switchTab({ url: '/pages/chat/index' }); } catch (error) { notify(error); } finally { this.setData({ analyzing: false }); }
   },
 });

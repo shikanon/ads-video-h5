@@ -1,6 +1,6 @@
 // Private covers need the same authenticated download as the player. Never
 // put cookies in an image URL or make private storage publicly readable.
-function loadThumbnails(page, field, client) {
+function loadThumbnails(page, field, client, maxItems = Infinity) {
   const generation = page._thumbnailGeneration = (page._thumbnailGeneration || 0) + 1;
   if (client.cachedDownload) {
     let changed = false;
@@ -11,7 +11,7 @@ function loadThumbnails(page, field, client) {
     });
     if (changed) page.setData({ [field]: items });
   }
-  const pending = (page.data[field] || []).filter(item => item.coverSource && !item.cover);
+  const pending = (page.data[field] || []).filter(item => item.coverSource && !item.cover).slice(-maxItems);
   let next = 0;
   async function worker() {
     while (next < pending.length) {

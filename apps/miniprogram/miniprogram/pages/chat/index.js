@@ -13,13 +13,14 @@ const { openDraft, modeOf, activateSession } = require('../../utils/sessions');
 const { sidebarView } = require('../../utils/sidebar');
 const { hydrateAccountAvatar } = require('../../utils/account-avatar');
 const { markSessionRead } = require('../../utils/session-notifications');
+const { readDrafts, writeDrafts } = require('../../utils/chat-drafts');
 const voiceLabels = { idle: '长按说话，松开发送', authorizing: '等待麦克风授权', starting: '准备录音…', recording: '正在录音 · 松开发送，上滑取消', finishing: '整理录音…', transcribing: '正在识别语音…', sending: '识别完成，正在发送…' };
 Page({
   onShareAppMessage: shareAppMessage,
   onShareTimeline: shareTimeline,
   data: Object.assign(appearanceData(), { messages: [], empty: true, running: false, title: '新会话', prompt: '', templateName: '', attachmentIds: [], attached: [], pick: false, sources: [], sending: false, creatingSession: false, uploading: false, uploadText: '', error: '', voice: 'idle', voiceLabel: voiceLabels.idle, voiceReady: false, cursor: 0, editorCursor: -1, focus: false, scrollTarget: '', balance: '0.00', insufficient: false, hasOlder: false, voiceConsentVisible: false, voiceConsentVersion: version, voiceConsentSections: sections }),
   onLoad() {
-    this._drafts = {}; this._draftGeneration = getApp()._generation; this._pendingSends = getApp()._pendingMessageSessions || (getApp()._pendingMessageSessions = new Set());
+    this._drafts = readDrafts(wx,getApp().state?.account?.id); this._draftGeneration = getApp()._generation; this._pendingSends = getApp()._pendingMessageSessions || (getApp()._pendingMessageSessions = new Set());
     this._sidebarLimit = 40;
     this.setData({ sidebarOpen: false, sidebarFilter: 'all', sidebarQuery: '', sidebarArchived: false, sidebarGroups: [], sidebarMore: false, sidebarBusy: false });
     this.setData({ mode: 'chat', researchMode: 'auto', models: [], modelIndex: 0, modelName: '选择模型', modelChanging: false });
@@ -56,8 +57,9 @@ Page({
     if (!withSession(this, this.render)) return;
     if (getApp().pendingAttachments) { const ids = getApp().pendingAttachments; getApp().pendingAttachments = null; this.addAttachments(ids); if (getApp().state) this.render(getApp().state); }
   },
-  onHide() { hide(this); this._editorFocused = false; this.setData({ focus: false, keyboardHeight: 0, keyboardOffset: 0 }); this.cancelConsent(); if (this._voice) this._voice.cancel(); },
-  onUnload() { hide(this); if (wx.offWindowResize) wx.offWindowResize(this._windowListener); this.cancelConsent(); if (this._voice) this._voice.dispose(); },
+  saveDraft() { if(this.data.sessionId){this._drafts[this.data.sessionId]={prompt:this.data.prompt,cursor:this.data.cursor,attachmentIds:this.data.attachmentIds,researchMode:this.data.researchMode};writeDrafts(wx,getApp().state?.account?.id,this._drafts);} },
+  onHide() { this.saveDraft();hide(this); this._editorFocused = false; this.setData({ focus: false, keyboardHeight: 0, keyboardOffset: 0 }); this.cancelConsent(); if (this._voice) this._voice.cancel(); },
+  onUnload() { this.saveDraft();hide(this); if (wx.offWindowResize) wx.offWindowResize(this._windowListener); this.cancelConsent(); if (this._voice) this._voice.dispose(); },
   windowInfo() { try { return wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync ? wx.getSystemInfoSync() : {}; } catch (_) { return {}; } },
   keyboardChange(event) {
     if (!this._visible) return;
@@ -98,7 +100,7 @@ Page({
   render(state) {
     this.setData({researchAvailable:Boolean(state.features && state.features.researchModes)});
     const accountChanged = this._draftGeneration !== getApp()._generation;
-    if (accountChanged) { this._drafts = {}; this._draftGeneration = getApp()._generation; this._pendingSends = getApp()._pendingMessageSessions || new Set(); }
+    if (accountChanged) { this._drafts = readDrafts(wx,state.account?.id); this._draftGeneration = getApp()._generation; this._pendingSends = getApp()._pendingMessageSessions || new Set(); }
     this._sidebarState = state;
     if (this.data.sidebarOpen) this.renderSidebar(state);
     hydrateAccountAvatar(this, state, getApp());
@@ -112,9 +114,9 @@ Page({
     const modelIndex = models.findIndex(m => m.id === modelId);
     this.setData({ models, modelIndex: Math.max(0, modelIndex), modelName: modelIndex >= 0 ? models[modelIndex].name : '选择模型' });
     const view = chatView(state, getApp().client, this._expanded, this._count, this._offset);
-    const changed = accountChanged || this.data.sessionId && this.data.sessionId !== view.sessionId;
+    const changed = accountChanged || this.data.sessionId !== view.sessionId;
     const ids = changed ? [] : this.data.attachmentIds.filter(id => state.media.some(item => item.id === id && !item.character));
-    if (changed && !accountChanged) {
+    if (changed && !accountChanged && this.data.sessionId) {
       (this._drafts || (this._drafts = {}))[this.data.sessionId] = { prompt: this.data.prompt, cursor: this.data.cursor, attachmentIds: this.data.attachmentIds, error: this.data.error, researchMode: this.data.researchMode || 'auto' };
     }
     const draft = changed && this._drafts && this._drafts[view.sessionId];
@@ -124,6 +126,8 @@ Page({
     const cache = this._renderCache || (this._renderCache = {}), delta = {};
     for (const key of Object.keys(patch)) { const encoded = JSON.stringify(patch[key]); if (cache[key] !== encoded || JSON.stringify(this.data[key]) !== encoded) { cache[key] = encoded; delta[key] = patch[key]; } }
     if (Object.keys(delta).length) this.setData(delta);
+    const covers=view.messages.flatMap(message=>(message.attachments||[]).map(item=>Object.assign({},item,{id:message.id+':'+item.id,mediaId:item.id,messageId:message.id})));
+    this.setData({messageAttachments:covers});loadThumbnails(this,'messageAttachments',getApp().client,40);
     if (this._visible && !this.data.sidebarOpen && getApp()._foreground !== false && !getApp()._pendingNotice && !getApp()._openingNotice) markSessionRead(getApp(), view.sessionId);
     if (this._lastCount !== view.messages.length || this._lastSession !== view.sessionId) { this._lastCount = view.messages.length; this._lastSession = view.sessionId; this.scroll(); }
     this.consumeTemplate();
@@ -133,7 +137,7 @@ Page({
   voiceTicket() { const value = this._recognized; return value && value.sessionId === this.data.sessionId && value.message === this.data.prompt.trim() && Date.now() - value.at < 15 * 60000 ? value.ticket : null; },
   blur(event) { this._editorFocused = false; this.setData({ focus: false, editorCursor: -1 }); if (event.detail.cursor !== undefined) this.setData({ cursor: event.detail.cursor }); },
   newline() {
-    if (this.data.prompt.length >= 2000) return;
+    if (this.data.prompt.length >= 20000) return;
     const at = Math.max(0, Math.min(this.data.prompt.length, this.data.cursor));
     const prompt = this.data.prompt.slice(0, at) + '\n' + this.data.prompt.slice(at);
     this.setData({ prompt, templateName: selectedTemplateName(prompt, this.templates()), cursor: at + 1, editorCursor: at + 1, focus: true });
@@ -211,7 +215,7 @@ Page({
   older() { this._offset += 50; this._expanded = {}; this.render(getApp().state); },
   latest() { this._offset = 0; this._expanded = {}; this.render(getApp().state); this.scroll(); },
   async changeModel(event) {
-    if (this.data.modelChanging || this.data.running || this.data.sending || this.data.creatingSession || this.data.uploading || this.data.voice !== 'idle') return;
+    if (this.data.modelChanging || this.data.sending || this.data.creatingSession || this.data.uploading || this.data.voice !== 'idle') return;
     if (!requireLogin()) return;
     const app = getApp(), model = this.data.models[Number(event.detail.value)], id = this.data.sessionId;
     if (!model || !id) return;
@@ -221,7 +225,7 @@ Page({
       const selected = await app.mutate('/api/sessions/' + encodeURIComponent(id) + '/model', { modelId: model.id }, 'PATCH');
       currentUpdated = true; this.render(selected);
       const saved = await app.mutate('/api/settings', { defaultModelId: model.id }, 'PATCH');
-      this.render(saved); wx.showToast({ title: '已切换模型', icon: 'none' });
+      this.render(saved); wx.showToast({ title: this.data.running ? '后续消息使用新模型' : '已切换模型', icon: 'none' });
     } catch (error) {
       notify(currentUpdated ? new Error('当前会话已切换，新会话默认模型未保存，请重试。') : error);
     } finally { if (this._modelChangingId === id) this._modelChangingId = null; if (this.data.sessionId === id) this.setData({ modelChanging: false }); }
@@ -329,13 +333,17 @@ Page({
     if (!requireLogin()) return;
     this.setData({ pick: false, uploading: true });
     try {
-      const files = await chooseFiles(event.currentTarget.dataset.audio === 'yes');
+      const files = await chooseFiles(event.currentTarget.dataset.audio === 'yes',20,event.currentTarget.dataset.document === 'yes');
       if (!files.length) return;
       this.setData({ error: '' });
       const ids = await uploadMedia(getApp(), files, (at, total, percent) => this.setData({ uploadText: '上传 ' + at + '/' + total + ' · ' + percent + '%' }));
       this.addAttachments(ids); this.render(getApp().state);
     } catch (error) { if (error.uploadedIds) { this.addAttachments(error.uploadedIds); this.render(getApp().state); } this.setData({ error: error.message }); }
     finally { this.setData({ uploading: false, uploadText: '' }); }
+  },
+  async openAttachment(event) {
+    const app=getApp(),item=app.state.media.find(item=>item.id===event.currentTarget.dataset.id);if(!item)return;
+    try{if(item.kind==='image'){const file=await app.client.download(item.url);wx.previewImage({current:file,urls:[file]});}else wx.navigateTo({url:'/pages/player/index?type=media&id='+encodeURIComponent(item.id)});}catch(error){notify(error);}
   },
   voiceHold(event) {
     this._voiceLongPress = false;

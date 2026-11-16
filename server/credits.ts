@@ -229,6 +229,18 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
     });
   };
   const setImagePrice=(value:unknown)=>{const p=validateImagePrice(value);return transaction(draft=>{draft.imagePrices=[...draft.imagePrices!.filter(old=>old.modelId!==p.modelId),p];return p;});};
+  const refundImageTask=(userId:string,taskId:string,reason:string)=>transaction(draft=>{
+    const key='service-refund:'+taskId;if(draft.seen[key])return 0;
+    const debits=draft.entries.filter(e=>e.userId===userId&&e.taskId===taskId&&e.imageCount&&e.points<0),amount=-debits.reduce((sum,e)=>sum+Math.round(e.points*POINT_MICROS),0);
+    if(!amount)return 0;const current=wallet(draft,userId);
+    entry(draft,userId,'service_refund',amount,{taskId,detail:reason.slice(0,240)});current.spentMicros=Math.max(0,current.spentMicros-amount);draft.seen[key]=true;return amount/POINT_MICROS;
+  });
+  async function refundImageProject(userId:string,projectId:string,phase:'samples'|'batch',reason:string){
+    if(!/^[a-f0-9]{64}$/.test(projectId))throw Error('退款项目无效。');await tail;
+    const sampleIds=new Set(['01','03','20','identity']);
+    const tasks=new Set(store.entries.filter(e=>e.userId===userId&&e.imageCount&&e.points<0&&e.requestId?.startsWith(projectId+'_')&&sampleIds.has(e.requestId.slice(projectId.length+1))===(phase==='samples')).map(e=>e.taskId).filter((id):id is string=>Boolean(id)));
+    let points=0;for(const id of tasks)if(!store.seen['service-refund:'+id])points+=await refundImageTask(userId,id,reason);return points;
+  }
   const history = (userId: string, offset = 0, limit = 20) => transaction(draft => {
     const w = publicWallet(wallet(draft, userId)), all = draft.entries.filter(e => e.userId === userId).reverse();
     return { wallet: w, entries: all.slice(offset, offset + limit), total: all.length };
@@ -240,7 +252,7 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
     // A deployment receipt without identifiers, balances or account lists.
     return { ready: store.initialized, initialSpecialAccountApplied: Boolean(initial?.special && initial.specialGranted) };
   }
-  return { load, snapshot, checkIn, admit, voiceTicket, recordUsage, price, setSpecial, setPrice, history, adminState, readiness,imagePricing,imageQuote,admitImages,assertImageBudget,recordImageUsage,releaseImages,releaseInactiveImages,releaseTerminalImages,setImagePrice };
+  return { load, snapshot, checkIn, admit, voiceTicket, recordUsage, price, setSpecial, setPrice, history, adminState, readiness,imagePricing,imageQuote,admitImages,assertImageBudget,recordImageUsage,releaseImages,releaseInactiveImages,releaseTerminalImages,setImagePrice,refundImageTask,refundImageProject };
 }
 
 export type Credits = ReturnType<typeof createCredits>;

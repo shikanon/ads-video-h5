@@ -20,7 +20,7 @@ Page({
   render(state) {
     const films = this.data.section === 'films';
     const source = films ? state.artifacts : state.media.filter(item => !item.character && (this.data.collection === 'clips' ? Boolean(item.archive) && collectionOf(item) === 'library' : collectionOf(item) === this.data.collection));
-    const kindFilters = [{ id: 'all', name: '全部' }, { id: 'video', name: '视频' }, { id: 'image', name: '图片' }, { id: 'audio', name: '音频' }].concat(films ? [{ id: 'sticker-pack', name: '表情包' }, { id: 'game', name: '游戏' }] : []);
+    const kindFilters = [{ id: 'all', name: '全部' }, { id: 'video', name: '视频' }, { id: 'image', name: '图片' }, { id: 'audio', name: '音频' }].concat(films ? [{ id: 'sticker-pack', name: '表情包' }, { id: 'game', name: '游戏' }] : [{id:'document',name:'文档'}]);
     const kindCounts = { all: source.length }; for (const item of source) kindCounts[item.kind] = (kindCounts[item.kind] || 0) + 1;
     this.setData({ kindFilters, kindCounts });
     this.setData({ materialCount: state.media.filter(item => !item.character && collectionOf(item) === 'library').length, filmCount: state.artifacts.length });
@@ -81,9 +81,9 @@ Page({
     if (!requireLogin()) return;
     this.setData({ uploading: true });
     try {
-      const audio = await new Promise(resolve => wx.showActionSheet({ itemList: ['相册 / 拍摄（图视频混选）', '聊天文件 / 音频'], success: result => resolve(result.tapIndex === 1), fail: () => resolve(null) }));
-      if (audio === null) return;
-      const files = await chooseFiles(audio); if (!files.length) return;
+      const source = await new Promise(resolve => wx.showActionSheet({ itemList: ['相册 / 拍摄（图视频混选）', '聊天文件 / 音频', 'Word / 文本设定'], success: result => resolve(result.tapIndex), fail: () => resolve(null) }));
+      if (source === null) return;
+      const files = await chooseFiles(source === 1,20,source === 2); if (!files.length) return;
       await uploadMedia(getApp(), files, (at, total, percent) => this.setData({ uploadText: '上传 ' + at + '/' + total + ' · ' + percent + '%' }));
       wx.showToast({ title: '已添加 ' + files.length + ' 个素材', icon: 'success' });
     } catch (error) { notify(error); }

@@ -212,7 +212,7 @@ async function downloadVendorAudio(value: unknown): Promise<Buffer> {
   return bytes;
 }
 
-export async function generateImage(prompt: string, config: ModelConfig, reference?: ImageReference, options?: { size?: string; outputFormat?: 'png' | 'jpeg'; background?: 'transparent' | 'opaque' }): Promise<GeneratedMedia> {
+export async function generateImage(prompt: string, config: ModelConfig, reference?: ImageReference, options?: { size?: string; outputFormat?: 'png' | 'jpeg'; background?: 'transparent' | 'opaque';styleReference?:ImageReference }): Promise<GeneratedMedia> {
   ensureConfig(config, 'image');
   const key=config.apiKey;
   const url = endpoint(config, IMAGE_URL);
@@ -239,6 +239,7 @@ export async function generateImage(prompt: string, config: ModelConfig, referen
       catch (error) { throwIfJobCancelled(); throw new ProviderError(error instanceof Error ? error.message : '参考图片转换失败。', 'INVALID_INPUT'); }
     }
     body.image = `data:${mimeType};base64,${bytes.toString('base64')}`;
+    if(options?.styleReference){const style=options.styleReference;if(options.background==='transparent'||style.bytes.length>30*1024*1024||imageMime(style.bytes)!==style.mimeType)throw new ProviderError('多图画风参考需要纯色背景生成模式及有效图片。','INVALID_INPUT');body.image=[body.image,`data:${style.mimeType};base64,${style.bytes.toString('base64')}`];}
   }
   const {value:result}=await recoverMediaRequest('image',url,key,requestId=>postJson(url,key,body,'image',requestId));
   const first = Array.isArray(result.data) ? asRecord(result.data[0]) : null;

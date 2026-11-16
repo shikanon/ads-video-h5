@@ -1,0 +1,27 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { loadNativeApp,capturePage,recorderFixture,miniRequire } from './fixtures/nativeClient';
+const config=miniRequire('./miniprogram/config');
+const initial=()=>({account:{id:'owner',authProvider:'wechat',displayName:'Owner'},features:{conversationModes:true},activeSessionId:'s',sessions:[{id:'s',title:'Current',mode:'chat',messages:[{id:'u',role:'user',text:'start',createdAt:'2026-11-16T00:00:00Z',attachmentIds:[]}]}],media:[] as any[],artifacts:[],jobs:[] as any[],models:[],settings:{},credits:{balance:2000}});
+async function fixture(){const requests:any[]=[],uploads:any[]=[],storage=new Map();storage.set('qingjian:wechat-session:v1:'+config.apiBase,'qingjian_session='+'a'.repeat(43));const wx:any={getStorageSync:(k:string)=>storage.get(k),setStorageSync:(k:string,v:any)=>storage.set(k,v),removeStorageSync:(k:string)=>storage.delete(k),onNeedPrivacyAuthorization(){},request(o:any){requests.push(o)},uploadFile(o:any){uploads.push(o);return {onProgressUpdate(){}}},getRecorderManager:()=>recorderFixture(),showToast(){},getWindowInfo:()=>({windowWidth:390,windowHeight:700}),showShareMenu(){}};const app=await loadNativeApp(wx);app.apply(initial());app.client.download=async()=>'/cache/image';const page=await capturePage('chat',app,wx);page.onLoad();page._visible=true;app.subscribe(()=>page.render(app.state));page.render(app.state);return {app,page,wx,requests,uploads};}
+test('an old poll cannot remove uploaded images, selected attachments or a newly started studio task',async t=>{
+ const f=await fixture();t.after(()=>{f.page.onUnload();f.app.onHide();});const refresh=f.app.refresh(),{uploadMedia}=miniRequire('./miniprogram/utils/upload');
+ const uploading=uploadMedia(f.app,[{path:'/role.png',size:1000}],()=>{}),fresh=initial();fresh.media=[{id:'image',kind:'image',name:'Role',origin:'upload',url:config.apiBase+'/media/image'}];
+ f.uploads[0].success({statusCode:200,data:JSON.stringify({...fresh,uploadedMediaIds:['image']}),header:{}});const ids=await uploading;f.page.addAttachments(ids);f.page.render(f.app.state);
+ f.requests[0].success({statusCode:200,data:initial(),header:{}});await refresh;assert.equal(f.app.state.media[0].id,'image');assert.equal(f.page.data.attachmentIds.join(','),'image');
+ f.requests.length=0;const polling=f.app.refresh(),running=initial();running.jobs=[{id:'job',sessionId:'s',status:'running',kind:'export',createdAt:'2026-11-16T00:00:00Z',updatedAt:'2026-11-16T00:00:00Z'}];f.app.commit(running);
+ f.requests[0].success({statusCode:200,data:initial(),header:{}});await polling;assert.equal(f.page.data.running,true);assert.equal(f.app.state.jobs[0].id,'job');
+});
+test('sent images remain visible as attachments and account-scoped drafts survive reopening',async t=>{
+ const f=await fixture();t.after(()=>{f.page.onUnload();f.app.onHide();});const s=initial();s.media=[{id:'image',kind:'image',name:'Role',url:config.apiBase+'/media/image'}];(s.sessions[0].messages[0] as any).attachmentIds=['image'];f.app.commit(s);
+ assert.equal(f.page.data.messageAttachments[0].mediaId,'image');assert.equal(f.page.data.messages[0].attachments[0].id,'image');
+ (s.sessions[0].messages as any[]).push({...s.sessions[0].messages[0],id:'u2'});f.app.commit(s);assert.equal(f.page.data.messageAttachments.length,2);assert.notEqual(f.page.data.messageAttachments[0].id,f.page.data.messageAttachments[1].id,'repeated image attachments have separate message keys');
+ f.page.setData({prompt:'角色设定与下一段剧情',attachmentIds:['image'],cursor:8});f.page.onHide();const second=await capturePage('chat',f.app,f.wx);second.onLoad();second.render(f.app.state);assert.equal(second.data.prompt,'角色设定与下一段剧情');assert.equal(second.data.attachmentIds[0],'image');second.onUnload();
+ const {readDrafts}=miniRequire('./miniprogram/utils/chat-drafts');assert.equal(Object.keys(readDrafts(f.wx,'stranger')).length,0);
+});
+test('Word attachments open the document reader, show extracted text and return to the conversation',async()=>{
+ const opened:any[]=[],copied:any[]=[],routes:string[]=[],state:any={activeSessionId:'s',sessions:[],jobs:[],artifacts:[],media:[{id:'word',name:'人物设定.docx',kind:'document',url:'/private-word',createdAt:'2026-11-16T00:00:00Z',document:{text:'人物甲：首辅。人物乙：大小姐。',truncated:false}}]};
+ const app:any={state,client:{hasSession:()=>true,download:async()=>'/temporary-word.docx',previewUrl:()=>''},subscribe:()=>()=>{},refresh:async()=>state},wx={showShareMenu(){},openDocument:(o:any)=>opened.push(o),setClipboardData:(o:any)=>copied.push(o.data),switchTab:(o:any)=>routes.push(o.url)};
+ const library=await capturePage('library',app,wx);library.onLoad();library.onShow();assert.ok(library.data.kindFilters.some((item:any)=>item.id==='document'));assert.equal(library.data.kindCounts.document,1);library.filter({currentTarget:{dataset:{kind:'document'}}});assert.equal(library.data.items[0].id,'word');library.onUnload();
+ const page=await capturePage('player',app,wx);page.onLoad({type:'media',id:'word'});page.onShow();assert.equal(page.data.item.kind,'document');assert.match(page.data.documentText,/首辅/);assert.equal(page.data.loading,false);await page.openDocument();assert.equal(opened[0].fileType,'docx');page.copyDocument();assert.equal(copied[0],state.media[0].document.text);page.use();assert.equal(app.pendingAttachments[0],'word');assert.equal(routes[0],'/pages/chat/index');page.onUnload();
+});

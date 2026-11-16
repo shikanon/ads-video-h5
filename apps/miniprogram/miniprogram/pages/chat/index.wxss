@@ -61,3 +61,5 @@
 .theme-surface .chat-brandbar .gallery-entry { flex: none; margin-left: auto; padding: 0 14rpx; height: 54rpx; line-height: 54rpx; font-size: 21rpx; background: var(--lm-soft); color: var(--lm-accent); white-space: nowrap; }
 .composer-template-chip { display: flex; width: fit-content; align-items: center; gap: 12rpx; color: var(--lm-accent); background: var(--lm-soft); border-radius: 10rpx; padding: 2rpx 12rpx; font-size: 20rpx; margin: 8rpx 0; }
 .theme-surface .composer-template-chip .remove-template { color: var(--lm-accent); font-size: 27rpx; line-height: 1; padding: 5rpx; min-height: 0; height: auto; }
+
+.sent-attachments{display:flex;flex-wrap:wrap;gap:12rpx;margin:12rpx 0}.sent-attachment{max-width:360rpx;background:var(--lm-soft);padding:12rpx;border-radius:18rpx;font-size:22rpx;overflow:hidden}.sent-attachment image{display:block;width:220rpx;height:220rpx}.sent-attachment text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.model-hint{font-size:20rpx;padding-bottom:8rpx}

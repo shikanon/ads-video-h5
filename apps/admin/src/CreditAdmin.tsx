@@ -5,7 +5,7 @@ import { api } from './api';
 import './credits.css';
 
 interface Ledger { wallet: CreditWallet; entries: CreditEntry[]; total: number; }
-const labels = { signup_grant: '注册赠送', daily_checkin: '每日签到', daily_grant: '每日赠送', special_grant: '特殊账户额度', model_usage: '模型调用', usage_pending: '用量待核对' };
+const labels = { service_refund:'服务故障退回',signup_grant: '注册赠送', daily_checkin: '每日签到', daily_grant: '每日赠送', special_grant: '特殊账户额度', model_usage: '模型调用', usage_pending: '用量待核对' };
 const priceFields = { input: '输入', cachedInput: '缓存输入', output: '输出', audioInput: '音频输入', cachedAudioInput: '缓存音频输入' } as const;
 export default function CreditAdmin({ token }: { token: string }) {
   const [state, setState] = useState<CreditAdminState | null>(null), [search, setSearch] = useState(''), [form, setForm] = useState<TokenPrice | null>(null);
