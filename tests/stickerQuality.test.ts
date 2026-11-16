@@ -59,6 +59,15 @@ test('two rejected candidates stop delivery, keep raw evidence and charge zero; 
  const folder=path.join(studio.folder('owner',project.id),'assets','pack','01');assert.ok((await readFile(path.join(folder,'source.png'))).equals(bytes));assert.ok((await readFile(path.join(folder,'source-repair.png'))).equals(bytes));await assert.rejects(()=>readFile(path.join(folder,'receipt.json')));
 });
 
+test('a legacy malformed sample blocks batch expansion before any new image request and preserves its saved bytes',{timeout:90000},async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'sticker-old-sample-gate-'));t.after(()=>rm(dir,{recursive:true,force:true}));const bytes=image();let calls=0,blocked=false;
+ const studio=createStickerStudio(dir,async()=>{calls++;return {bytes,mimeType:'image/png'};},async input=>{const result=stickerQualityFixture(input);if(blocked&&input.actionId==='01')result.frames[0].checks.anatomy={status:'failed',detail:'旧样张含有一颗无身体的悬空头'};return result;});
+ const p=await studio.create('owner','session','request',{referenceMediaId:'role',name:'旧样张',style:'柔彩Q版',mode:'static'},stateHash(bytes.toString('base64'))),task={projectId:p.id,phase:'samples' as const,makeVideo:false,bgm:false};await studio.generate('owner',task,{bytes,mimeType:'image/png'},model,async()=>{});
+ const base=studio.folder('owner',p.id);for(const id of ['01','03','20']){const file=path.join(base,'assets','pack',id,'receipt.json'),value=JSON.parse(await readFile(file,'utf8'));delete value.quality;await writeFile(file,JSON.stringify(value));}
+ const view=await studio.view('owner',p.id);await studio.approve('owner',p.id,view.previewHash);blocked=true;const before=await readFile(path.join(base,'assets','pack','01','still.png'));
+ await assert.rejects(()=>studio.generate('owner',{...task,phase:'batch',approvalHash:view.previewHash},{bytes,mimeType:'image/png'},model,async()=>{}),(e:any)=>e.code==='STICKER_QUALITY_REJECTED'&&/尚未生成/.test(e.message));assert.equal(calls,3);assert.deepEqual(await readFile(path.join(base,'assets','pack','01','still.png')),before);assert.equal((await studio.view('owner',p.id)).previewHash,view.previewHash);
+});
+
 test('an exact pre-quality paid source is reviewed and corrected without a second charge or a new reservation for that image',{timeout:90000},async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'sticker-legacy-quality-'));t.after(()=>rm(dir,{recursive:true,force:true}));const bytes=image();let calls=0,reviews=0;
  const studio=createStickerStudio(dir,async()=>{calls++;return {bytes,mimeType:'image/png'};},async input=>{const result=stickerQualityFixture(input);if(reviews++===0)result.frames[0].checks.anatomy={status:'failed',detail:'旧候选图出现没有身体的第二颗头，必须修正'};return result;});

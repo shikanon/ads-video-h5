@@ -210,6 +210,25 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
         if(identity.modelId!==config.modelId||identity.recipeHash!==project.recipeHash||await fileDigest(identityFile)!==identity.hash)throw Error('角色底稿已变化，请重新创建样张。');
         background={background:'transparent',reference:{bytes:stickerMotionReference(await readFile(identityFile)),mimeType:'image/png'}};
       }
+      // User-approved pre-upgrade samples were never semantically inspected.
+      // Audit all reused legacy images before spending on the missing actions;
+      // keep their bytes and approval fingerprint intact on rejection.
+      if(task.phase==='batch')for(const id of ids){
+        let record:ItemReceipt;try{[record]=await receipts(ownerId,project.id,[id]);}catch{continue;}
+        if(record.quality)continue;
+        const dir=path.join(assets,'pack',id),item=original.items.find(item=>item.id===id)!;let frames:Buffer[];
+        if(recipe.mode==='static')frames=[await readFile(path.join(dir,'still.png'))];
+        else{
+          const audit=path.join(dir,'quality-audit-atlas.png');await runFFmpeg(['-y','-v','error','-i',path.join(dir,'atlas.webp'),'-frames:v','1',audit]);
+          const atlas=PNG.sync.read(await readFile(audit));await rm(audit,{force:true});if(atlas.width!==2560||atlas.height!==1024)throw Error('旧动画图集尺寸无效，已暂停整套制作。');
+          frames=Array.from({length:6},(_v,n)=>{const frame=new PNG({width:512,height:512});PNG.bitblt(atlas,frame,n%5*512,Math.floor(n/5)*512,512,512,0,0);return PNG.sync.write(frame);});
+        }
+        let candidate:ImageReference|undefined;const sourceRecord=await json(path.join(dir,'source.png.receipt.json')).catch(()=>null);if(sourceRecord?.hash===await fileDigest(path.join(dir,'source.png')).catch(()=>null))candidate={bytes:await readFile(path.join(dir,'source.png')),mimeType:'image/png'};
+        const input={directory:dir,actionId:id,action:stickerReviewAction(id),style:recipe.style,reference,styleReference,identityBrief,candidate,frames};
+        const quality=await trace.run('review_legacy_sticker_'+id,`复查已保存的${item.name}`,{frames:frames.length},()=>qualityReviewer===reviewStickerImage?reviewStickerImage(input,reviewConfig!):qualityReviewer(input));
+        const verdict=validateStickerQuality(quality,frames.length);
+        if(!verdict.passed)throw Object.assign(Error(`已保存的「${item.name}」未通过画面质检：${verdict.issues.slice(0,2).join('；')}。已停止整套制作，尚未生成的部分不会扣积分；请先修正样张再继续。`),{code:'STICKER_QUALITY_REJECTED',retryable:false});
+      }
       for(const id of ids) {
         throwIfJobCancelled();
         try { await receipts(ownerId,project.id,[id]);continue; } catch { /* no validated output yet */ }
