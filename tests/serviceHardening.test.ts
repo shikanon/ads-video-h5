@@ -4,16 +4,21 @@ import { mkdir, readFile, readdir, rename, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib';
 import { startCreditServer } from './fixtures/creditServer';
+import { PNG } from 'pngjs';
 
 test('failed upload persistence removes its tentative records and files, and a retry survives the next save', async t => {
   const fixture = await startCreditServer(); t.after(fixture.close);
   const cookie = await fixture.login();
   const state = async () => (await fixture.request(cookie, '/api/state')).json() as Promise<any>;
   const before = await state();
+  // Exercise persistence failure with a decodable image. The old inline PNG
+  // has an invalid checksum and is now correctly rejected before persistence.
+  const png = new PNG({width:1,height:1}); png.data.fill(255);
+  const image = new Uint8Array(PNG.sync.write(png));
   const filename = path.join(fixture.directory, 'app-state.json'), backup = filename + '.before-upload';
   const upload = () => {
     const form = new FormData();
-    form.append('files', new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64')], { type: 'image/png' }), 'rollback-fixture.png');
+    form.append('files', new Blob([image], { type: 'image/png' }), 'rollback-fixture.png');
     return fetch(fixture.base + '/api/media', { method: 'POST', headers: { Cookie: cookie }, body: form, signal: AbortSignal.timeout(10_000) });
   };
   await rename(filename, backup); await mkdir(filename);
