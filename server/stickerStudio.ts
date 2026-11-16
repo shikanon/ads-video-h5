@@ -97,6 +97,13 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
   }
   return {
     load,pack,view,list,publicPack,folder,previewHash,capacity,assertCapacity,
+    async retryProof(ownerId:string,task:StickerGenerationTask,reference:Buffer){
+      const project=await load(ownerId,task.projectId);
+      if(project.generationHash!==await generationHash()||project.recipeHash!==stateHash({recipe:project.recipe,referenceHash:project.referenceHash,sessionId:project.sessionId,generationHash:project.generationHash})||stateHash(reference.toString('base64'))!==project.referenceHash)throw Error('表情角色或制作配方已变化，请重新确认角色与样张。');
+      if(project.styleReferenceHash&&await fileDigest(path.join(folder(ownerId,project.id),'style-reference.png'))!==project.styleReferenceHash)throw Error('表情画风参考已变化，请重新确认样张。');
+      if(task.phase==='batch'){const hash=await previewHash(ownerId,project.id),approval=await json(path.join(folder(ownerId,project.id),'approval.json'));if(!hash||hash!==task.approvalHash||approval.hash!==hash)throw Error('表情样张确认已变化，请重新确认后续做。');}
+      return stateHash({projectId:project.id,recipeHash:project.recipeHash,referenceHash:project.referenceHash,approvalHash:task.approvalHash});
+    },
     async pendingImageIds(ownerId:string,task:StickerGenerationTask) {
       const p=await load(ownerId,task.projectId),ids=task.phase==='samples'?sampleIds:(await loadStickerPack()).items.map(item=>item.id),pending:string[]=[];
       if(p.generationHash!==await generationHash())throw Object.assign(Error('动作配方已更新，请重新创建并确认样张。'),{status:409});

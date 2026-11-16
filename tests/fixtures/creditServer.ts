@@ -13,7 +13,7 @@ import { PNG } from 'pngjs';
 
 // Real Express/queue/Pi transport, disposable local users and a controllable
 // token provider. No production credentials or external services are used.
-export async function startCreditServer(options: { extraTextModel?:boolean;stickerImages?: boolean; obsoleteSticker?: boolean; wechat?: boolean; onProviderRequest?: (body: any) => Promise<void>; structuredReply?: (body:any)=>unknown } = {}) {
+export async function startCreditServer(options: { prepare?: (directory:string)=>Promise<void>;extraTextModel?:boolean;stickerImages?: boolean; obsoleteSticker?: boolean; wechat?: boolean; onProviderRequest?: (body: any) => Promise<void>; structuredReply?: (body:any)=>unknown } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'qj-credit-service-'));
   const password = 'Credit-QA-user-123', adminPassword = 'Credit-QA-admin-123';
   const providerState = { calls: 0, outputTokens: 100, delay: 0, multiTurn: false, fail: false, wechatCalls: 0 };
@@ -84,6 +84,7 @@ export async function startCreditServer(options: { extraTextModel?:boolean;stick
     writeFile(path.join(directory, 'auth.json'), JSON.stringify({ users: users.map(u => ({ ...u, passwordHash, createdAt })), sessions: [], verifications: [verification] }), { mode: 0o600 }),
     writeFile(path.join(directory, 'app-state.json'), JSON.stringify(seeded), { mode: 0o600 }),
   ]);
+  await options.prepare?.(directory);
   const reserve = createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening');
   const port = (reserve.address() as { port: number }).port; await new Promise<void>(r => reserve.close(() => r()));
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
