@@ -243,13 +243,13 @@ async function performJob(job: Job): Promise<void> {
     const source=media.find(m=>m.id===sourceId);
     updateReply(session,job,value>=100?`「${source?.name||'素材'}」的音频分析已完成。`:`正在听取「${source?.name||'素材'}」，整理原话与时间码。`,'commentary',`audio-${sourceId}`);
     if(job.kind === 'understanding') {
-      const items=selectedSources().filter((m)=>m.kind!=='image');
+      const items=selectedSources().filter((m)=>['audio','video'].includes(m.kind));
       job.progress=Math.round(items.reduce((sum,m)=>sum+(sourceProgress.get(m.id)??(m.analysis?100:0)),0)/Math.max(1,items.length));
       job.stage=`理解原声 · ${items.filter((m)=>(sourceProgress.get(m.id)||0)>=100||m.analysis).length}/${items.length} 段已完成`;
     } else job.progress=Math.max(job.progress||0,Math.min(35,5+Math.round(value*.25)));
   };
   const analyzeAudio = async (sourceId: string) => {
-    const item = media.find((m) => m.id === sourceId && m.kind !== 'image');
+    const item = media.find((m) => m.id === sourceId && ['audio','video'].includes(m.kind));
     if (!item) throw new Error('音频理解素材不存在或无权限。');
     const file = path.join(mediaDir, item.id);
     await oss?.ensure(job.ownerId!, 'media', item.id, file);
@@ -259,7 +259,7 @@ async function performJob(job: Job): Promise<void> {
   };
   const recheckSource = async (sourceId:string,reason:Parameters<typeof recheckAuthorizedSource>[0]['reason']) => {
     throwIfJobCancelled();
-    const source=media.find(item=>item.id===sourceId&&item.ownerId===job.ownerId&&item.kind!=='image');
+    const source=media.find(item=>item.id===sourceId&&item.ownerId===job.ownerId&&['audio','video'].includes(item.kind));
     if(!job.ownerId||!source||!state.media.includes(source))throw new Error('原声复听素材不存在或无权限。');
     const file=path.join(mediaDir,source.id);
     await oss?.ensure(job.ownerId,'media',source.id,file);
@@ -515,7 +515,7 @@ async function performJob(job: Job): Promise<void> {
     }
   };
   if (job.kind === 'understanding') {
-    const items = selectedSources().filter((m) => m.kind !== 'image');
+    const items = selectedSources().filter((m) => ['audio','video'].includes(m.kind));
     if (!items.length) throw new Error('请先添加或附加要转写的音频或视频素材。');
     const failures: string[]=[];
     const replies = await mapLimited(items,2,async (item) => {
@@ -1369,7 +1369,7 @@ app.post('/api/media/:id/analyze', async (request, response) => {
   const user = userOf(request); const item = state.media.find((m) => m.id === request.params.id && owned(m, user.id));
   const session = getSession(String(request.body?.sessionId || ''), user.id);
   if (!item || !session) return response.status(404).json({ error: '素材或会话不存在。' });
-  if (item.kind === 'image') return response.status(400).json({ error: '请选择音频或视频素材。' });
+  if (!['audio','video'].includes(item.kind)) return response.status(400).json({ error: '请选择音频或视频素材。' });
   const busy = state.jobs.find((j) => j.ownerId === user.id && j.kind === 'understanding' && ['queued','running'].includes(j.status) && state.sessions.some((s) => s.messages.some((m) => m.jobId === j.id && m.attachmentIds?.includes(item.id))));
   if (busy) return response.status(202).json(await publicState(user));
   const creditTaskId = await credits.admit(user.id);

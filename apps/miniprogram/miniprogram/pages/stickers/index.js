@@ -15,7 +15,7 @@ Page({
     if (this._formGeneration !== app._generation) {
       if (this._formGeneration !== undefined) { this._sessionId = ''; this._artifactId = ''; this._packId=''; }
       this._formGeneration = app._generation; this._requestFingerprint = ''; this._loadedTaskId = '';
-      this.setData({ pack: null, items: [], scenes: [], selected: null, title: '被你哄好的一天', makeVideo: true, bgm: true, result: null, error: '', loading:false, submitting:false, saving:false });
+      this.setData({ pack: null, items: [], scenes: [], selected: null, shareToken:'',sharing:false,title: '被你哄好的一天', makeVideo: true, bgm: true, result: null, error: '', loading:false, submitting:false, saving:false });
     }
     withSession(this, this.render); if (app.client.hasSession()) this.load();
   },

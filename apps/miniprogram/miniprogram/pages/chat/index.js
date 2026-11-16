@@ -343,7 +343,7 @@ Page({
   },
   async openAttachment(event) {
     const app=getApp(),item=app.state.media.find(item=>item.id===event.currentTarget.dataset.id);if(!item)return;
-    try{const file=await app.client.download(item.url);if(item.kind==='image')wx.previewImage({current:file,urls:[file]});else if(item.kind==='document')wx.openDocument({filePath:file,fileType:/\.docx$/i.test(item.name)?'docx':undefined,showMenu:true});else wx.navigateTo({url:'/pages/player/index?mediaId='+encodeURIComponent(item.id)});}catch(error){notify(error);}
+    try{if(item.kind==='image'){const file=await app.client.download(item.url);wx.previewImage({current:file,urls:[file]});}else wx.navigateTo({url:'/pages/player/index?type=media&id='+encodeURIComponent(item.id)});}catch(error){notify(error);}
   },
   voiceHold(event) {
     this._voiceLongPress = false;

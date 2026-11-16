@@ -19,3 +19,8 @@ test('sent images remain visible as attachments and account-scoped drafts surviv
  f.page.setData({prompt:'角色设定与下一段剧情',attachmentIds:['image'],cursor:8});f.page.onHide();const second=await capturePage('chat',f.app,f.wx);second.onLoad();second.render(f.app.state);assert.equal(second.data.prompt,'角色设定与下一段剧情');assert.equal(second.data.attachmentIds[0],'image');second.onUnload();
  const {readDrafts}=miniRequire('./miniprogram/utils/chat-drafts');assert.equal(Object.keys(readDrafts(f.wx,'stranger')).length,0);
 });
+test('Word attachments open the document reader, show extracted text and return to the conversation',async()=>{
+ const opened:any[]=[],copied:any[]=[],routes:string[]=[],state:any={activeSessionId:'s',sessions:[],jobs:[],artifacts:[],media:[{id:'word',name:'人物设定.docx',kind:'document',url:'/private-word',createdAt:'2026-11-16T00:00:00Z',document:{text:'人物甲：首辅。人物乙：大小姐。',truncated:false}}]};
+ const app:any={state,client:{hasSession:()=>true,download:async()=>'/temporary-word.docx',previewUrl:()=>''},subscribe:()=>()=>{},refresh:async()=>state},wx={showShareMenu(){},openDocument:(o:any)=>opened.push(o),setClipboardData:(o:any)=>copied.push(o.data),switchTab:(o:any)=>routes.push(o.url)};
+ const page=await capturePage('player',app,wx);page.onLoad({type:'media',id:'word'});page.onShow();assert.equal(page.data.item.kind,'document');assert.match(page.data.documentText,/首辅/);assert.equal(page.data.loading,false);await page.openDocument();assert.equal(opened[0].fileType,'docx');page.copyDocument();assert.equal(copied[0],state.media[0].document.text);page.use();assert.equal(app.pendingAttachments[0],'word');assert.equal(routes[0],'/pages/chat/index');page.onUnload();
+});
