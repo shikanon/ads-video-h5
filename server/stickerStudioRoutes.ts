@@ -19,7 +19,7 @@ export function mountStickerStudioRoutes(app:Express,o:{studio:StickerStudio;rea
   app.post('/api/sticker-projects',wrap(async(q,r)=>{
     const {sessionId,requestId,recipe,pricingHash}=q.body||{};
     if(typeof sessionId!=='string'||!/^[a-f0-9-]{36}$/.test(sessionId)||typeof requestId!=='string'||!requestIdPattern.test(requestId)||Object.keys(q.body).some(k=>!['sessionId','requestId','recipe','pricingHash'].includes(k)))throw Error('表情项目请求无效。');
-    if(!await o.ready())throw Error('请先请管理员配置可生成透明PNG的图片模型。');
+    if(!await o.ready())throw Error('请管理员配置图片生成及画面质检模型后再制作。');
     const checked=validateStickerRecipe(recipe),user=userOf(q),hash=await o.reference(user,sessionId,checked);
     const project=await o.studio.create(user.id,sessionId,requestId,checked,hash);
     const receipt=await o.start(user,project.id,{projectId:project.id,phase:'samples',makeVideo:false,bgm:false},pricingHash);

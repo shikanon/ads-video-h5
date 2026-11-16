@@ -8,6 +8,7 @@ function rect(p:PNG,x:number,y:number,w:number,h:number,c:number[]){for(let yy=y
 test('opaque references use an explicit non-colliding backdrop; real alpha stays in transparent mode',async()=>{
   const p=image([160,80,40]),bytes=PNG.sync.write(p),plan=await stickerBackground({bytes,mimeType:'image/png'});assert.equal(plan.background,'opaque');assert.equal(plan.key?.hex,'#00FF00');assert.deepEqual(plan.reference.bytes,bytes);
   const grass=image([0,230,0]),other=await stickerBackground({bytes:PNG.sync.write(grass),mimeType:'image/png'});assert.equal(other.key?.hex,'#FF00FF');
+  const pinkProp=await stickerBackground({bytes:PNG.sync.write(grass),mimeType:'image/png'},false,['#FF00FF']);assert.equal(pinkProp.key?.hex,'#00FFFF','reserve the pink family for new hearts and cushions');
   const transparent=image([160,80,40]);rect(transparent,0,0,128,16,[0,0,0,0]);const original=PNG.sync.write(transparent),alpha=await stickerBackground({bytes:original,mimeType:'image/png'});assert.equal(alpha.background,'transparent');assert.equal(alpha.key,undefined);assert.deepEqual(alpha.reference.bytes,original);
 });
 test('matting removes outer canvas and enclosed limb gaps, preserves subject colors and refuses an unspecified background',()=>{
@@ -18,6 +19,27 @@ test('matting removes outer canvas and enclosed limb gaps, preserves subject col
 test('a green character selects a magenta background and keeps its green clothing after matting',async()=>{
   const role=image([0,220,0]),plan=await stickerBackground({bytes:PNG.sync.write(role),mimeType:'image/png'});assert.equal(plan.key?.hex,'#FF00FF');
   const generated=image([255,0,255]);rect(generated,25,25,75,85,[0,220,0,255]);const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),plan.key!));assert.deepEqual([...result.data.subarray((60*128+60)*4,(60*128+60)*4+4)],[0,220,0,255]);
+});
+
+test('matting a magenta canvas preserves a pastel pink pillow instead of punching transparent holes',()=>{
+ const magenta={name:'洋红色',hex:'#FF00FF',channels:[0,2]},generated=image([255,0,255]);rect(generated,25,20,75,90,[255,140,205,255]);rect(generated,40,40,40,35,[240,105,175,255]);
+ const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),magenta));assert.equal(result.data[3],0);
+ for(const [x,y] of [[50,50],[70,60],[60,90]]){const p=(y*128+x)*4;assert.equal(result.data[p+3],255);assert.deepEqual([...result.data.subarray(p,p+3)],[...generated.data.subarray(p,p+3)]);}
+});
+
+test('matting removes isolated backdrop flecks but retains meaningful separate heart decorations',()=>{
+ const magenta={name:'洋红色',hex:'#FF00FF',channels:[0,2]},generated=image([255,0,255]);rect(generated,25,20,75,90,[255,140,205,255]);rect(generated,6,6,1,1,[170,30,70,255]);rect(generated,108,20,10,10,[240,130,160,255]);
+ const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),magenta));assert.equal(result.data[(6*128+6)*4+3],0);assert.equal(result.data[(25*128+112)*4+3],255);
+});
+
+test('connected dark-magenta floor residue is removed without deleting a pastel cushion',()=>{
+ const magenta={name:'洋红色',hex:'#FF00FF',channels:[0,2]},generated=image([255,0,255]);rect(generated,25,20,75,80,[255,140,205,255]);rect(generated,20,100,85,8,[255,25,125,255]);
+ const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),magenta));assert.equal(result.data[(104*128+60)*4+3],0);assert.equal(result.data[(60*128+60)*4+3],255);
+});
+
+test('dark studio key enclosed between feet is cleared with the outside canvas',()=>{
+ const magenta={name:'洋红色',hex:'#FF00FF',channels:[0,2]},generated=image([255,0,255]);rect(generated,25,20,75,90,[255,140,205,255]);rect(generated,50,80,10,15,[255,25,125,255]);
+ const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),magenta));assert.equal(result.data[(88*128+54)*4+3],0);assert.equal(result.data[(50*128+50)*4+3],255);
 });
 
 test('animation reference pins six complete characters to separate transparent cells',()=>{
