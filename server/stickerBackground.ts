@@ -5,6 +5,9 @@ import type { ImageReference } from './providers';
 
 export type StickerChroma = { name:string; hex:string; channels:number[] };
 const keys:StickerChroma[]=[{name:'绿色',hex:'#00FF00',channels:[1]},{name:'洋红色',hex:'#FF00FF',channels:[0,2]},{name:'青色',hex:'#00FFFF',channels:[1,2]}];
+// Small clothing ornaments can disappear in whole-photo pixel statistics.
+// Reserve colors actually observed by the identity reader as well as props.
+export function stickerReservedKeys(identity:string){return ['#FF00FF',...(/绿|green/i.test(identity)?['#00FF00']:[]),...(/青色|青绿|湖蓝|蓝绿|cyan|turquoise/i.test(identity)?['#00FFFF']:[])];}
 function chroma(png:PNG,p:number,key:StickerChroma){
   let high=255,low=0;for(let c=0;c<3;c++){if(key.channels.includes(c))high=Math.min(high,png.data[p+c]);else low=Math.max(low,png.data[p+c]);}
   return {high,low,excess:high-low};
@@ -18,7 +21,7 @@ export async function stickerBackground(reference:ImageReference,forceOpaque=fal
   // An ordinary photo must not be passed to Seedream 5.0's transparent mode.
   // Select a deliberate studio backdrop with little overlap in the reference.
   const ranked=keys.filter(key=>!excludedKeys.includes(key.hex)).map((key,index)=>{let count=0;for(let p=0;p<png.data.length;p+=64){const c=chroma(png,p,key);if(c.high>100&&c.excess>45)count++;}return {key,count,index};}).sort((a,b)=>a.count-b.count||a.index-b.index);
-  if(!ranked.length||ranked[0].count/Math.ceil(png.data.length/64)>.005)throw Error('角色与道具颜色占用了可用抠图背景色，无法安全去背景。请使用已抠除背景的角色PNG。');
+  if(!ranked.length||ranked[0].count/Math.ceil(png.data.length/64)>.005)throw Object.assign(Error('角色与道具颜色占用了可用抠图背景色，无法安全去背景，已暂停制图。请换成已去除背景、主体完整清晰的透明角色PNG；仅修改文件后缀不能得到透明图。'),{code:'STICKER_REFERENCE_UNSUITABLE',retryable:false});
   return {background:'opaque',key:ranked[0].key,reference};
 }
 export function stickerBackgroundInstructions(key?:StickerChroma){
@@ -45,11 +48,14 @@ export function removeStickerBackdrop(bytes:Buffer,key:StickerChroma):Buffer{
     while(first<count){const n=queue[first++],x=n%w,y=Math.floor(n/w);if(x)visit(n-1);if(x+1<w)visit(n+1);if(y)visit(n-w);if(y+1<h)visit(n+w);}
     if(count<speckLimit)for(let n=0;n<count;n++)mask[queue[n]]=1;
   }
+  const radius=Math.max(4,Math.ceil(Math.max(w,h)/512)*3);
   for(let n=0;n<total;n++){
     const p=n*4;if(mask[n]){png.data.fill(0,p,p+4);continue;}
-    const c=chroma(png,p,key);if(c.high<60||c.excess<8)continue;
+    const c=chroma(png,p,key);if(c.high<20||c.excess<8)continue;
     const x=n%w,y=Math.floor(n/w);let edge=false;
-    for(let yy=Math.max(0,y-4);yy<=Math.min(h-1,y+4)&&!edge;yy++)for(let xx=Math.max(0,x-4);xx<=Math.min(w-1,x+4);xx++)if(mask[yy*w+xx]){edge=true;break;}
+    // A 2K source becomes 512px. Clear a few output pixels of key spill,
+    // including dark cyan/green contamination along black hair.
+    for(let yy=Math.max(0,y-radius);yy<=Math.min(h-1,y+radius)&&!edge;yy++)for(let xx=Math.max(0,x-radius);xx<=Math.min(w-1,x+radius);xx++)if(mask[yy*w+xx]){edge=true;break;}
     if(!edge)continue;
     const alpha=Math.max(1,255-c.excess),old=png.data[p+3];
     for(let channel=0;channel<3;channel++)png.data[p+channel]=Math.max(0,Math.min(255,Math.round((png.data[p+channel]-(key.channels.includes(channel)?255-alpha:0))*255/alpha)));

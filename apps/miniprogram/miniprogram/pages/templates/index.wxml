@@ -1,43 +1,26 @@
 <view class="screen template-gallery theme-surface theme-{{theme}}">
   <view wx:if="{{preview}}" class="template-detail">
-    <button class="gallery-back" bindtap="closePreview">‹ 返回模板列表</button>
-    <block wx:if="{{preview.sample}}">
-      <video wx:if="{{!videoError}}" class="sample-player" src="{{preview.sample.video}}" poster="{{preview.sample.poster}}" controls="{{true}}" show-center-play-btn="{{true}}" object-fit="contain" binderror="playbackError" />
-      <view wx:else class="sample-error"><text>样片暂时无法播放。</text><button class="secondary" bindtap="retryVideo">重新加载</button></view>
-    </block>
-    <view wx:else class="skill-banner"><image src="{{icons[preview.icon]}}" mode="aspectFit"/><text>{{preview.format}}</text></view>
-    <view class="detail-copy">
-      <text class="tag">{{preview.format}}{{preview.seconds > 0 ? ' · ' + preview.seconds + ' 秒' : ''}}{{preview.skill ? ' · 技能驱动' : ''}}</text>
-      <view class="detail-title">{{preview.name}}</view>
-      <view class="subtitle">{{preview.description}}</view>
-      <view wx:if="{{preview.sample}}" class="muted">样片：{{preview.sample.title}} · 原作 {{preview.sample.author}}</view>
-      <view class="detail-hint">{{preview.output === 'sticker-pack' ? '选用后预览24套表情、编辑故事短句，并选择是否同步生成分享视频。' : '选用后带入创作页，补充你的主题和素材，再发送开始制作。'}}</view>
+    <button class="gallery-back" bindtap="closePreview">‹ 返回工具列表</button>
+    <view class="skill-banner"><image src="{{icons[preview.icon]}}" mode="aspectFit"/><text>{{preview.format}}</text></view>
+    <view class="detail-copy"><view class="detail-title">{{preview.name}}</view><view class="subtitle">{{preview.description}}</view>
+      <view class="field-label">你需要提供</view><view class="muted">{{preview.input}}</view>
+      <view class="field-label">制作步骤</view><view wx:for="{{preview.steps}}" wx:key="index" class="muted">{{index + 1}}. {{item}}</view>
+      <view class="field-label">制作结果</view><view class="muted">{{preview.result}}</view>
     </view>
-    <button class="primary sample-use" bindtap="use" data-id="{{preview.id}}" disabled="{{returning}}">使用这个模板 ↗</button>
-    <view wx:if="{{error}}" class="error">{{error}}</view>
+    <button class="primary" bindtap="use" data-id="{{preview.id}}" disabled="{{returning}}">使用工具 ↗</button><view wx:if="{{error}}" class="error">{{error}}</view>
   </view>
   <block wx:else>
-    <view wx:if="{{guest}}" class="empty"><image class="empty-icon" src="{{icons.idea}}" mode="aspectFit"/><text class="title">找到适合你的创作方式</text><view class="muted">登录后查看模板、技能和样片，选好再开始创作。</view><button class="secondary" bindtap="login">选择微信登录</button></view>
+    <view wx:if="{{guest}}" class="empty"><text class="title">选择创作工具</text><view class="muted">登录后提供主题或自己的素材，开始制作。</view><button class="secondary" bindtap="login">选择微信登录</button></view>
     <block wx:else>
-      <input class="gallery-search" placeholder="搜索模板或技能" value="{{query}}" bindinput="input" maxlength="80" />
+      <input class="gallery-search" placeholder="搜索工具或技能" value="{{query}}" bindinput="input" maxlength="80"/>
       <scroll-view class="category-scroll" scroll-x enhanced show-scrollbar="{{false}}"><view class="gallery-filters"><button wx:for="{{categories}}" wx:key="id" class="filter {{category === item.id ? 'selected' : ''}}" bindtap="chooseFilter" data-category="{{item.id}}">{{item.name}}</button></view></scroll-view>
-      <view wx:if="{{recommendations.length}}" class="recommendations"><view class="section-heading"><text>灵感，从这里开始</text><text class="section-note">滑动发现 →</text></view>
-        <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="recommend-scroll"><view class="recommend-track"><button wx:for="{{recommendations}}" wx:key="id" class="recommend-card" bindtap="preview" data-id="{{item.id}}" aria-label="预览{{item.name}}"><view class="recommend-cover"><image src="{{item.sample.poster}}" mode="aspectFill" lazy-load/><text class="cover-badge">{{item.categoryName}}</text></view><text class="recommend-name">{{item.name}}</text></button></view></scroll-view>
-      </view>
-      <view class="section-heading catalog-heading"><text>{{category === 'all' ? '全部创作方式' : '选一个喜欢的起点'}}</text><text class="section-note">{{cards.length}} 个</text></view>
+      <view class="section-heading"><text>创作工具</text><text class="section-note">{{cards.length}} 个</text></view>
       <view wx:if="{{error}}" class="gallery-error"><text>{{error}}</text><button class="small-button" bindtap="load">重新加载</button></view>
-      <view wx:if="{{loading && !cards.length}}" class="empty muted">正在整理模板与技能…</view>
-      <view wx:elif="{{!cards.length && !error}}" class="empty muted">没有找到匹配的模板或技能。</view>
-      <view wx:else class="gallery-list">
-        <view wx:for="{{cards}}" wx:key="id" class="gallery-card">
-          <button class="card-open {{item.sample ? 'sample-preview-button' : ''}}" bindtap="preview" data-id="{{item.id}}" aria-label="查看{{item.name}}">
-            <view class="sample-cover cover-{{item.category}}"><image wx:if="{{item.sample}}" src="{{item.sample.poster}}" mode="aspectFill" lazy-load/><view wx:else class="designed-cover"><image src="{{icons[item.icon]}}" mode="aspectFit"/><text class="cover-title">{{item.coverTitle}}</text><text class="cover-note">{{item.coverNote}}</text><text class="cover-brand">LIGHTMAO / CREATIVE STUDIO</text></view><text class="cover-badge">{{item.categoryName}}</text><text wx:if="{{item.sample}}" class="sample-play">▶</text><text wx:if="{{item.seconds > 0}}" class="sample-time">{{item.seconds}} 秒</text></view>
-            <view class="card-copy"><view class="card-title">{{item.name}}</view><view class="card-description">{{item.description}}</view><view class="card-meta"><text>{{item.starter ? '创作技能' : item.output === 'game' ? '可玩游戏' : '可复用模板'}}</text><text class="card-arrow">↗</text></view></view>
-          </button><button class="card-use" bindtap="use" data-id="{{item.id}}" disabled="{{returning}}">{{item.starter ? '开始创作' : '使用模板'}} ↗</button>
-        </view>
-      </view>
-      <view wx:if="{{cards.length}}" class="gallery-footer">选用后可继续补充主题、风格和素材。</view>
+      <view wx:if="{{loading && !cards.length}}" class="empty muted">正在读取工具…</view><view wx:elif="{{!cards.length && !error}}" class="empty muted">没有找到匹配的工具。</view>
+      <view wx:else class="gallery-list"><view wx:for="{{cards}}" wx:key="id" class="gallery-card">
+        <button class="card-open" bindtap="preview" data-id="{{item.id}}"><view class="tool-cover cover-{{item.category}}"><view class="designed-cover"><image src="{{icons[item.icon]}}" mode="aspectFit"/><text class="cover-title">{{item.coverTitle}}</text><text class="cover-note">{{item.coverNote}}</text></view></view><view class="card-copy"><view class="card-title">{{item.name}}</view><view class="card-description">{{item.description}}</view></view></button>
+        <button class="card-use" bindtap="use" data-id="{{item.id}}" disabled="{{returning}}">使用工具 ↗</button>
+      </view></view>
     </block>
-  </block>
-  <privacy-dialog id="privacy" />
+  </block><privacy-dialog id="privacy"/>
 </view>

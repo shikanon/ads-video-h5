@@ -67,6 +67,8 @@ export function jobFailureMessage(error: unknown, stage: string | undefined, sec
   const failure = executionFailure(error, secrets), where = safeErrorText(failure.origin?.stage || stage || '处理步骤', secrets);
   const parts = (value: JobFailure): JobFailure[] => [value, ...(value.causes ?? []).flatMap(parts)];
   const failures = parts(failure);
+  const unsuitable=failures.find(value=>value.code==='STICKER_REFERENCE_UNSUITABLE');if(unsuitable)return unsuitable.message;
+  if(failures.some(value=>/InputImageSensitiveContentDetected/.test(value.code||'')||/InputImageSensitiveContentDetected/.test(value.message)))return '图片服务拒绝了本次输入图片，这不代表能据此确定图片违规，也可能是误判。请更换一张清晰的单角色原图，或联系管理员核查服务请求；不要反复重试同一张图。已完成图片保留，本次被拒绝、未生成的图片不扣积分。';
   if(failures.some(value=>value.code==='STICKER_STORAGE_LOW'||/表情制作空间不足/.test(value.message)))return '服务端制作空间暂时不足，任务已暂停。已完成图片保留，未生成部分的预留积分会释放。请稍后再试。';
   const stickerQuality=failures.find(value=>value.code==='STICKER_QUALITY_REJECTED'||/表情画面质检|画面质检模型/.test(value.message));
   if(stickerQuality)return stickerQuality.message;

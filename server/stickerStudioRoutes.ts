@@ -22,20 +22,33 @@ export function mountStickerStudioRoutes(app:Express,o:{studio:StickerStudio;rea
     if(!await o.ready())throw Error('请管理员配置图片生成及画面质检模型后再制作。');
     const checked=validateStickerRecipe(recipe),user=userOf(q),hash=await o.reference(user,sessionId,checked);
     const project=await o.studio.create(user.id,sessionId,requestId,checked,hash);
-    const receipt=await o.start(user,project.id,{projectId:project.id,phase:'samples',makeVideo:false,bgm:false},pricingHash);
+    const receipt=await o.start(user,project.id,{projectId:project.id,phase:checked.styleSelection?'styles':'samples',makeVideo:false,bgm:false},pricingHash);
     r.status(202).json({project:await o.studio.view(user.id,project.id),state:receipt});
   }));
   app.get('/api/sticker-projects/:id',wrap(async(q,r)=>r.json({project:await o.studio.view(userOf(q).id,q.params.id)})));
   app.get('/api/sticker-projects/:id/quote',wrap(async(q,r)=>{
-    if(!['samples','batch'].includes(q.query.phase))throw Error('制作阶段无效。');
+    if(!['styles','samples','batch'].includes(q.query.phase))throw Error('制作阶段无效。');
     const task:StickerGenerationTask={projectId:q.params.id,phase:q.query.phase,makeVideo:false,bgm:false};
     r.set('Cache-Control','no-store').json(await o.quote(userOf(q),task));
+  }));
+  app.get('/api/sticker-projects/:id/styles/:style',wrap(async(q,r)=>{
+    const user=userOf(q),items=await o.studio.styleCandidates(user.id,q.params.id),item=items.find(item=>item.id===q.params.style);
+    if(!item)throw Object.assign(Error('候选画风尚未完成。'),{status:404});
+    r.set('Cache-Control','private, no-store').sendFile(path.join(o.studio.folder(user.id,q.params.id),'styles',item.id,'still.png'));
+  }));
+  app.post('/api/sticker-projects/:id/style',wrap(async(q,r)=>{
+    const {id,candidateHash,pricingHash}=q.body||{};
+    if(typeof id!=='string'||typeof candidateHash!=='string'||!/^[a-f0-9]{64}$/.test(candidateHash)||Object.keys(q.body).some(k=>!['id','candidateHash','pricingHash'].includes(k)))throw Error('请选择当前候选画风。');
+    const user=userOf(q),selection=await o.studio.selectStyle(user.id,q.params.id,id,candidateHash);
+    const state=await o.start(user,q.params.id,{projectId:q.params.id,phase:'samples',styleSelectionHash:selection.hash,makeVideo:false,bgm:false},pricingHash);
+    r.status(202).json({state,project:await o.studio.view(user.id,q.params.id)});
   }));
   app.post('/api/sticker-projects/:id/approve',wrap(async(q,r)=>{
     const {previewHash,makeVideo,bgm,pricingHash}=q.body||{};
     if(typeof previewHash!=='string'||!/^[a-f0-9]{64}$/.test(previewHash)||typeof makeVideo!=='boolean'||typeof bgm!=='boolean'||Object.keys(q.body).some(k=>!['previewHash','makeVideo','bgm','pricingHash'].includes(k)))throw Error('请查看样张并选择制作选项。');
     const user=userOf(q);await o.studio.approve(user.id,q.params.id,previewHash);
-    r.status(202).json({state:await o.start(user,q.params.id,{projectId:q.params.id,phase:'batch',approvalHash:previewHash,makeVideo,bgm},pricingHash),project:await o.studio.view(user.id,q.params.id)});
+    const selection=await o.studio.styleSelection(user.id,q.params.id);
+    r.status(202).json({state:await o.start(user,q.params.id,{projectId:q.params.id,phase:'batch',approvalHash:previewHash,...(selection?{styleSelectionHash:selection.hash}:{}),makeVideo,bgm},pricingHash),project:await o.studio.view(user.id,q.params.id)});
   }));
   app.get('/api/sticker-projects/:id/items/:itemId/:kind',wrap(async(q,r)=>{
     const user=userOf(q);await o.studio.load(user.id,q.params.id);

@@ -8,17 +8,17 @@ const {prepareWorkShare,loadWorkShares,revokeWorkShares,workShare}=require('../.
 const { activateSession, openDraft } = require('../../utils/sessions');
 function latestProjectJob(project,jobs){return project&&(jobs||[]).slice().reverse().find(job=>job.stickerGenerationTask&&job.stickerGenerationTask.projectId===project.id);}
 function projectRow(project,jobs){
-  const job=latestProjectJob(project,jobs),phase=job&&job.stickerGenerationTask.phase==='batch'?'整套':'样张';
-  const statusText=job&&job.status==='failed'?phase+'未完成':job&&job.status==='cancelled'?'已停止':job&&active(job)?phase+(job.status==='queued'?'排队中':'制作中'):project.ready?'整套已完成':project.approved?'已确认样张':project.previewHash?'待确认样张':'等待制作';
+  const job=latestProjectJob(project,jobs),phase=job&&job.stickerGenerationTask.phase==='styles'?'候选画风':job&&job.stickerGenerationTask.phase==='batch'?'整套':'样张';
+  const statusText=job&&job.status==='failed'?phase+'未完成':job&&job.status==='cancelled'?'已停止':job&&active(job)?phase+(job.status==='queued'?'排队中':'制作中'):project.ready?'整套已完成':project.approved?'已确认样张':project.previewHash?'待确认样张':project.styleCandidates&&project.styleCandidates.length===2&&!project.styleSelection?'待选择画风':'等待制作';
   return Object.assign({},project,{statusText});
 }
 Page({
   onShareAppMessage(event) {return workShare(event,this)||stickerTemplateShare(event);},
-  data: Object.assign(appearanceData(), { mode:'dynamic', name:'', style:'柔彩Q版，保留角色原有发型、服装和配饰', references:[], referenceId:'', referenceName:'', available:false, pricing:null, quote:null, quoteError:'', checking:true, loading:false, submitting:false, uploading:false, makeVideo:true, bgm:true, projects:[], project:null, samples:[], selected:null, showTaskRecords:false, newSessionNeeded:false, error:'' }),
-  onLoad(query) { this.setData({mode:query.mode==='static'?'static':'dynamic',fromTemplate:query.from==='template',styleId:['soft','round','lightmao','custom'].includes(query.styleId)?query.styleId:'soft',styles:[],shareToken:'',completed:[],balance:0});this._sessionId=query.sessionId||'';this._requestedProjectId=query.projectId||'';this._previewToken=0;this._loadToken=0;this._quoteToken=0; },
+  data: Object.assign(appearanceData(), { mode:'dynamic', name:'', style:'保留角色原有发型、服装和配饰，先比较两种候选画风', references:[], referenceId:'', referenceName:'', available:false, pricing:null, quote:null, quoteError:'', checking:true, loading:false, submitting:false, uploading:false, makeVideo:false, bgm:false, projects:[], project:null, samples:[], selected:null, showTaskRecords:false, newSessionNeeded:false, error:'' }),
+  onLoad(query) { this.setData({mode:query.mode==='static'?'static':'dynamic',fromTemplate:query.from==='template',styleId:['soft','round','lightmao','custom'].includes(query.styleId)?query.styleId:'lightmao',styles:[],shareToken:'',completed:[],balance:0});this._sessionId=query.sessionId||'';this._requestedProjectId=query.projectId||'';this._previewToken=0;this._loadToken=0;this._quoteToken=0; },
   onShow() {
     const app=getApp();
-    if(this._generation!==app._generation){if(this._generation!==undefined){this._sessionId='';this._requestedProjectId='';}this._generation=app._generation;this._requestId='';this._fingerprint='';this._pollKey='';this._previewToken=(this._previewToken||0)+1;this.setData({referenceId:'',referenceName:'',name:'',style:'柔彩Q版，保留角色原有发型、服装和配饰',references:[],projects:[],project:null,projectJob:null,samples:[],selected:null,shareToken:'',sharing:false,showTaskRecords:false,newSessionNeeded:false,projectSessionUnavailable:false,error:'',submitting:false,uploading:false,available:false,pricing:null,quote:null,quoteError:'',checking:true});}
+    if(this._generation!==app._generation){if(this._generation!==undefined){this._sessionId='';this._requestedProjectId='';}this._generation=app._generation;this._requestId='';this._fingerprint='';this._pollKey='';this._previewToken=(this._previewToken||0)+1;this.setData({referenceId:'',referenceName:'',name:'',style:'保留角色原有发型、服装和配饰，先比较两种候选画风',references:[],projects:[],project:null,projectJob:null,samples:[],selected:null,shareToken:'',sharing:false,showTaskRecords:false,newSessionNeeded:false,projectSessionUnavailable:false,error:'',submitting:false,uploading:false,available:false,pricing:null,quote:null,quoteError:'',checking:true});}
     if(withSession(this,this.render))this.load();
   },
   onHide(){hide(this);this._previewToken++;this.setData({selected:null});},onUnload(){hide(this);this._previewToken++;},
@@ -66,9 +66,10 @@ Page({
     if(this.data.project){this.setData({error:'请在当前项目中重试，或先点“调整设定”返回编辑。'});return;}
     const app=getApp(),generation=app._generation;
     if(!app.state){this.setData({error:'正在同步会话，请稍后重试。'});return;}
-    const recipe={referenceMediaId:this.data.referenceId,name:this.data.name.trim(),style:this.data.style.trim(),styleId:this.data.styleId||'soft',mode:this.data.mode};
+    const recipe={referenceMediaId:this.data.referenceId,name:this.data.name.trim(),style:this.data.style.trim(),styleId:this.data.styleId||'lightmao',mode:this.data.mode,...(this.data.styleId==='lightmao'||!this.data.styleId?{styleSelection:'lightmao'}:{})};
     if(!recipe.referenceMediaId||!recipe.name||!recipe.style){this.setData({error:'请选择角色图，填写套装名称与画风。'});return;}
-    const cost=recipe.mode==='static'?this.data.pricing.staticSamples:this.data.pricing.dynamicSamples;if(this.data.balance<cost){const error=new Error('本阶段需要'+cost+'积分，当前可用'+this.data.balance+'积分，请先到「我的积分」签到或查看余额。');this.setData({error:error.message});notify(error);return;}
+    if(recipe.styleSelection&&!Number.isFinite(this.data.pricing.styleCandidates)){this.setData({error:'候选画风制作暂不可用，请稍后刷新状态。已有作品仍可查看。'});return;}
+    const cost=recipe.styleSelection?this.data.pricing.styleCandidates:recipe.mode==='static'?this.data.pricing.staticSamples:this.data.pricing.dynamicSamples;if(this.data.balance<cost){const error=new Error('本阶段需要'+cost+'积分，当前可用'+this.data.balance+'积分，请先到「我的积分」签到或查看余额。');this.setData({error:error.message});notify(error);return;}
     this.setData({submitting:true,error:''});
     try{
       let sessionId=this._sessionId;
@@ -82,16 +83,31 @@ Page({
     }catch(error){if(generation===app._generation)this.setData({error:error.message});}
     finally{if(generation===app._generation)this.setData({submitting:false});}
   },
+  async selectCandidate(event){
+    if(this.data.submitting||this.data.busy||!this.data.quote||!requireLogin())return;
+    const app=getApp(),generation=app._generation,project=this.data.project,id=event.currentTarget.dataset.id,item=(project&&project.styleCandidates||[]).find(item=>item.id===id);
+    if(!item)return;if(project.styleSelection&&project.styleSelection.id!==id){this.setData({error:'本项目已锁定画风。更换画风请调整设定，新建项目。'});return;}
+    if(this.data.balance<this.data.quote.points){this.setData({error:'积分不足，本阶段需要'+this.data.quote.points+'积分，请先查看我的积分。'});return;}
+    this.setData({submitting:true,error:''});
+    try{const response=await app.client.request('/api/sticker-projects/'+project.id+'/style',{id,candidateHash:item.hash,pricingHash:this.data.quote.pricingHash});if(generation!==app._generation)return;(app.commit||app.apply).call(app,response.state);if(this._visible){this.showProject(response.project);this.load();}}
+    catch(error){if(generation===app._generation)this.setData({error:error.message});}
+    finally{if(generation===app._generation)this.setData({submitting:false});}
+  },
+  async previewCandidate(event){
+    const item=(this.data.candidates||[]).find(item=>item.id===event.currentTarget.dataset.id);if(!item)return;
+    const app=getApp(),generation=app._generation,token=++this._previewToken;
+    try{const image=await app.client.download(item.previewUrl);if(this._visible&&generation===app._generation&&token===this._previewToken)this.setData({selected:image});}catch(error){if(generation===app._generation)this.setData({error:error.message});}
+  },
   openProject(event){const project=this.data.projects.find(item=>item.id===event.currentTarget.dataset.id);if(project){this._sessionId=project.sessionId;this.showProject(project);this.render(getApp().state);}},
   showProject(project){
-    const app=getApp(),generation=app._generation,token=++this._previewToken;this.setData(Object.assign({project,samples:project.samples.map(item=>Object.assign({},item,{image:''})),completed:(project.completed||[]).map(item=>Object.assign({},item,{coverSource:item.thumbnailUrl,cover:''}))},!this.data.project||this.data.project.id!==project.id?{showTaskRecords:false,shareToken:''}:{}));loadThumbnails(this,'completed',app.client);
+    const app=getApp(),generation=app._generation,token=++this._previewToken;this.setData(Object.assign({project,candidates:(project.styleCandidates||[]).map(item=>Object.assign({},item,{coverSource:item.previewUrl,cover:''})),samples:project.samples.map(item=>Object.assign({},item,{image:''})),completed:(project.completed||[]).map(item=>Object.assign({},item,{coverSource:item.thumbnailUrl,cover:''}))},!this.data.project||this.data.project.id!==project.id?{showTaskRecords:false,shareToken:''}:{}));loadThumbnails(this,'completed',app.client);loadThumbnails(this,'candidates',app.client);
     this.renderProjectJob();
     this.loadQuote(project);
     loadWorkShares(this,app);
     Promise.all(project.samples.map(async item=>{try{const image=await app.client.download(item.thumbnailUrl,{persistent:true});if(!this._visible||generation!==app._generation||token!==this._previewToken)return;this.setData({samples:this.data.samples.map(sample=>sample.id===item.id?Object.assign({},sample,{image}):sample)});}catch{ /* individual preview remains retryable */ }}));
   },
   async loadQuote(project){
-    const app=getApp(),generation=app._generation,token=++this._quoteToken,job=latestProjectJob(project,app.state&&app.state.jobs),phase=job&&job.status==='failed'?job.stickerGenerationTask.phase:project.previewHash?'batch':'samples';this.setData({quote:null,quoteError:''});
+    const app=getApp(),generation=app._generation,token=++this._quoteToken,job=latestProjectJob(project,app.state&&app.state.jobs),phase=job&&job.status==='failed'?job.stickerGenerationTask.phase:project.recipe.styleSelection&&!project.styleSelection&&(!project.styleCandidates||project.styleCandidates.length<2)?'styles':project.previewHash?'batch':'samples';this.setData({quote:null,quoteError:''});
     if(project.ready||job&&active(job))return;
     try{const quote=await app.client.request('/api/sticker-projects/'+project.id+'/quote?phase='+phase);if(this._visible&&generation===app._generation&&token===this._quoteToken&&this.data.project?.id===project.id)this.setData({quote});}
     catch(error){if(this._visible&&generation===app._generation&&token===this._quoteToken)this.setData({quoteError:error.message||'费用暂时无法读取，请刷新状态。'});}
@@ -99,7 +115,7 @@ Page({
   renderProjectJob(){
     const project=this.data.project,state=getApp().state,jobs=state&&state.jobs||[],job=latestProjectJob(project,jobs),session=project&&state&&(state.sessions||[]).find(item=>item.id===project.sessionId),unavailable=Boolean(project&&(!session||session.archivedAt));
     const changed=Boolean(project&&project.compatible===false);
-    this.setData({projectSessionUnavailable:unavailable,projectTemplateChanged:changed,projectSessionReason:session?'原会话已归档':'原会话已不存在',projectJob:job?{id:job.id,active:active(job),retryable:job.status==='failed'&&job.cancelReason!=='superseded'&&!unavailable&&!changed,phase:job.stickerGenerationTask.phase,status:({queued:'排队中',running:'制作中',failed:'本阶段未完成',cancelled:'已停止',succeeded:'此阶段已完成'})[job.status]||job.status,stage:job.stage||'',error:job.error||'',workflow:jobView(job,this.data.showTaskRecords).workflow}:null});
+    this.setData({projectSessionUnavailable:unavailable,projectTemplateChanged:changed,projectSessionReason:session?'原会话已归档':'原会话已不存在',projectJob:job?{id:job.id,active:active(job),retryable:job.status==='failed'&&job.failure?.retryable!==false&&job.failure?.code!=='STICKER_REFERENCE_UNSUITABLE'&&!JSON.stringify(job.failure||{}).includes('InputImageSensitiveContentDetected')&&job.cancelReason!=='superseded'&&!unavailable&&!changed,phase:job.stickerGenerationTask.phase,status:({queued:'排队中',running:'制作中',failed:'本阶段未完成',cancelled:'已停止',succeeded:'此阶段已完成'})[job.status]||job.status,stage:job.stage||'',error:job.error||'',workflow:jobView(job,this.data.showTaskRecords).workflow}:null});
   },
   async retry(){
     const job=this.data.projectJob;if(this.data.submitting||!job||!job.retryable||this.data.busy||!this.data.quote||!requireLogin())return;

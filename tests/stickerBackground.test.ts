@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PNG } from 'pngjs';
-import { removeStickerBackdrop, stickerBackground, stickerMotionReference, validateStickerMotion } from '../server/stickerBackground';
+import { removeStickerBackdrop, stickerBackground, stickerReservedKeys, stickerMotionReference, validateStickerMotion } from '../server/stickerBackground';
 const green={name:'绿色',hex:'#00FF00',channels:[1]};
 function image(color:number[]){const p=new PNG({width:128,height:128});for(let i=0;i<p.data.length;i+=4){p.data[i]=color[0];p.data[i+1]=color[1];p.data[i+2]=color[2];p.data[i+3]=255;}return p;}
 function rect(p:PNG,x:number,y:number,w:number,h:number,c:number[]){for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++){const i=(yy*p.width+xx)*4;for(let k=0;k<4;k++)p.data[i+k]=c[k];}}
@@ -19,6 +19,17 @@ test('matting removes outer canvas and enclosed limb gaps, preserves subject col
 test('a green character selects a magenta background and keeps its green clothing after matting',async()=>{
   const role=image([0,220,0]),plan=await stickerBackground({bytes:PNG.sync.write(role),mimeType:'image/png'});assert.equal(plan.key?.hex,'#FF00FF');
   const generated=image([255,0,255]);rect(generated,25,25,75,85,[0,220,0,255]);const result=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),plan.key!));assert.deepEqual([...result.data.subarray((60*128+60)*4,(60*128+60)*4+4)],[0,220,0,255]);
+});
+
+test('a tiny observed green ornament reserves green even when full-photo pixel ranking misses it',async()=>{
+  const photo=image([160,80,40]);rect(photo,60,45,2,2,[0,220,0,255]);const keys=stickerReservedKeys('黑色上衣胸口有一枚绿色装饰，粉色抱枕为新增道具');
+  const plan=await stickerBackground({bytes:PNG.sync.write(photo),mimeType:'image/png'},true,keys);assert.equal(plan.key?.hex,'#00FFFF');
+  const rendered=image([0,255,255]);rect(rendered,24,20,80,90,[160,80,40,255]);rect(rendered,60,45,6,6,[0,220,0,255]);const output=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(rendered),plan.key!));assert.deepEqual([...output.data.subarray((47*128+62)*4,(47*128+62)*4+4)],[0,220,0,255]);
+});
+
+test('dark cyan key spill at a black hair edge is removed while an interior green ornament stays opaque',()=>{
+  const cyan={name:'青色',hex:'#00FFFF',channels:[1,2]},generated=image([0,255,255]);rect(generated,24,20,80,90,[16,16,16,255]);rect(generated,24,25,2,70,[15,45,45,255]);rect(generated,60,45,6,6,[0,220,0,255]);
+  const p=PNG.sync.read(removeStickerBackdrop(PNG.sync.write(generated),cyan)),edge=(40*128+24)*4;assert.ok(Math.abs(p.data[edge]-p.data[edge+1])<2);assert.ok(Math.abs(p.data[edge]-p.data[edge+2])<2);assert.deepEqual([...p.data.subarray((47*128+62)*4,(47*128+62)*4+4)],[0,220,0,255]);
 });
 
 test('matting a magenta canvas preserves a pastel pink pillow instead of punching transparent holes',()=>{

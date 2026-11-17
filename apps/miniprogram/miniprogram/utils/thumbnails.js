@@ -1,7 +1,8 @@
 // Private covers need the same authenticated download as the player. Never
 // put cookies in an image URL or make private storage publicly readable.
 function loadThumbnails(page, field, client, maxItems = Infinity) {
-  const generation = page._thumbnailGeneration = (page._thumbnailGeneration || 0) + 1;
+  const generations=page._thumbnailGenerations||(page._thumbnailGenerations={});
+  const generation = generations[field] = (generations[field] || 0) + 1;
   if (client.cachedDownload) {
     let changed = false;
     const items = page.data[field].map(item => {
@@ -16,10 +17,10 @@ function loadThumbnails(page, field, client, maxItems = Infinity) {
   async function worker() {
     while (next < pending.length) {
       const item = pending[next++];
-      if (!page._visible || page._thumbnailGeneration !== generation) return;
+      if (!page._visible || generations[field] !== generation) return;
       let cover = '', failed = false;
       try { cover = await client.download(item.coverSource, { persistent: true }); } catch { failed = true; }
-      if (!page._visible || page._thumbnailGeneration !== generation) return;
+      if (!page._visible || generations[field] !== generation) return;
       const index = page.data[field].findIndex(value => value.id === item.id && value.coverSource === item.coverSource);
       if (index < 0) continue;
       // Use whole-array updates so the same code works with test adapters and

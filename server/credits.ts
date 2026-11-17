@@ -235,10 +235,11 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
     if(!amount)return 0;const current=wallet(draft,userId);
     entry(draft,userId,'service_refund',amount,{taskId,detail:reason.slice(0,240)});current.spentMicros=Math.max(0,current.spentMicros-amount);draft.seen[key]=true;return amount/POINT_MICROS;
   });
-  async function refundImageProject(userId:string,projectId:string,phase:'samples'|'batch',reason:string){
+  async function refundImageProject(userId:string,projectId:string,phase:'styles'|'samples'|'batch',reason:string){
     if(!/^[a-f0-9]{64}$/.test(projectId))throw Error('退款项目无效。');await tail;
     const sampleIds=new Set(['01','03','20','identity']);
-    const tasks=new Set(store.entries.filter(e=>e.userId===userId&&e.imageCount&&e.points<0&&e.requestId?.startsWith(projectId+'_')&&sampleIds.has(e.requestId.slice(projectId.length+1))===(phase==='samples')).map(e=>e.taskId).filter((id):id is string=>Boolean(id)));
+    const phaseOf=(id:string)=>id.startsWith('style-')?'styles':sampleIds.has(id)?'samples':'batch';
+    const tasks=new Set(store.entries.filter(e=>e.userId===userId&&e.imageCount&&e.points<0&&e.requestId?.startsWith(projectId+'_')&&phaseOf(e.requestId.slice(projectId.length+1))===phase).map(e=>e.taskId).filter((id):id is string=>Boolean(id)));
     let points=0;for(const id of tasks)if(!store.seen['service-refund:'+id])points+=await refundImageTask(userId,id,reason);return points;
   }
   const history = (userId: string, offset = 0, limit = 20) => transaction(draft => {

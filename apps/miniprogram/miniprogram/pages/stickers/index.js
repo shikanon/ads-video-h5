@@ -52,7 +52,7 @@ Page({
       if (!pack || !pack.items || pack.items.length !== 24) throw new Error('表情套装暂时不可用。');
       const items = pack.items.map(item => Object.assign({}, item, pack.private?{coverSource:item.thumbnailUrl,cover:app.client.cachedDownload&&app.client.cachedDownload(item.thumbnailUrl)||'',thumb:'',preview:item.previewUrl}:{thumb:app.client.templateAssetUrl(item.thumbnailUrl),preview:app.client.templateAssetUrl(item.previewUrl)}));
       this._packGeneration = generation;
-      this.setData({ pack: Object.assign({}, pack, { sample: pack.sampleUrl?app.client.templateAssetUrl(pack.sampleUrl):'', poster: pack.private?'':app.client.templateAssetUrl(pack.posterUrl) }), items,
+      this.setData({ pack: Object.assign({}, pack, { sample: '', poster: '' }), items,
         scenes: pack.defaultSceneIds.map((id, index) => ({ id, choice: items.findIndex(item => item.id === id), name: items.find(item => item.id === id).name, caption: captions[index] })) });
       this.restoreTask();if(pack.private)loadWorkShares(this,app);
       if(pack.private)loadThumbnails(this,'items',app.client);
