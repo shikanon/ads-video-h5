@@ -68,7 +68,7 @@ Page({
     const app = getApp(), id = event.currentTarget.dataset.id;
     if (this._catalogGeneration !== app._generation || !(this._catalog || []).some(card => card.id === id)) return;
     const card=(this._catalog || []).find(card=>card.id===id);
-    if(card.studioMode){wx.navigateTo({url:'/pages/sticker-studio/index?from=template&styleId=lightmao&mode='+card.studioMode+(this._origin&&this._origin.sessionId?'&sessionId='+encodeURIComponent(this._origin.sessionId):'')});return;}
+    if(card.studioMode){const sessionId=this._origin?this._origin.sessionId:app.state&&app.state.activeSessionId;wx.navigateTo({url:'/pages/sticker-studio/index?from=template&styleId=lightmao&mode='+card.studioMode+(sessionId?'&sessionId='+encodeURIComponent(sessionId):'')});return;}
     if ((this._catalog || []).find(card => card.id === id).output === 'sticker-pack') {
       const sessionId = this._origin ? this._origin.sessionId : app.state && app.state.activeSessionId;
       wx.navigateTo({ url: '/pages/stickers/index' + (sessionId ? '?sessionId=' + encodeURIComponent(sessionId) : '') });

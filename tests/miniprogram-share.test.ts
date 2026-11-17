@@ -61,7 +61,7 @@ test('explicit sticker template sharing passes only a public mode; recipients cr
 test('guest template login returns to the chosen mode and never accepts an arbitrary return URL',async()=>{
  const navigations:any[]=[],platform={navigateTo:(o:any)=>navigations.push(o.url),redirectTo:(o:any)=>navigations.push(o.url),switchTab:(o:any)=>navigations.push(o.url)};
  const app:any={client:{hasSession:()=>false,wechatLogin:async()=>({user:{id:'own-account'}})},refresh:async()=>({})};
- const studio=await capturePage('sticker-studio',app,platform);studio.onLoad({mode:'static',from:'template'});studio.login();assert.equal(navigations.pop(),'/pages/auth/index?stickerMode=static&stickerStyle=soft');
+ const studio=await capturePage('sticker-studio',app,platform);studio.onLoad({mode:'static',from:'template'});studio.login();assert.equal(navigations.pop(),'/pages/auth/index?stickerMode=static&stickerStyle=lightmao');
  const auth=await capturePage('auth',app,platform);auth.onLoad({stickerMode:'static'});await auth.submit();assert.equal(navigations.pop(),'/pages/sticker-studio/index?mode=static&from=template');assert.equal(app.user.id,'own-account');
  auth.onLoad({stickerMode:'https://untrusted.test/'});await auth.submit();assert.equal(navigations.pop(),'/pages/chat/index');
 });
