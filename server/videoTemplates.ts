@@ -95,7 +95,7 @@ export async function loadVideoTemplate(entry: VideoTemplateEntry): Promise<Load
   if (entry.workflow === 'style-video') hash.update(await readFile(styleRenderer));
   if (entry.workflow === 'sticker-pack') {
     hash.update(await readFile(path.join(entry.directory,'references/generation.md')));
-    for(const file of ['stickerPacks.ts','stickerWorkflow.ts','stickerStudio.ts','stickerStudioRoutes.ts','stickerBackground.ts','stickerQuality.ts','transparentImageReference.ts','providers.ts']) hash.update(await readFile(new URL(file,import.meta.url)));
+    for(const file of ['stickerPacks.ts','stickerWorkflow.ts','stickerStudio.ts','stickerStudioRoutes.ts','stickerStyles.ts','stickerBackground.ts','stickerQuality.ts','transparentImageReference.ts','providers.ts']) hash.update(await readFile(new URL(file,import.meta.url)));
   }
   return { ...entry, instructions: parts[0], context, skillHash: hash.digest('hex') };
 }

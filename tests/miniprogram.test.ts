@@ -257,7 +257,7 @@ test('every native WXML page renders with the official component compiler and ha
   const catalogCalls: string[] = [];
   app.client = { ...realClient, hasSession: () => true, request: async (route: string) => {
     catalogCalls.push(route);
-    assert.equal(route, '/api/templates');
+    assert.equal(route, '/api/templates?surface=tools');
     return { templates: app.state.templates };
   } };
   const tabRoutes: string[] = [];
@@ -279,12 +279,12 @@ test('every native WXML page renders with the official component compiler and ha
   await simulate.sleep(0);
   assert.equal(gallery.data.cards.length, 8);
   assert.equal(gallery.data.preview, null);
-  gallery.querySelector('.sample-preview-button').dispatchEvent('tap');
+  gallery.instance.preview({currentTarget:{dataset:{id:'video-style-interface'}}});
   await simulate.sleep(0);
-  assert.equal(gallery.data.preview.sample.video, 'https://example.test/qingjian' + samplePath + 'video');
+  assert.equal(gallery.data.preview.sample, null);
   assert.equal(chat.data.prompt, '@像素游戏 保留我已有的文字');
-  assert.ok(gallery.querySelector('.sample-player'));
-  gallery.querySelector('.sample-use').dispatchEvent('tap');
+  assert.equal(gallery.querySelector('video'),undefined,'tool discovery has no public video playback');
+  gallery.instance.use({currentTarget:{dataset:{id:'video-style-interface'}}});
   await simulate.sleep(0);
   assert.deepEqual(tabRoutes, ['/pages/templates/index', '/pages/chat/index']);
   chat.instance.onShow();
@@ -295,7 +295,7 @@ test('every native WXML page renders with the official component compiler and ha
   await simulate.sleep(0);
   assert.equal(chat.data.prompt, '保留我已有的文字');
   assert.equal(chat.instance.interaction(), 'chat');
-  assert.deepEqual(catalogCalls, ['/api/templates']);
+  assert.deepEqual(catalogCalls, ['/api/templates?surface=tools']);
   gallery.instance.onUnload();
   gallery.detach();
   chat.instance.onUnload(); chat.detach();

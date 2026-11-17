@@ -197,7 +197,7 @@ Page({
       return;
     }
     const template = this.templates().find(item => item.id === id);
-    if (!template) { notify(new Error('模板已更新，请重新打开画廊。')); return; }
+    if (!template) { notify(new Error('模板已更新，请重新打开工具页。')); return; }
     const prompt = '@' + template.name + ' ' + withoutTemplateMentions(this.data.prompt, this.templates());
     if (prompt.length > 2000) { notify(new Error('请先缩短对话草稿，再添加模板。')); return; }
     this._recognized = null;

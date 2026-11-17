@@ -14,7 +14,7 @@ function points(value) {
   return (value < 0 ? '-' : '') + whole + '.' + String(cents % 100).padStart(2, '0');
 }
 function jobView(job, showWorkflow) {
-  return job ? { id: job.id, label: labels[job.status] || job.status, active: active(job), failed: job.status === 'failed', progress: Math.max(0, Math.min(100, job.status === 'succeeded' ? 100 : job.progress || 0)), stage: brandText(job.stage) || '', error: brandText(job.error) || '', workflow: (showWorkflow ? job.workflow || [] : []).slice(-40).map((step, index) => ({ id: step.callId || index, tool: step.tool, stage: step.stage, status: labels[step.status] || step.status, detail: String(brandText(step.detail) || '').slice(0, 1200), seconds: step.durationMs === undefined ? '' : (step.durationMs / 1000).toFixed(1) })) } : null;
+  return job ? { stickerProject:Boolean(job.stickerGenerationTask),stickerPhase:job.stickerGenerationTask&&job.stickerGenerationTask.phase,id: job.id, label: labels[job.status] || job.status, active: active(job), failed: job.status === 'failed', progress: Math.max(0, Math.min(100, job.status === 'succeeded' ? 100 : job.progress || 0)), stage: brandText(job.stage) || '', error: brandText(job.error) || '', workflow: (showWorkflow ? job.workflow || [] : []).slice(-40).map((step, index) => ({ id: step.callId || index, tool: step.tool, stage: step.stage, status: labels[step.status] || step.status, detail: String(brandText(step.detail) || '').slice(0, 1200), seconds: step.durationMs === undefined ? '' : (step.durationMs / 1000).toFixed(1) })) } : null;
 }
 function artifactView(item, client) {
   const coverSource = item.kind === 'image' ? item.url : item.coverUrl || '';

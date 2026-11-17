@@ -192,7 +192,7 @@ let stickerPublicHash:Promise<string>|undefined;
 async function basePublicState(user: PublicUser): Promise<AppState> {
   const stickerEntry=videoTemplates.find(t=>t.workflow==='sticker-pack');
   const stickerHash=stickerEntry?await(stickerPublicHash??=loadVideoTemplate(stickerEntry).then(t=>t.skillHash)):undefined;
-  const visibleJob=(job:Job)=>{const value=publicJob(job);if(job.stickerGenerationTask){if(value.template&&stickerHash)value.template={...value.template,skillHash:stickerHash};if(job.failure&&(/表情制作空间不足|参考图片.*解码/.test(job.failure.message)||job.failure.code==='STICKER_STORAGE_LOW'))value.error=jobFailureMessage(job.failure,job.stage);}return value;};
+  const visibleJob=(job:Job)=>{const value=publicJob(job);if(job.stickerGenerationTask){if(value.template&&stickerHash)value.template={...value.template,skillHash:stickerHash};if(job.failure&&(/表情制作空间不足|参考图片.*解码/.test(job.failure.message)||job.failure.code==='STICKER_STORAGE_LOW'||JSON.stringify(job.failure).includes('InputImageSensitiveContentDetected')||job.failure.code==='STICKER_REFERENCE_UNSUITABLE'))value.error=jobFailureMessage(job.failure,job.stage);}return value;};
   const [models, profile, wallet] = await Promise.all([listPublicModels(), profileOf(user), credits.snapshot(user.id)]);
   const textConfig = await getModelConfig('text', getSession(profile.activeSessionId, user.id)?.modelId);
   return { account: user, features: { conversationModes: true, sessionManagement: true, schedules: true, accountAvatars: true, researchModes: true }, limits: { maxAttachments: MAX_CHAT_ATTACHMENTS }, templates: videoTemplates.map(publicTemplate), credits: wallet, activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, ...(item.kind === 'image' ? { thumbnailUrl: publicUrl('/api/media/' + item.id + '/thumbnail') } : {}), url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.kind==='game'?publicUrl(item.url):assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.projectUrl ? { projectUrl: publicUrl(item.projectUrl) } : {}), ...(item.coverUrl ? { coverUrl: item.kind==='game'?publicUrl(item.coverUrl):assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)).map(visibleJob), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
@@ -344,10 +344,11 @@ async function performJob(job: Job): Promise<void> {
         const config=await getModelConfig('image');if(!config)throw Error('图片模型尚未配置。');
         const file=path.join(mediaDir,source.id);await oss?.ensure(job.ownerId!,'media',source.id,file);
         const output=await stickerStudio.generate(job.ownerId!,generation,{bytes:await readFile(file),mimeType:source.mimeType},config,workflowProgress);
+        if(output.styles){addReply(session,job,'我参考轻喵原有的24张表情，为你的角色做了两种候选画风：柔彩肖像Q版和圆萌大眼Q版。你想选择哪一种？点开「表情工坊」查看两张图并点选，确认后才制作3个动作样张。后续整套只沿用你选中的那一种。');return;}
         if(output.samples) { addReply(session,job,'3个动作样张已完成。请返回「表情工坊」确认角色、画风和动作，再继续生成24套；样张不会自动扩成整套。');return; }
       }
       if(!job.stickerTask) {
-        addReply(session,job,'请在「模板 → 动态表情套装」中选择6个动作、填写短句，并设置是否同步制作分享视频，再点击开始制作。当前可复用轻喵第2弹24套表情。');
+        addReply(session,job,'请打开「工具 → 轻喵表情包画风」，上传清晰角色图。我会先生成两种候选画风让你点选，选定后再制作3个样张；你确认样张后才继续整套。已有项目可在表情工坊继续。');
         return;
       }
       const customPack=await stickerStudio.pack(job.ownerId!,job.stickerTask.packId);
@@ -1127,7 +1128,7 @@ mountStickerRoutes(app,{base:publicBase,
   }finally{startingStickerSessions.delete(session.id);}
 }});
 mountStickerStudioRoutes(app,{studio:stickerStudio,base:publicBase,
-  pricing:async()=>{const model=await getModelConfig('image');if(!model)return null;const p=await credits.imagePricing(model.modelId);return {...p,staticSamples:p.pointsPerImage*3,dynamicSamples:p.pointsPerImage*4,batch:p.pointsPerImage*21};},
+  pricing:async()=>{const model=await getModelConfig('image');if(!model)return null;const p=await credits.imagePricing(model.modelId);return {...p,styleCandidates:p.pointsPerImage*2,selectedSamples:p.pointsPerImage*3,staticSamples:p.pointsPerImage*3,dynamicSamples:p.pointsPerImage*4,batch:p.pointsPerImage*21};},
   quote:async(user,task)=>{const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');return credits.imageQuote(user.id,model.modelId,await stickerStudio.pendingImageIds(user.id,task));},
   version:async()=>{const entry=videoTemplates.find(item=>item.workflow==='sticker-pack');return entry?(await loadVideoTemplate(entry)).skillHash:undefined;},
   ready:async()=>{const model=await getModelConfig('image'),review=await getStickerReviewConfig();return Boolean(model?.enabled&&/^doubao-seedream-/.test(model.modelId)&&review?.enabled&&/^doubao-seed-2-1-/.test(review.modelId));},
@@ -1151,7 +1152,7 @@ mountStickerStudioRoutes(app,{studio:stickerStudio,base:publicBase,
       const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');
       const pending=await stickerStudio.pendingImageIds(user.id,task);await stickerStudio.assertCapacity(pending.length);admission=await credits.admitImages(user.id,model.modelId,pending,pricingHash);
       const pack=await loadStickerPack(),story=task.phase==='batch'?{...defaultStickerTask(pack),packId:'custom-'+projectId,title:project.recipe.name,makeVideo:task.makeVideo,bgm:task.bgm}:undefined;
-      const job=await enqueueAgentMessage(session,'@动态表情套装 '+(task.phase==='samples'?'为新角色生成3个样张，等待确认。':'使用已确认样张生成24套'+(project.recipe.mode==='static'?'静态':'动态')+'表情。'),[project.recipe.referenceMediaId],undefined,undefined,'create',undefined,story,admission);
+      const job=await enqueueAgentMessage(session,'@动态表情套装 '+(task.phase==='styles'?'参考轻喵24张表情，为我的角色制作两种候选画风，等待我点选。':task.phase==='samples'?'为新角色生成3个样张，等待确认。':'使用已确认样张生成24套'+(project.recipe.mode==='static'?'静态':'动态')+'表情。'),[project.recipe.referenceMediaId],undefined,undefined,'create',undefined,story,admission);
       job.stickerGenerationTask=structuredClone(task);await saveState();const receipt={...await publicState(user),stickerJobId:job.id};void processQueue();return receipt;
     }catch(error){if(admission)await credits.releaseImages(admission);throw error;}finally{startingStickerSessions.delete(session.id);}
   },
@@ -1170,7 +1171,7 @@ mountExtensionRoutes(app, extensions, { sessions: () => state.sessions, jobs: ()
 app.get('/api/creative/capabilities',async(_q,r)=>{const e=await defoldEnvironment();r.json({nodeKinds:['canvas','animation','game'],engines:[{id:'defold',available:e.available,version:e.version,setup:e.available?undefined:e.setup}],editing:['create','read','update','delete','search','history'],modelSelfCheck:true,effectLibraries:[await pixelfxLibrary()]});});
 app.get('/api/creative/effects',async(q,r)=>{try{r.json(await findPixelEffects(String(q.query.query||''),Math.min(12,Math.max(1,Number(q.query.limit)||6))));}catch(e){r.status(400).json({error:e instanceof Error?e.message:'特效检索失败。'});}});
 app.get('/api/artifacts/:id/play',(q,r)=>{const a=state.artifacts.find(a=>a.id===q.params.id&&owned(a,userOf(q).id)&&a.kind==='game');if(!a)return r.status(404).json({error:'游戏不存在。'});r.json({url:creativePreviews.issue(path.join(exportDir,`${a.id}-game`),'index.html',a.creative?.artifactHash)});});
-app.get('/api/templates',(_request,response)=>response.json({templates:videoTemplates.map(publicTemplate)}));
+app.get('/api/templates',async(request,response)=>{const templates=videoTemplates.map(publicTemplate);response.json({templates:request.query.surface==='tools'?(await import('./toolCatalog')).toolCatalog(templates):templates});});
 mountVoiceInputRoutes(app, tmpDir, undefined, credits);
 mountAvatarRoutes(app,{
   media:()=>state.media,mediaDir,tmpDir,save:saveState,publicState,
@@ -1534,6 +1535,7 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   const needsLessonRepair=job.status==='succeeded'&&candidate?.plan?.lesson&&candidate.review?.status==='needs-review';
   if (job.status !== 'failed'&&!needsLessonRepair) return response.status(409).json({ error: '只有失败的任务或未通过审查的教学成片可以重试。' });
   if(job.stickerGenerationTask){
+    if(job.failure&&(JSON.stringify(job.failure).includes('STICKER_REFERENCE_UNSUITABLE')||JSON.stringify(job.failure).includes('InputImageSensitiveContentDetected')))return response.status(409).json({error:jobFailureMessage(job.failure,job.stage),code:'STICKER_REPLACE_REFERENCE'});
     try{await stickerStudio.load(user.id,job.stickerGenerationTask.projectId);}catch{return response.status(409).json({error:'旧项目记录不可用，请在表情工坊点击“调整设定”后重新提交。',code:'STICKER_TEMPLATE_UPDATED'});}
     const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');
     const pending=await stickerStudio.pendingImageIds(user.id,job.stickerGenerationTask);await stickerStudio.assertCapacity(pending.length);job.creditTaskId=await credits.admitImages(user.id,model.modelId,pending,request.body?.pricingHash);

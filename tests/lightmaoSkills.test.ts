@@ -56,7 +56,8 @@ test('AI discovery stays scoped and distinguishes article evidence, dates and te
 test('public capabilities use runtime catalog and configuration without claiming execution',async()=>{
   const catalog=(await loadVideoTemplateCatalog()).map(publicTemplate);
   const guide=publicSkillGuide(catalog,{text:true,image:false,audio:false,game:false});
-  for(const item of catalog)assert.ok(guide.some(s=>s.id===item.id));
+  for(const item of catalog.filter(item=>item.output!=='sticker-pack'))assert.ok(guide.some(s=>s.id===item.id));
+  assert.equal(guide.filter(s=>s.category==='表情').length,1,'one coherent workflow describes both candidate styles');
   for(const id of ['sticker-studio','daily-ai-frontier','defold-game']){
     const item=guide.find(s=>s.id===id);if(item)assert.equal(item.status,'needs-configuration');
   }

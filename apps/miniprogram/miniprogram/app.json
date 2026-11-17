@@ -39,7 +39,7 @@
       },
       {
         "pagePath": "pages/templates/index",
-        "text": "模板",
+        "text": "工具",
         "iconPath": "assets/ui/fresh/idle/idea.png",
         "selectedIconPath": "assets/ui/fresh/active/idea.png"
       },

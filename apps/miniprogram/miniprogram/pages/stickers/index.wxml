@@ -25,7 +25,7 @@
       <view wx:else class="muted scene-hint">只保存完整表情套装，之后可以继续制作分享视频。</view>
       <button class="primary" bindtap="start" disabled="{{submitting || busy}}" loading="{{submitting}}">{{busy ? '当前会话有任务进行中' : makeVideo ? '保存表情并生成分享视频 ↗' : '保存表情套装 ↗'}}</button>
     </view>
-    <block wx:if="{{pack.sample}}"><view class="section-title sample-title">分享视频样片</view><video class="sample" src="{{pack.sample}}" poster="{{pack.poster}}" controls object-fit="contain"/></block>
+
   </block>
   <view wx:if="{{selected}}" class="preview-mask" bindtap="closePreview"><view class="preview-card"><image wx:if="{{!previewError}}" src="{{selected.preview}}" mode="aspectFit" binderror="previewError"/><text wx:else class="error">动作预览暂时无法加载，请关闭后重试。</text><view class="section-title">{{selected.name}}</view><view class="muted">{{selected.action}} · 点击空白处关闭</view></view></view>
   <privacy-dialog id="privacy"/>

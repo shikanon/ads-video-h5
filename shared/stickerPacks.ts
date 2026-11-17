@@ -43,7 +43,8 @@ export interface StickerDelivery {
 
 export interface StickerGenerationTask {
   projectId: string;
-  phase: 'samples' | 'batch';
+  phase: 'styles' | 'samples' | 'batch';
+  styleSelectionHash?: string;
   approvalHash?: string;
   makeVideo: boolean;
   bgm: boolean;
