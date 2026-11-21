@@ -1,3 +1,4 @@
+import {recognizeMvLyrics} from './mvLyrics';
 import {createHash} from 'node:crypto';
 import {mkdir,readFile,writeFile,stat,statfs} from 'node:fs/promises';
 import path from 'node:path';
@@ -81,7 +82,7 @@ async function modelJson(config:ModelConfig,system:string,content:any[],maxToken
 export async function planMv(o:{project:MvRecreation;media:MediaItem[];file:(id:string)=>Promise<string>;directory:string;vision:ModelConfig;text:ModelConfig;save:()=>Promise<void>;progress:(s:string)=>Promise<void>}){
  if(o.project.plan?.referenceEdit)throw Error('此项目已有原工程参数。请直接编辑原分镜并制作样片；重新自由编排会改变原片剪辑。');
  const p=o.project;await mkdir(o.directory,{recursive:true});p.evidence||={};
- for(const id of [p.referenceId,...p.sourceIds]){
+ for(const id of [p.referenceId,...p.sourceIds].filter(Boolean)){
   throwIfJobCancelled();const source=o.media.find(m=>m.id===id&&m.ownerId===p.ownerId);if(!source)throw Error('素材已删除。');const file=await o.file(id),hash=await fileDigest(file);if(p.evidence[id]?.sha256===hash)continue;
   await o.progress((id===p.referenceId?'分析参考片：':'分析原素材：')+source.name);
   const images:any[]=[];const times=source.kind==='image'?[0]:id===p.referenceId?Array.from({length:12},(_,i)=>Math.min(source.duration!-.1,i*source.duration!/12)):Array.from({length:3},(_,i)=>Math.max(0,Math.min(source.duration!-.1,(i+.5)*source.duration!/3)));
@@ -91,14 +92,16 @@ export async function planMv(o:{project:MvRecreation;media:MediaItem[];file:(id:
  }
  const song=await o.file(p.audioId),songHash=await fileDigest(song);if(await probeAudio(song)<p.duration-.1)throw Error('实际配乐时长不足，不能通过循环或变速填满。');p.evidence[p.audioId]||={sha256:songHash,description:'音频存在；未据此证明歌词和节拍已识别。'};if(p.evidence[p.audioId].sha256!==songHash)throw Error('配乐已变化，请重新建立复刻项目。');
  const aliases=new Map(p.sourceIds.map((id,index)=>['S'+String(index+1).padStart(3,'0'),id]));
- const skill=await loadEditingSkill('qingjian-mv-recreation');const sources=[...aliases].map(([alias,id])=>{const m=o.media.find(m=>m.id===id)!;return {id:alias,kind:m.kind,duration:m.duration,observations:p.evidence![id].description};});let feedback='';
+ if(p.editSkill)await recognizeMvLyrics({project:p,file:song,directory:o.directory,config:o.vision,save:o.save,progress:o.progress});
+ const skill=await loadEditingSkill(p.editSkill||'qingjian-mv-recreation');const sources=[...aliases].map(([alias,id])=>{const m=o.media.find(m=>m.id===id)!;return {id:alias,kind:m.kind,duration:m.duration,observations:p.evidence![id].description};});let feedback='';
  if(p.plan){const previous=structuredClone(p.plan);for(const shot of previous.shots)shot.sourceId=[...aliases].find(([,id])=>id===shot.sourceId)?.[0]||shot.sourceId;let issue='检查时间码和用户要求，保留可复用镜头。';try{validateMvPlan(p.plan,p,o.media);}catch(e){issue=(e as Error).message;}feedback='已有分镜需按实际数据修订，不要把重叠区间声称为不同区间。诊断：'+issue+'。已有方案：'+JSON.stringify(previous);}
  for(let attempt=0;attempt<3;attempt++){
   await o.progress('编排MV分镜 '+(attempt+1)+'/3'+(feedback?' · 修正参数校验问题':''));
-  const candidate=await modelJson(o.text,skill+'\n你是轻喵原素材音乐MV导演。只能剪辑已分析的原素材，严禁生成角色或把参考成片作为视觉素材复制。按用户叙事和参考片的观察规划有逻辑的完整MV，视频优先，景别交替，避免静态轮播。不能从稀疏帧断言某时刻动作，明确待检查。配乐全长连续、不变速、不循环、不混入原片声音。返回JSON {story,shots:[{sourceId,start,duration,chapter,reason,transition:"cut"|"fade"}],captions:[{start,end,text}],limitations:[string]}。每镜0.2–30秒，duration使用0.1秒的倍数以对齐30fps。sourceId必须逐字复制sources中的id，不能用文件名、序号或缩写。视频不能超出素材长度，图片start=0。总时长为每镜duration之和减去每个非首镜fade的0.2秒，必须精确等于目标时长。字幕只可使用用户明确提供的原文或参考片实际可见的文案，未验证歌词时captions为空并写明限制。不要编造BPM。'+feedback,[{type:'text',text:JSON.stringify({duration:p.duration,instructions:p.instructions,reference:p.evidence[p.referenceId].description,sources})}],16000);
+  const candidate=await modelJson(o.text,skill+'\n你是轻喵原素材音乐MV导演。只能剪辑已分析的原素材，严禁生成角色或把参考成片作为视觉素材复制。按用户叙事和参考片的观察规划有逻辑的完整MV，视频优先，景别交替，避免静态轮播。不能从稀疏帧断言某时刻动作，明确待检查。配乐全长连续、不变速、不循环、不混入原片声音。返回JSON {story,shots:[{sourceId,start,duration,chapter,reason,transition:"cut"|"fade"}],captions:[{start,end,text}],limitations:[string]}。每镜0.2–30秒，duration使用0.1秒的倍数以对齐30fps。sourceId必须逐字复制sources中的id，不能用文件名、序号或缩写。视频不能超出素材长度，图片start=0。总时长为每镜duration之和减去每个非首镜fade的0.2秒，必须精确等于目标时长。字幕只可使用用户明确提供的原文或参考片实际可见的文案，未验证歌词时captions为空并写明限制。不要编造BPM。'+feedback,[{type:'text',text:JSON.stringify({duration:p.duration,instructions:p.instructions,reference:p.referenceId?p.evidence[p.referenceId].description:undefined,lyricDraft:p.editSkill?p.lyricDraft:undefined,sources})}],16000);
   await writeFile(path.join(o.directory,'plan-candidate-'+attempt+'.json'),JSON.stringify(candidate,null,2),{mode:0o600});
   // Only exact, server-issued aliases resolve to account-owned media IDs.
   // The model never needs to reproduce long UUIDs by hand.
+  if(p.editSkill){candidate.captions=Array.isArray(candidate.captions)?candidate.captions.filter((c:any)=>c.kind!=='lyric'&&p.instructions.includes(c.text)):[];candidate.captions.push(...(p.lyricDraft?.captions||[]));candidate.subtitleStyle='cinematic';candidate.limitations=Array.isArray(candidate.limitations)?[...candidate.limitations,...(p.lyricDraft?.warnings||[])]:p.lyricDraft?.warnings||[];}
   if(Array.isArray(candidate?.shots))for(const shot of candidate.shots)if(shot&&aliases.has(shot.sourceId))shot.sourceId=aliases.get(shot.sourceId);
   if(Array.isArray(candidate?.limitations))candidate.limitations=candidate.limitations.map((t:any)=>typeof t==='string'?t.replace(/\bS\d{3}\b/g,(alias:string)=>{const id=aliases.get(alias);return o.media.find(m=>m.id===id)?.name||alias;}):t);
   try{p.plan=fitMvTiming(candidate,p,o.media);p.planHash=mvPlanHash(p.plan);p.approvedHash=undefined;p.artifactId=undefined;p.previewArtifactId=undefined;p.nodeArtifacts={};p.updatedAt=new Date().toISOString();await o.save();return p;}catch(e){if(attempt===2)throw e;feedback='上次程序校验失败：'+(e as Error).message+'。重新提交完整分镜，修正净时长，不丢失叙事。';}
@@ -109,16 +112,17 @@ export const mvPictureHash=(p:MvRecreation)=>createHash('sha256').update(JSON.st
 async function requireMvSpace(directory:string,additional:number){const disk=await statfs(directory);if(disk.bavail*disk.bsize<512*1024*1024+additional)throw Error('服务器制作空间不足，已停止新增文件；成功节点仍保留。请管理员释放制作缓存或扩容后续做。');}
 export async function renderMv(o:{project:MvRecreation;media:MediaItem[];file:(id:string)=>Promise<string>;directory:string;preview:boolean;progress:(s:string)=>Promise<void>;dimensions?:[number,number];onNode?:(index:number,file:string,duration:number)=>Promise<void>}){
  const p=o.project,plan=validateMvPlan(p.plan,p,o.media);if(!p.planHash||mvPlanHash(plan)!==p.planHash||p.approvedHash!==p.planHash)throw Error('请先确认当前分镜，修改后需重新确认。');
- const used=new Set(plan.referenceEdit?referenceUsedIds(p,plan):[p.audioId,p.referenceId,...plan.shots.map(s=>s.sourceId)]);for(const id of used){const file=await o.file(id);if(!p.evidence?.[id]||await fileDigest(file)!==p.evidence[id].sha256)throw Error('原素材发生变化，不能继续使用旧分镜。');}
+ const used=new Set(plan.referenceEdit?referenceUsedIds(p,plan):[p.audioId,p.referenceId,...plan.shots.map(s=>s.sourceId)].filter(Boolean));for(const id of used){const file=await o.file(id);if(!p.evidence?.[id]||await fileDigest(file)!==p.evidence[id].sha256)throw Error('原素材发生变化，不能继续使用旧分镜。');}
  if(await probeAudio(await o.file(p.audioId))<p.duration-.1)throw Error('实际配乐时长不足，不能通过循环或变速填满。');
  if(plan.referenceEdit)return renderReferenceMv({...o,plan});
- const [w,h]=o.dimensions||(o.preview?[960,540]:[1920,1080]),dir=path.join(o.directory,'render-v3-'+mvPictureHash(p)+'-'+(o.preview?'preview':'full')+'-'+w+'x'+h);await mkdir(dir,{recursive:true});
+ const [w,h]=o.dimensions||(p.editSkill?[Math.round((p.resolution||720)*16/9/2)*2,p.resolution||720]:o.preview?[960,540]:[1920,1080]),dir=path.join(o.directory,'render-v3-'+mvPictureHash(p)+'-'+(o.preview?'preview':'full')+'-'+w+'x'+h);await mkdir(dir,{recursive:true});
  const total=o.preview?Math.min(20,p.duration):p.duration;const segments:string[]=[],clips:Array<{duration:number;fade:boolean}>=[];let elapsed=0;
  for(const [i,shot]of plan.shots.entries()){
   if(elapsed>=total-.001)break;throwIfJobCancelled();await o.progress('渲染原素材镜头 '+(i+1)+'/'+plan.shots.length);const source=o.media.find(m=>m.id===shot.sourceId)!,input=await o.file(shot.sourceId),fade=i>0&&shot.transition==='fade',overlap=fade?.2:0,duration=Math.min(shot.duration,total-elapsed+overlap),file=path.join(dir,'clip-'+i+'.mp4');
   let cached=false;try{const receipt=JSON.parse(await readFile(file+'.receipt.json','utf8'));cached=receipt.sha256===await fileDigest(file)&&Math.abs(receipt.duration-duration)<.001;}catch{}
   const frames=Math.max(1,Math.ceil(duration*30));
-  const visual=source.kind==='image'?`scale=${Math.floor(w*.94/2)*2}:${Math.floor(h*.94/2)*2}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black,zoompan=z='1+0.03*on/${Math.max(1,frames-1)}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=${frames}:s=${w}x${h}:fps=30,setsar=1`:`scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30`;
+  let visual=source.kind==='image'?`scale=${Math.floor(w*.94/2)*2}:${Math.floor(h*.94/2)*2}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black,zoompan=z='1+0.03*on/${Math.max(1,frames-1)}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=${frames}:s=${w}x${h}:fps=30,setsar=1`:`scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30`;
+  if(p.editSkill){visual=visual.replace('scale='+Math.floor(w*.94/2)*2+':'+Math.floor(h*.94/2)*2,'scale='+w+':'+h);visual+=',eq=contrast=1.025:saturation=1.03';}
   if(!cached){await requireMvSpace(dir,duration*w*h/2073600*3e6);await runFFmpeg(['-v','error','-y','-filter_threads','1',...(source.kind==='image'?[]:['-ss',String(shot.start)]),'-i',input,'-t',duration.toFixed(6),'-an','-vf',visual,'-c:v','libx264','-threads','2','-preset','veryfast','-crf','20','-pix_fmt','yuv420p',file],180000);await writeFile(file+'.receipt.json',JSON.stringify({sha256:await fileDigest(file),duration}));}if(!o.preview)await o.onNode?.(i,file,duration);segments.push(file);clips.push({duration,fade});elapsed+=duration-overlap;
  }
  let parts=segments.map((file,i)=>({file,duration:clips[i].duration,fade:clips[i].fade}));
@@ -132,12 +136,12 @@ export async function renderMv(o:{project:MvRecreation;media:MediaItem[];file:(i
  }
  const merged=parts[0].file;
  const output=path.join(dir,'final-'+p.planHash+'.mp4'),audio=await o.file(p.audioId);let subtitles:string|undefined;
- if(plan.captions.length){subtitles=path.join(dir,'captions-'+p.planHash+'.ass');await writeFile(subtitles,createMvAss(plan,w,h,total));}
+ if(plan.captions.length){subtitles=path.join(dir,'captions.ass');await writeFile(subtitles,createMvAss(plan,w,h,total));}
  const filterPath=(v:string)=>v.replace(/\\/g,'/').replace(/:/g,'\\:').replace(/'/g,"'\\''"),fonts=fileURLToPath(new URL('../assets/fonts/mashanzheng/',import.meta.url));
  const filters:string[]=[];
  // Subtitle styling must never resize an already composed picture.
- if(subtitles)filters.push(`ass=filename='${filterPath(subtitles)}':fontsdir='${filterPath(fonts)}'`);
- await requireMvSpace(dir,(await stat(merged)).size*1.2);await o.progress('合成连续配乐与字幕并检查实际成片');await runFFmpeg(['-v','error','-y','-i',merged,'-i',audio,'-map','0:v:0','-map','1:a:0','-t',String(total),...(filters.length?['-vf',filters.join(','),'-c:v','libx264','-threads','2','-preset','veryfast','-crf','20']:['-c:v','copy']),'-c:a','aac','-b:a','192k','-movflags','+faststart',output],600000);
+ if(subtitles)filters.push(`ass=filename='${filterPath(path.basename(subtitles))}':fontsdir='${filterPath(fonts)}'`);
+ await requireMvSpace(dir,(await stat(merged)).size*1.2);await o.progress('合成连续配乐与字幕并检查实际成片');await runFFmpeg(['-v','error','-y','-i',merged,'-i',audio,'-map','0:v:0','-map','1:a:0','-t',String(total),...(filters.length?['-vf',filters.join(','),'-c:v','libx264','-threads','2','-preset','veryfast','-crf','20']:['-c:v','copy']),'-c:a','aac','-b:a','192k','-movflags','+faststart',output],600000,12000,dir);
  const checked=await probeVideo(output);if(!checked.hasAudio||Math.abs(checked.duration-total)>.12)throw Error('MV时长或音轨检查未通过。');await runFFmpeg(['-v','error','-i',output,'-f','null','-'],600000);
  const receipt={version:1,planHash:p.planHash,preview:o.preview,duration:checked.duration,width:w,height:h,sha256:await fileDigest(output),sourceHashes:Object.fromEntries([...used].map(id=>[id,p.evidence![id].sha256])),subtitleStyle:plan.subtitleStyle||'standard',storyCaptions:plan.captions.filter(c=>c.kind!=='lyric').length,lyricCaptions:plan.captions.filter(c=>c.kind==='lyric').length,lyricTiming:plan.captions.some(c=>c.kind==='lyric')?'model-estimated-or-user-edited':undefined,technicalPassed:true,userAccepted:false,limitations:plan.limitations};await writeFile(path.join(dir,'receipt-'+p.planHash+'.json'),JSON.stringify(receipt,null,2));return {file:output,receipt};
 }

@@ -3,6 +3,7 @@ export interface ToolNode {
   x:number; y:number; width:number; height:number; hidden?:boolean; scale?:number; z?:number;
 }
 export interface ToolWorkspace {
+  mvSettings?:{folderId:string;audioId:string;duration:number;resolution:480|720|1080};
   output?: 'static' | 'dynamic';
   version:1; category:'stickers'|'video'; templateId:string|null; draft:string;
   attachmentIds:string[]; nodes:ToolNode[]; updatedAt:string;
@@ -10,3 +11,4 @@ export interface ToolWorkspace {
   nextPosition?: {x:number;y:number};
   includeHistory?: boolean;
 }
+export type ToolCanvas=Pick<ToolWorkspace,'version'|'nodes'|'camera'|'updatedAt'>;

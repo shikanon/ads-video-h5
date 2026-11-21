@@ -21,14 +21,14 @@ Page({
   render(state) {
     const folders=(state.mediaFolders||[]);let folderId=this.data.folderId||'all';if(!['all','none'].includes(folderId)&&!folders.some(f=>f.id===folderId))folderId='all';this.setData({folders,folderId,folderName:(folders.find(f=>f.id===folderId)||{}).name||'',selectedIds:(this.data.selectedIds||[]).filter(id=>state.media.some(m=>m.id===id))});
     const films = this.data.section === 'films';
-    const source = films ? state.artifacts : state.media.filter(item => !item.character && (this.data.collection === 'clips' ? Boolean(item.archive) && collectionOf(item) === 'library' : collectionOf(item) === this.data.collection));
+    const source = films ? state.artifacts.filter(a=>!a.productionOnly) : state.media.filter(item => !item.character && (this.data.collection === 'clips' ? Boolean(item.archive) && collectionOf(item) === 'library' : collectionOf(item) === this.data.collection));
     const kindFilters = [{ id: 'all', name: '全部' }, { id: 'video', name: '视频' }, { id: 'image', name: '图片' }, { id: 'audio', name: '音频' }].concat(films ? [{ id: 'sticker-pack', name: '表情包' }, { id: 'game', name: '游戏' }] : [{id:'document',name:'文档'}]);
     const kindCounts = { all: source.length }; for (const item of source) kindCounts[item.kind] = (kindCounts[item.kind] || 0) + 1;
     this.setData({ kindFilters, kindCounts });
-    this.setData({ materialCount: state.media.filter(item => !item.character && collectionOf(item) === 'library').length, filmCount: state.artifacts.length });
+    this.setData({ materialCount: state.media.filter(item => !item.character && collectionOf(item) === 'library').length, filmCount: state.artifacts.filter(a=>!a.productionOnly).length });
     if (films) {
       const needle = this.data.query.trim().toLowerCase();
-      const all = state.artifacts.filter(item => (this.data.filter === 'all' || item.kind === this.data.filter) && item.name.toLowerCase().includes(needle)).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const all = state.artifacts.filter(item => !item.productionOnly && (this.data.filter === 'all' || item.kind === this.data.filter) && item.name.toLowerCase().includes(needle)).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       this.setData({ items: all.slice(0, this._limit).map(item => artifactView(item, getApp().client)), jobs: state.jobs.filter(active).slice(0, 10).map(job => jobView(job)), more: all.length > this._limit, count: all.length });
       loadThumbnails(this, 'items', getApp().client);
       return;

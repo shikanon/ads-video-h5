@@ -3,11 +3,13 @@ const { shareAppMessage } = require("../../utils/share");
 const { notify, withSession, hide, privacy } = require('../../utils/page');
 const { beijingTime } = require('../../utils/view');
 const { brandText } = require('../../utils/brand');
+const {prepareVideoShare,closeVideoShare,videoShare}=require('../../utils/video-work-share');
 Page({
-  onShareAppMessage: shareAppMessage,
+  onShareAppMessage(e){return videoShare(this,e)||shareAppMessage();},
+  prepareShare(){return prepareVideoShare(this);},closeShare(){return closeVideoShare(this);},
   data: Object.assign(appearanceData(), { item: null, isMedia: false, src: '', loading: false, saving: false, error: '', playing: false, elapsed: 0, duration: 0, analysis: '', analyzing: false }),
   onLoad(query) { this._id = query.id; this._type = query.type === 'artifact' ? 'artifact' : 'media'; this.setData({ isMedia: this._type === 'media' }); },
-  onShow() { withSession(this, this.render); },
+  onShow() { const g=getApp()._generation;if(this._shareGeneration!==g){this._shareGeneration=g;this.setData({shareToken:'',shareCover:'',src:''});}withSession(this, this.render); },
   onHide() { hide(this); if (this._audio) this._audio.pause(); },
   onUnload() { hide(this); if (this._audio) this._audio.destroy(); },
   render(state) {

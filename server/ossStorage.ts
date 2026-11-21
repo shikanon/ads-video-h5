@@ -20,9 +20,11 @@ export function createOssStorage() {
     accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET!,
   });
   const key = (ownerId: string, category: AssetCategory, id: string) => `${prefix}/users/${ownerId}/${category}/${id}`;
+  const restoring=new Map<string,Promise<void>>();
   return {
     bucket,
     key,
+    async signedReadUrl(ownerId:string,category:AssetCategory,id:string):Promise<string|undefined>{return client.signatureUrlV4('GET',300,undefined,key(ownerId,category,id));},
     publicUrl(ownerId: string, category: AssetCategory, id: string) {
       if (!publicRead) return null;
       return `https://${bucket}.${region}.aliyuncs.com/${key(ownerId, category, id).split('/').map(encodeURIComponent).join('/')}`;
@@ -34,6 +36,8 @@ export function createOssStorage() {
       else await client.put(name, file, { timeout: 180_000, mime: mimeType, headers });
     },
     async ensure(ownerId: string, category: AssetCategory, id: string, file: string) {
+      const ongoing=restoring.get(file);if(ongoing)return ongoing;
+      const restore=(async()=>{
       try { await access(file); return; } catch { /* Restore the local processing cache. */ }
       await mkdir(path.dirname(file), { recursive: true });
       const temp = `${file}.${randomUUID()}.download`;
@@ -44,6 +48,7 @@ export function createOssStorage() {
         await rm(temp, { force: true });
         throw error;
       }
+      })();restoring.set(file,restore);try{await restore;}finally{if(restoring.get(file)===restore)restoring.delete(file);}
     },
     async remove(ownerId: string, category: AssetCategory, id: string) {
       await client.delete(key(ownerId, category, id));

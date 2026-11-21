@@ -6,6 +6,7 @@ import type {ToolBatch} from '../shared/toolBatches';
 import type {CreativeNote} from '../shared/creativeNotes';
 import {mountCreativeNotes} from './creativeNoteRoutes';
 import type {MvRecreation} from '../shared/mvRecreation';
+import {estimateMvCredits,mvTemplatePriceHash} from './mvTemplate';
 import {mountMvRecreation} from './mvRecreationRoutes';
 import {planMv,renderMv} from './mvRecreation';
 import {recognizeMvLyrics} from './mvLyrics';
@@ -21,6 +22,10 @@ import { readChatImage,chatImagePages } from './chatAttachments';
 import { transparentImageReference } from './transparentImageReference';
 import { stickerStyleFile } from './stickerStyles';
 import { createStickerShares } from './stickerShares';
+import {mountArtifactThumbnails} from './artifactThumbnails';
+import {createVideoShares} from './videoShares';
+import {accountCanvases,saveAccountCanvas,type CanvasProfile} from './workCanvases';
+import {createWorkShareRewards} from './workShareRewards';
 import type {FilmTask} from '../shared/film';
 import {loadTaskDraft,saveTaskDraft} from './taskDrafts';
 import {acquireFileLock,stateHash} from './durableState';
@@ -153,7 +158,7 @@ interface StoredState {
   artifactFiles: Record<string, string>;
   narrationBySession: Record<string, string>;
   bgmBySession: Record<string, string>;
-  profiles: Record<string, { activeSessionId: string; settings: AppSettings }>;
+  profiles: Record<string, { activeSessionId: string; settings: AppSettings } & CanvasProfile>;
 }
 const now = () => new Date().toISOString();
 function newSession(modelId: string | null): Session {
@@ -205,7 +210,7 @@ async function profileOf(user: PublicUser) {
 const shortName = (name: string) => path.basename(name).replace(/[\u0000-\u001f/\\]/g, '').slice(0, 120) || '素材';
 const extFor = (mime: string) => mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : mime === 'image/png' ? 'png' : mime === 'audio/mpeg' ? 'mp3' : mime === 'audio/wav' || mime === 'audio/x-wav' ? 'wav' : mime === 'audio/ogg' ? 'ogg' : 'bin';
 
-async function publicState(user:PublicUser):Promise<AppState>{const snapshot=await basePublicState(user);return{...snapshot,mediaFolders:(state.mediaFolders||[]).filter(f=>f.ownerId===user.id),media:snapshot.media.map(m=>m.kind==='video'?{...m,thumbnailUrl:publicUrl('/api/media/'+m.id+'/thumbnail')}:m),features:{...snapshot.features!,notifications:notifications.ready,filmAnalysis:true},notifications:notifications.list(user.id)};}
+async function publicState(user:PublicUser):Promise<AppState>{const snapshot=await basePublicState(user);return{...snapshot,toolCanvases:accountCanvases(await profileOf(user),snapshot.sessions),artifacts:snapshot.artifacts.map(a=>({...a,...(a.kind==='video'&&!a.coverUrl?{coverUrl:publicUrl('/api/artifacts/'+a.id+'/thumbnail')}:{}),productionOnly:(state.mvRecreations||[]).some(p=>p.ownerId===user.id&&Object.values(p.nodeArtifacts||{}).includes(a.id))})),mediaFolders:(state.mediaFolders||[]).filter(f=>f.ownerId===user.id),media:snapshot.media.map(m=>m.kind==='video'?{...m,thumbnailUrl:publicUrl('/api/media/'+m.id+'/thumbnail')}:m),features:{...snapshot.features!,notifications:notifications.ready,filmAnalysis:true},notifications:notifications.list(user.id)};}
 let stickerPublicHash:Promise<string>|undefined;
 async function basePublicState(user: PublicUser): Promise<AppState> {
   const stickerEntry=videoTemplates.find(t=>t.workflow==='sticker-pack');
@@ -303,13 +308,18 @@ async function performJob(job: Job): Promise<void> {
   const basicProgress = workflowProgress;
   if(job.mvTask){
     const task=job.mvTask,p=(state.mvRecreations||[]).find(p=>p.ownerId===job.ownerId&&p.id===task.projectId);if(!p)throw Error('MV复刻项目不存在。');
-    if(task.phase!=='plan'&&task.planHash!==p.planHash)throw Error('本次任务的分镜已经改变，请从当前分镜重新提交。');
+    if(!['plan','produce'].includes(task.phase)&&task.planHash!==p.planHash)throw Error('本次任务的分镜已经改变，请从当前分镜重新提交。');
     await currentTaskExecution()?.observeDependency('mv-project',{referenceId:p.referenceId,audioId:p.audioId,sourceIds:p.sourceIds,instructions:p.instructions,duration:p.duration,...(task.phase!=='plan'?{planHash:p.planHash}:{})});
     const directory=path.join(dataDir,'mv-recreations',p.id),file=async(id:string)=>{if(!state.media.some(m=>m.id===id&&m.ownerId===job.ownerId))throw Error('原素材已删除或无权使用。');const target=path.join(mediaDir,id);await oss?.ensure(job.ownerId!,'media',id,target);return target;},progress=async(s:string)=>{throwIfJobCancelled();job.stage=s;updateReply(session,job,s,'commentary','mv-progress');await saveState();};
+    if(task.phase==='produce'){
+     if(!p.editSkill)throw Error('请从视频模板选择剪辑方式。');
+     if(!p.plan){const vision=await getModelConfig('understanding'),text=await getModelConfig('text',job.textModel?.id||session.modelId);if(!vision||!text)throw Error('请先配置画面与音频理解模型、文本模型。');await planMv({project:p,media,file,directory,vision,text,save:saveState,progress});}
+     if(!p.planHash)throw Error('MV分镜尚未保存。');p.approvedHash=p.planHash;task.planHash=p.planHash;await saveState();
+    }
     if(task.phase==='plan'){const vision=await getModelConfig('understanding'),text=await getModelConfig('text',job.textModel?.id||session.modelId);if(!vision||!text)throw Error('请先配置画面理解模型与文本模型。');await planMv({project:p,media,file,directory,vision,text,save:saveState,progress});addReply(session,job,'已保存原素材MV分镜，请打开复刻项目核对镜头、字幕和限制，确认后制作20秒样片；样片通过后可渲染整片。');}
     else if(task.phase==='lyrics'){const config=await getModelConfig('understanding');if(!config)throw Error('请先配置音频理解模型。');await recognizeMvLyrics({project:p,file:await file(p.audioId),directory,config,save:saveState,progress});addReply(session,job,'已保存歌词识别草稿。请打开MV项目试听、校对歌词和时间后采用；尚未替换已确认分镜或宣称歌词正确。');}
     else{const existing=task.phase==='preview'?p.previewArtifactId:p.artifactId;if(existing&&state.artifacts.some(a=>a.id===existing&&a.ownerId===job.ownerId)){job.artifactId=existing;addReply(session,job,'已复用本版分镜的成片。',existing);return;}
-      const result=await renderMv({project:p,media,file,directory,preview:task.phase==='preview',progress,onNode:async(index,file,duration)=>{p.nodeArtifacts||={};const key=String(index),old=p.nodeArtifacts[key];if(old&&state.artifacts.some(a=>a.id===old&&a.ownerId===job.ownerId))return;throwIfJobCancelled();currentTaskExecution()?.guard();const a=await addArtifact(session,job,'video',p.name+' · 节点'+(index+1)+'（无声）',p.plan?.referenceEdit?file:await readFile(file),'video/mp4',undefined,duration);p.nodeArtifacts[key]=a.id;await saveState();}});throwIfJobCancelled();currentTaskExecution()?.guard();const artifact=await addArtifact(session,job,'video',p.name+(task.phase==='preview'?' · 20秒样片':' · 复刻成片'),p.plan?.referenceEdit?result.file:await readFile(result.file),'video/mp4',undefined,result.receipt.duration);job.artifactId=artifact.id;if(task.phase==='preview')p.previewArtifactId=artifact.id;else p.artifactId=artifact.id;p.updatedAt=now();await saveState();addReply(session,job,'原素材MV已实际渲染，时长、音轨和全片解码检查通过。视觉与节奏仍需你验收；没有生成新角色。',artifact.id);
+      const result=await renderMv({project:p,media,file,directory,preview:task.phase==='preview',progress,onNode:async(index,file,duration)=>{p.nodeArtifacts||={};const key=String(index),old=p.nodeArtifacts[key];if(old&&state.artifacts.some(a=>a.id===old&&a.ownerId===job.ownerId))return;throwIfJobCancelled();currentTaskExecution()?.guard();const a=await addArtifact(session,job,'video',p.name+' · 节点'+(index+1)+'（无声）',p.plan?.referenceEdit?file:await readFile(file),'video/mp4',undefined,duration);p.nodeArtifacts[key]=a.id;await saveState();}});throwIfJobCancelled();currentTaskExecution()?.guard();const artifact=await addArtifact(session,job,'video',p.name+(task.phase==='preview'?' · 20秒样片':p.editSkill?' · 成片':' · 复刻成片'),p.plan?.referenceEdit?result.file:await readFile(result.file),'video/mp4',undefined,result.receipt.duration);job.artifactId=artifact.id;if(task.phase==='preview')p.previewArtifactId=artifact.id;else p.artifactId=artifact.id;p.updatedAt=now();await saveState();addReply(session,job,'原素材MV已实际渲染，时长、音轨和全片解码检查通过。视觉与节奏仍需你验收；没有生成新角色。',artifact.id);
     }return;
   }
   if(job.filmTask){
@@ -960,7 +970,7 @@ async function processQueuedJob(job: Job) {
               assertEnvironment:async()=>{await assertTemplate();await runtime.assertFresh?.();if(environmentHash!==await captureTaskEnvironment(root,manifest))throw Error('执行环境已变化，旧验收不能用于交付。');},
             },()=>withModelSnapshot(models!,()=>performJob(job)));
           });
-          return await (isEvaluationOwner(job.ownerId) ? execute() : withCreditUsage(credits, job.ownerId!, job.creditTaskId ?? job.id, execute));
+          return await (isEvaluationOwner(job.ownerId) ? execute() : withCreditUsage(credits, job.ownerId!, job.creditTaskId ?? job.id, execute,{checkBalance:job.mvTask?.phase==='produce'}));
           } finally { transport = getJobTransportDiagnostics(); }
         });
         job.status = 'succeeded'; job.progress = 100;
@@ -1100,9 +1110,11 @@ const notificationTimer=setInterval(()=>{void notifications.flush().catch(()=>co
 const credits = createCredits(dataDir);
 await credits.load(auth.listUsers());
 await credits.releaseInactiveImages(state.jobs.filter(isActiveJob).map(j=>j.creditTaskId).filter((id):id is string=>Boolean(id)));
+let workShareRewards:ReturnType<typeof createWorkShareRewards>|undefined;
 afterStateSaved=async()=>{
   await credits.releaseTerminalImages(state.jobs.filter(j=>!isActiveJob(j)).map(j=>j.creditTaskId).filter((id):id is string=>Boolean(id)));
   for(const job of state.jobs)if(job.status==='failed'&&job.stickerGenerationTask&&job.ownerId&&(job.failure?.code==='STICKER_STORAGE_LOW'||/表情制作空间不足/.test(job.failure?.message||'')))await credits.refundImageProject(job.ownerId,job.stickerGenerationTask.projectId,job.stickerGenerationTask.phase,'服务器制作空间故障，退回本次失败阶段已扣图片积分；已保存图片继续保留，复用不重复扣费。');
+  await workShareRewards?.settle();
 };
 await afterStateSaved();
 const adminAuth = createAdminAuth(dataDir);
@@ -1143,10 +1155,21 @@ app.get('/api/templates/:id/sample/:kind', (request, response) => {
 });
 mountStickerSamples(app);
 const stickerShares=createStickerShares(dataDir,stickerStudio,publicBase);stickerShares.mountPublic(app);
+const videoShares=createVideoShares({dataDir,base:publicBase,artifact:(ownerId,id)=>state.artifacts.find(a=>a.id===id&&a.ownerId===ownerId&&a.kind==='video'),prepare:async a=>{const file=artifactFile(a);if(!file)throw Error('作品文件不可用。');await oss?.ensure(a.ownerId!,'exports',a.id,file);return file;}});videoShares.mountPublic(app);
+const creditTasks=(ownerId:string,test:(j:Job)=>boolean)=>[...new Set(state.jobs.filter(j=>j.ownerId===ownerId&&test(j)).map(j=>j.creditTaskId).filter((id):id is string=>Boolean(id)))];
+workShareRewards=createWorkShareRewards({dataDir,credits,identity:auth.wechatIdentity,state:()=>state,
+ resolve:async(kind,token)=>{if(kind==='sticker'){const s=await stickerShares.load(token);if(!await stickerShares.current(s))throw Error('作品已更新。');const p=await stickerStudio.view(s.ownerId,s.projectId);return {ownerId:s.ownerId,key:'sticker:'+s.projectId,complete:p.ready&&s.items.length===24,taskIds:creditTasks(s.ownerId,j=>j.stickerGenerationTask?.projectId===s.projectId)};}
+ const s=await videoShares.load(token),job=state.jobs.find(j=>j.ownerId===s.ownerId&&j.artifactId===s.artifactId&&j.status==='succeeded');return {ownerId:s.ownerId,key:'video:'+s.artifactId,complete:Boolean(job),taskIds:creditTasks(s.ownerId,j=>job?.mvTask?j.mvTask?.projectId===job.mvTask.projectId:j.artifactId===s.artifactId)};},
+ stickerOutput:async job=>{if(!job.ownerId||!job.stickerGenerationTask||!['samples','batch'].includes(job.stickerGenerationTask.phase))return false;try{const p=await stickerStudio.view(job.ownerId,job.stickerGenerationTask.projectId);return job.stickerGenerationTask.phase==='batch'?p.ready:Boolean(p.previewHash);}catch{return false;}}
+});await workShareRewards.load();await workShareRewards.settle();
+
 app.get('/api/sticker-styles/:id',(_q,r)=>{const file=stickerStyleFile(_q.params.id);if(!file)return r.status(404).end();r.sendFile(file,{maxAge:'1h'});});
 auth.mount(app, credits.readiness, user => credits.snapshot(user.id));
 mediaPlayback.mountOwned(app);
-stickerShares.mountPrivate(app);
+mountArtifactThumbnails(app,{directory:path.join(dataDir,'artifact-thumbnails'),lookup:(owner,id)=>state.artifacts.find(a=>a.id===id&&a.ownerId===owner&&a.kind==='video'),prepare:async a=>{const file=artifactFile(a);if(!file)throw Error('作品不存在。');if(existsSync(file))return file;const remote=await oss?.signedReadUrl(a.ownerId!,'exports',a.id);if(remote)return remote;return file;}});
+stickerShares.mountPrivate(app);videoShares.mountPrivate(app);
+app.post('/api/work-shares/use',async(q,r)=>{try{const b=q.body||{};if(!['sticker','video'].includes(b.kind)||typeof b.token!=='string'||!/^[a-f0-9]{48}$/.test(b.token))throw Error('作品链接无效。');await workShareRewards!.attribute(userOf(q).id,b.kind,b.token);r.json({ok:true});}catch(e){r.status(400).json({error:e instanceof Error?e.message:'作品已关闭。'});}});
+
 const startingStickerSessions=new Set<string>();
 mountStickerRoutes(app,{base:publicBase,
   privatePacks:async user=>Promise.all((await stickerStudio.list(user.id)).filter(p=>p.ready).map(p=>stickerStudio.publicPack(user.id,p.id))),
@@ -1275,10 +1298,15 @@ mountScheduledTasks(app, scheduledTasks, (id, ownerId) => state.jobs.find(j => j
 const scheduleTimer = setInterval(() => { scheduledTasks.tick().catch(error => console.error('scheduled-tasks.tick:', error.message)); }, 15000);
 scheduleTimer.unref();
 app.get('/api/state', async (request, response) => response.json(await publicState(userOf(request))));
-mountLifecycleRoutes(app,{state:()=>state,save:saveState,snapshot:publicState,stickerOwner:(ownerId,id)=>stickerStudio.load(ownerId,id)});
+mountLifecycleRoutes(app,{canvas:async(u,w)=>saveAccountCanvas(await profileOf(u),w),state:()=>state,save:saveState,snapshot:publicState,stickerOwner:(ownerId,id)=>stickerStudio.load(ownerId,id)});
 mountMediaFolders(app,{state:()=>state,save:saveState,snapshot:publicState});
 mountCreativeNotes(app,{state:()=>state,save:saveState});
-mountMvRecreation(app,{removeCache:async p=>{const base=path.resolve(dataDir,'mv-recreations'),target=path.resolve(base,p.id);if(path.dirname(target)!==base||!/^[a-f0-9-]{36}$/.test(p.id))throw Error('Invalid cache path');await rm(target,{recursive:true,force:true});},state:()=>state,save:saveState,snapshot:publicState,kick:()=>{void processQueue();},session:async user=>{const profile=await profileOf(user),s={...newSession(profile.settings.defaultModelId),ownerId:user.id,mode:'work' as const,title:'MV复刻项目'};state.sessions.unshift(s);return s.id;},start:async(user,p,phase)=>{const s=getSession(p.sessionId,user.id);if(!s)throw Error('项目会话已删除。');const job=await enqueueAgentMessage(s,'MV复刻「'+p.name+'」 · '+phase,[],undefined,undefined,'create');job.mvTask={projectId:p.id,phase};}});
+mountMvRecreation(app,{validSession:(u,id)=>Boolean(getSession(id,u.id)),quote:async(u,input,sources)=>{
+ const session=getSession(input.sessionId,u.id),vision=await getModelConfig('understanding'),text=await getModelConfig('text',session?.modelId);if(!vision||!text)throw Error('请先配置画面与音频理解模型、文本模型。');
+ const vp=await credits.price(vision.modelId),tp=await credits.price(text.modelId),wallet=await credits.snapshot(u.id),points=estimateMvCredits(sources,input.duration,vp,tp);let affordableSeconds=0;
+ for(let seconds=5;seconds<=Math.min(600,state.media.find(m=>m.id===input.audioId&&m.ownerId===u.id)?.duration||0);seconds++)if(estimateMvCredits(sources,seconds,vp,tp)<=wallet.balance)affordableSeconds=seconds;
+ return {points,balance:wallet.balance,pricingHash:mvTemplatePriceHash(vp,tp),affordableSeconds,sourceCount:sources.length,estimated:true};
+},removeCache:async p=>{const base=path.resolve(dataDir,'mv-recreations'),target=path.resolve(base,p.id);if(path.dirname(target)!==base||!/^[a-f0-9-]{36}$/.test(p.id))throw Error('Invalid cache path');await rm(target,{recursive:true,force:true});},state:()=>state,save:saveState,snapshot:publicState,kick:()=>{void processQueue();},session:async user=>{const profile=await profileOf(user),s={...newSession(profile.settings.defaultModelId),ownerId:user.id,mode:'work' as const,title:'MV复刻项目'};state.sessions.unshift(s);return s.id;},start:async(user,p,phase)=>{const s=getSession(p.sessionId,user.id);if(!s)throw Error('项目会话已删除。');const job=await enqueueAgentMessage(s,'MV复刻「'+p.name+'」 · '+phase,[],undefined,undefined,'create');job.mvTask={projectId:p.id,phase};if(phase==='produce')job.clientRequestId=p.createdFromRequestId;if(p.canvasPosition)job.toolPlacement=p.canvasPosition;}});
 mountToolBatchRoutes(app,{state:()=>state,templates:()=>videoTemplates.map(publicTemplate),save:saveState,snapshot:publicState,kick:()=>{void processQueue();},
  stop:(user,id)=>{const session=getSession(id,user.id);if(!session)return;for(const job of jobRunner.stopSession(state.jobs,user.id,id,now()))if(job.status==='cancelled')addReply(session,job,'已停止运行。');},
  start:async(user,batch,index)=>{
@@ -1533,9 +1561,9 @@ app.get('/api/media/:id/thumbnail', async (request, response) => {
         pending = (async () => {
           const source = path.join(mediaDir, item.id), tmp = path.join(mediaDir, `${item.id}-preview-${randomUUID()}.jpg`);
           try {
-            await oss?.ensure(user.id, 'media', item.id, source);
-            if (!existsSync(source)) throw Object.assign(new Error('素材文件不存在。'), { code: 'ENOENT' });
-            await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', ...(item.kind==='video'?['-ss',String(Math.min(1,(item.duration||1)/2))]:[]), '-i', source, '-frames:v', '1', '-vf', 'scale=320:320:force_original_aspect_ratio=decrease', '-q:v', '4', tmp], 30_000);
+            const remote=!existsSync(source)?await oss?.signedReadUrl(user.id,'media',item.id):undefined;
+            if (!remote&&!existsSync(source)) throw Object.assign(new Error('素材文件不存在。'), { code: 'ENOENT' });
+            await runFFmpeg(['-hide_banner', '-loglevel', 'error', '-y', ...(item.kind==='video'?['-ss',String(Math.min(1,(item.duration||1)/2))]:[]), '-i', remote||source, '-frames:v', '1', '-vf', 'scale=320:320:force_original_aspect_ratio=decrease', '-q:v', '4', tmp], 30_000);
             if (!state.media.some(media => media.id === item.id && owned(media, user.id))) throw new Error('素材已删除。');
             await rename(tmp, target);
           } finally { await rm(tmp, { force: true }); }

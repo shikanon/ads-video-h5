@@ -304,6 +304,7 @@ export interface MusicSearch {
 }
 
 export interface Artifact {
+  productionOnly?:boolean;
   sizeBytes?: number;
   sticker?: import('./stickerPacks').StickerDelivery;
   creative?: {engine:'defold';sourceHash:string;artifactHash?:string;technicalPassed:boolean;modelSelfChecked:boolean;userAccepted:false};
@@ -369,7 +370,7 @@ export interface JobAttempt {
 }
 
 export interface Job {
-  mvTask?: {projectId:string;phase:'plan'|'lyrics'|'preview'|'render';planHash?:string};
+  mvTask?: {projectId:string;phase:'plan'|'lyrics'|'preview'|'render'|'produce';planHash?:string};
   toolPlacement?: {x:number;y:number};
   clientRequestId?: string;
   clientRequestHash?: string;
@@ -449,6 +450,7 @@ export interface AppSettings {
 }
 
 export interface AppState {
+  toolCanvases?:Partial<Record<'stickers'|'video',import('./toolWorkspace').ToolCanvas>>;
   mediaFolders?: import('./mediaFolders').MediaFolder[];
   creativeNoteLinks?: Array<{id:string;sessionId?:string;title:string}>;
   toolBatches?: import('./toolBatches').ToolBatchView[];

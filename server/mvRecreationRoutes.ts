@@ -1,17 +1,31 @@
 import type {Express} from 'express';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import type {MvRecreation} from '../shared/mvRecreation';
 import type {MediaItem,Job} from '../shared/types';
 import {userOf,type PublicUser} from './auth';
 import {validateMvPlan,mvPlanHash} from './mvRecreation';
 import type {MediaFolder} from '../shared/mediaFolders';
 import {mvFolderSelection} from './mediaFolders';
-export function mountMvRecreation(app:Express,o:{state:()=>{mediaFolders?:MediaFolder[];mvRecreations?:MvRecreation[];media:MediaItem[];jobs:Job[]};save:()=>Promise<void>;snapshot:(u:PublicUser)=>Promise<unknown>;start:(u:PublicUser,p:MvRecreation,phase:'plan'|'lyrics'|'preview'|'render')=>Promise<void>;session:(u:PublicUser)=>Promise<string>;kick:()=>void;removeCache?:(p:MvRecreation)=>Promise<void>}){
+import {mvTemplateSelection,type MvTemplateInput} from './mvTemplate';
+export function mountMvRecreation(app:Express,o:{state:()=>{mediaFolders?:MediaFolder[];mvRecreations?:MvRecreation[];media:MediaItem[];jobs:Job[]};save:()=>Promise<void>;snapshot:(u:PublicUser)=>Promise<unknown>;start:(u:PublicUser,p:MvRecreation,phase:'plan'|'lyrics'|'preview'|'render'|'produce')=>Promise<void>;session:(u:PublicUser)=>Promise<string>;kick:()=>void;removeCache?:(p:MvRecreation)=>Promise<void>;validSession?:(u:PublicUser,id:string)=>boolean;quote?:(u:PublicUser,input:MvTemplateInput,sources:MediaItem[])=>Promise<{points:number;balance:number;pricingHash:string;[key:string]:unknown}>}){
  const rows=()=>o.state().mvRecreations||(o.state().mvRecreations=[]),busy=(p:MvRecreation)=>o.state().jobs.some(j=>j.ownerId===p.ownerId&&j.mvTask?.projectId===p.id&&['queued','running','stopping'].includes(j.status));
  const find=(u:PublicUser,id:string)=>{const p=rows().find(p=>p.ownerId===u.id&&p.id===id);if(!p)throw Object.assign(Error('复刻项目不存在。'),{status:404});return p;};
  const locks=new Map<string,Promise<void>>();
  const wrap=(fn:(q:any,r:any)=>Promise<void>)=>async(q:any,r:any)=>{const key=userOf(q).id,previous=locks.get(key)||Promise.resolve();const next=previous.catch(()=>{}).then(()=>fn(q,r));if(q.method!=='GET')locks.set(key,next);try{await next;}catch(e){r.status((e as any).status||400).json({error:e instanceof Error?e.message:'MV操作失败。'});}finally{if(locks.get(key)===next)locks.delete(key);}};
  app.get('/api/mv-recreations',wrap(async(q,r)=>{const u=userOf(q);r.set('Cache-Control','no-store').json({projects:rows().filter(p=>p.ownerId===u.id)});}));
+ app.post('/api/mv-recreations/template/quote',wrap(async(q,r)=>{const u=userOf(q),b=q.body||{},{sources}=mvTemplateSelection(o.state(),u.id,b);if(!o.validSession?.(u,b.sessionId)||!o.quote)throw Error('请重新打开当前画布。');r.set('Cache-Control','no-store').json(await o.quote(u,b,sources));}));
+ app.post('/api/mv-recreations/template',wrap(async(q,r)=>{
+  const u=userOf(q),b=q.body||{};if(typeof b.requestId!=='string'||!/^[-\w]{16,80}$/.test(b.requestId))throw Error('提交标识无效。');
+  const {folder,audio,sources}=mvTemplateSelection(o.state(),u.id,b);if(!o.validSession?.(u,b.sessionId)||!o.quote)throw Error('画布不存在。');
+  const hash=createHash('sha256').update(JSON.stringify([b.folderId,b.audioId,b.duration,b.resolution,b.prompt.trim(),b.sessionId,b.position])).digest('hex');
+  let p=rows().find(p=>p.ownerId===u.id&&p.createdFromRequestId===b.requestId);
+  if(p&&p.templateRequestHash!==hash)throw Object.assign(Error('提交内容已变化，请重新提交。'),{status:409});
+  if(p&&o.state().jobs.some(j=>j.ownerId===u.id&&j.mvTask?.projectId===p!.id)){r.json({project:p,state:await o.snapshot(u)});return;}
+  if(o.state().jobs.some(j=>j.ownerId===u.id&&j.sessionId===b.sessionId&&['queued','running','stopping'].includes(j.status)))throw Object.assign(Error('当前画布已有任务，请先等待完成。'),{status:409});
+  const quote=await o.quote(u,b,sources);if(b.pricingHash!==quote.pricingHash)throw Object.assign(Error('模型价格已变化，请刷新预计积分。'),{status:409});if(quote.balance<quote.points)throw Object.assign(Error('预计积分不足，请缩短时长或减少文件夹素材。'),{status:402});
+  if(!p){if(rows().filter(p=>p.ownerId===u.id).length>=100)throw Error('请先整理已有MV项目。');const at=new Date().toISOString();p={id:randomUUID(),ownerId:u.id,sessionId:b.sessionId,name:folder.name+' · 叙事蒙太奇',referenceId:'',audioId:audio.id,sourceIds:sources.map(m=>m.id),duration:b.duration,resolution:b.resolution,editSkill:'narrative-montage',sourceFolderId:folder.id,createdFromRequestId:b.requestId,templateRequestHash:hash,canvasPosition:b.position,instructions:b.prompt.trim(),createdAt:at,updatedAt:at};rows().push(p);}
+  await o.start(u,p,'produce');await o.save();r.status(202).json({project:p,state:await o.snapshot(u)});o.kick();
+ }));
  app.post('/api/mv-recreations/from-folder',wrap(async(q,r)=>{
   const u=userOf(q),b=q.body||{};if(typeof b.prompt!=='string'||!b.prompt.trim()||b.prompt.length>12000||b.folderId!==undefined&&typeof b.folderId!=='string'||typeof b.requestId!=='string'||!/^[-\w]{16,80}$/.test(b.requestId))throw Error('请写下MV要求并提供有效提交标识。');
   const previous=rows().find(p=>p.ownerId===u.id&&p.createdFromRequestId===b.requestId);if(previous){if(previous.instructions!==b.prompt.trim()||b.folderId&&b.folderId!==previous.sourceFolderId)throw Object.assign(Error('提交内容已改变。'),{status:409});r.json({project:previous,state:await o.snapshot(u)});return;}
