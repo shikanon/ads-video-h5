@@ -1,4 +1,14 @@
 import {resolveResearchMode} from './questionResearch';
+import { mountLifecycleRoutes,detachArtifact,canvasPoint } from './lifecycleRoutes';
+import {mountToolBatchRoutes,batchViews} from './toolBatchRoutes';
+import {toolPrompt} from './toolPrompts';
+import type {ToolBatch} from '../shared/toolBatches';
+import type {CreativeNote} from '../shared/creativeNotes';
+import {mountCreativeNotes} from './creativeNoteRoutes';
+import type {MvRecreation} from '../shared/mvRecreation';
+import {mountMvRecreation} from './mvRecreationRoutes';
+import {planMv,renderMv} from './mvRecreation';
+import {createChatSubmissions} from './chatSubmission';
 import {createNotifications,disabledNotifications} from './wechatNotifications';
 import {analyzeFilm,readFilmReport,filmDirectory,reusableShot,removeFilmData} from './filmAnalysis';
 import {fileDigest} from './artifactIntegrity';
@@ -19,7 +29,7 @@ import { reusableDraft, summarizeTitle } from './session-management';
 import { createScheduledTasks, mountScheduledTasks } from './scheduled-tasks';
 import { createJobQueue } from './jobQueue';
 import multer from 'multer';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import {createJsonStateWriter} from './jsonStateWriter';
 import { cp, copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -126,6 +136,9 @@ const extensions = createExtensions(dataDir);
 await extensions.load();
 
 interface StoredState {
+  mvRecreations?: MvRecreation[];
+  creativeNotes?: CreativeNote[];
+  toolBatches?: ToolBatch[];
   activeSessionId: string;
   sessions: Session[];
   media: MediaItem[];
@@ -195,7 +208,7 @@ async function basePublicState(user: PublicUser): Promise<AppState> {
   const visibleJob=(job:Job)=>{const value=publicJob(job);if(job.stickerGenerationTask){if(value.template&&stickerHash)value.template={...value.template,skillHash:stickerHash};if(job.failure&&(/表情制作空间不足|参考图片.*解码/.test(job.failure.message)||job.failure.code==='STICKER_STORAGE_LOW'||JSON.stringify(job.failure).includes('InputImageSensitiveContentDetected')||job.failure.code==='STICKER_REFERENCE_UNSUITABLE'))value.error=jobFailureMessage(job.failure,job.stage);}return value;};
   const [models, profile, wallet] = await Promise.all([listPublicModels(), profileOf(user), credits.snapshot(user.id)]);
   const textConfig = await getModelConfig('text', getSession(profile.activeSessionId, user.id)?.modelId);
-  return { account: user, features: { conversationModes: true, sessionManagement: true, schedules: true, accountAvatars: true, researchModes: true }, limits: { maxAttachments: MAX_CHAT_ATTACHMENTS }, templates: videoTemplates.map(publicTemplate), credits: wallet, activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, ...(item.kind === 'image' ? { thumbnailUrl: publicUrl('/api/media/' + item.id + '/thumbnail') } : {}), url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.kind==='game'?publicUrl(item.url):assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.projectUrl ? { projectUrl: publicUrl(item.projectUrl) } : {}), ...(item.coverUrl ? { coverUrl: item.kind==='game'?publicUrl(item.coverUrl):assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)).map(visibleJob), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
+  return { account: user, creativeNoteLinks:(state.creativeNotes||[]).filter(n=>n.ownerId===user.id&&n.sessionId).map(n=>({id:n.id,sessionId:n.sessionId,title:n.title})), toolBatches:batchViews(state.toolBatches||[],state.jobs,state.sessions,user.id), features: { conversationModes: true, sessionManagement: true, schedules: true, accountAvatars: true, researchModes: true }, limits: { maxAttachments: MAX_CHAT_ATTACHMENTS }, templates: videoTemplates.map(publicTemplate), credits: wallet, activeSessionId: profile.activeSessionId, sessions: state.sessions.filter((item) => owned(item, user.id)), media: state.media.filter((item) => owned(item, user.id)).map((item) => ({ ...item, ...(item.kind === 'image' ? { thumbnailUrl: publicUrl('/api/media/' + item.id + '/thumbnail') } : {}), url: item.character ? publicUrl(item.url) : assetUrl(user.id, 'media', item.id, item.url), shots: item.shots?.map((shot, index) => ({ ...shot, thumbnailUrl: assetUrl(user.id, 'shots', `${item.id}-${index}`, shot.thumbnailUrl) })) })), artifacts: state.artifacts.filter((item) => owned(item, user.id)).map((item) => ({ ...item, url: item.kind==='game'?publicUrl(item.url):assetUrl(user.id, item.kind === 'video' ? 'exports' : 'artifacts', item.id, item.url), downloadUrl: publicUrl(item.downloadUrl), ...(item.projectUrl ? { projectUrl: publicUrl(item.projectUrl) } : {}), ...(item.coverUrl ? { coverUrl: item.kind==='game'?publicUrl(item.coverUrl):assetUrl(user.id, 'covers', item.id, item.coverUrl) } : {}) })), jobs: state.jobs.filter((item) => owned(item, user.id)).map(visibleJob), settings: profile.settings, models, mode: textConfig ? 'pi' : 'unconfigured' };
 }
 
 function addReply(session: Session, job: Job, text: string, artifactId?: string) {
@@ -204,19 +217,20 @@ function addReply(session: Session, job: Job, text: string, artifactId?: string)
 async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['kind'],'game'|'sticker-pack'>, name: string, bytes: Buffer, mimeType: string, text?: string, duration?: number): Promise<Artifact> {
   throwIfJobCancelled();
   const id = randomUUID();
-  const filename = `${id}.${extFor(mimeType)}`;
-  const artifactPath = path.join(artifactDir, filename);
+  const filename = `${id}.${kind==='video'?'mp4':extFor(mimeType)}`;
+  const category=kind==='video'?'exports':'artifacts';
+  const artifactPath = path.join(kind==='video'?exportDir:artifactDir, filename);
   const mediaId = randomUUID();
   const mediaPath = path.join(mediaDir, mediaId);
   try {
     await writeFile(artifactPath, bytes, { mode: 0o600 });
     await copyFile(artifactPath, mediaPath);
-    await oss?.put(session.ownerId!, 'artifacts', id, artifactPath, mimeType);
+    await oss?.put(session.ownerId!, category, id, artifactPath, mimeType);
     await oss?.put(session.ownerId!, 'media', mediaId, mediaPath, mimeType);
     throwIfJobCancelled();
   } catch (error) {
     await Promise.all([rm(artifactPath, { force: true }), rm(mediaPath, { force: true })]);
-    if (oss) await Promise.allSettled([oss.remove(session.ownerId!, 'artifacts', id), oss.remove(session.ownerId!, 'media', mediaId)]);
+    if (oss) await Promise.allSettled([oss.remove(session.ownerId!, category, id), oss.remove(session.ownerId!, 'media', mediaId)]);
     throw error;
   }
   const version = state.artifacts.filter((item) => item.sessionId === session.id && item.kind === kind).length + 1;
@@ -280,6 +294,16 @@ async function performJob(job: Job): Promise<void> {
     job.progress=Math.max(job.progress||0,Math.min(88,10+events.filter(e=>e.status==='succeeded').length*2));await saveState();
   };
   const basicProgress = workflowProgress;
+  if(job.mvTask){
+    const task=job.mvTask,p=(state.mvRecreations||[]).find(p=>p.ownerId===job.ownerId&&p.id===task.projectId);if(!p)throw Error('MV复刻项目不存在。');
+    if(task.phase!=='plan'&&task.planHash!==p.planHash)throw Error('本次任务的分镜已经改变，请从当前分镜重新提交。');
+    await currentTaskExecution()?.observeDependency('mv-project',{referenceId:p.referenceId,audioId:p.audioId,sourceIds:p.sourceIds,instructions:p.instructions,duration:p.duration,...(task.phase!=='plan'?{planHash:p.planHash}:{})});
+    const directory=path.join(dataDir,'mv-recreations',p.id),file=async(id:string)=>{if(!state.media.some(m=>m.id===id&&m.ownerId===job.ownerId))throw Error('原素材已删除或无权使用。');const target=path.join(mediaDir,id);await oss?.ensure(job.ownerId!,'media',id,target);return target;},progress=async(s:string)=>{throwIfJobCancelled();job.stage=s;updateReply(session,job,s,'commentary','mv-progress');await saveState();};
+    if(task.phase==='plan'){const vision=await getModelConfig('understanding'),text=await getModelConfig('text',job.textModel?.id||session.modelId);if(!vision||!text)throw Error('请先配置画面理解模型与文本模型。');await planMv({project:p,media,file,directory,vision,text,save:saveState,progress});addReply(session,job,'已保存原素材MV分镜，请打开复刻项目核对镜头、字幕和限制，确认后制作20秒样片；样片通过后可渲染整片。');}
+    else{const existing=task.phase==='preview'?p.previewArtifactId:p.artifactId;if(existing&&state.artifacts.some(a=>a.id===existing&&a.ownerId===job.ownerId)){job.artifactId=existing;addReply(session,job,'已复用本版分镜的成片。',existing);return;}
+      const result=await renderMv({project:p,media,file,directory,preview:task.phase==='preview',progress,onNode:async(index,file,duration)=>{p.nodeArtifacts||={};const key=String(index),old=p.nodeArtifacts[key];if(old&&state.artifacts.some(a=>a.id===old&&a.ownerId===job.ownerId))return;throwIfJobCancelled();currentTaskExecution()?.guard();const a=await addArtifact(session,job,'video',p.name+' · 节点'+(index+1)+'（无声）',await readFile(file),'video/mp4',undefined,duration);p.nodeArtifacts[key]=a.id;await saveState();}});throwIfJobCancelled();currentTaskExecution()?.guard();const artifact=await addArtifact(session,job,'video',p.name+(task.phase==='preview'?' · 20秒样片':' · 复刻成片'),await readFile(result.file),'video/mp4',undefined,result.receipt.duration);job.artifactId=artifact.id;if(task.phase==='preview')p.previewArtifactId=artifact.id;else p.artifactId=artifact.id;p.updatedAt=now();await saveState();addReply(session,job,'原素材MV已实际渲染，时长、音轨和全片解码检查通过。视觉与节奏仍需你验收；没有生成新角色。',artifact.id);
+    }return;
+  }
   if(job.filmTask){
     const task=job.filmTask,source=media.find(m=>m.id===task.sourceId&&m.kind==='video');
     if(!source||!Number.isFinite(source.duration)||!source.duration)throw Error('原片不存在或没有有效时长。');
@@ -905,7 +929,7 @@ async function processQueuedJob(job: Job) {
           if(activeSession){activeSession.taskRevisions||={};activeSession.taskRevisions[job.taskSpec.id]??=job.taskSpec.revision;}
           await saveState();
           const execute = () => withAgentRuntime(runtime, async()=>{
-            const manifest={models:snapshotModels(models!).map(({id,modelId,provider,baseUrl})=>({id,modelId,provider,baseUrl})),capabilities:job.capabilities,extensions:runtime.fingerprint,template:job.template,film:job.filmTask};
+            const manifest={models:snapshotModels(models!).map(({id,modelId,provider,baseUrl})=>({id,modelId,provider,baseUrl})),capabilities:job.capabilities,extensions:runtime.fingerprint,template:job.template,film:job.filmTask,mv:job.mvTask};
             const assertTemplate = async () => {
               if (!job.template) return;
               const entry = videoTemplates.find(t => t.id === job.template!.id);
@@ -1128,6 +1152,8 @@ mountStickerRoutes(app,{base:publicBase,
   }finally{startingStickerSessions.delete(session.id);}
 }});
 mountStickerStudioRoutes(app,{studio:stickerStudio,base:publicBase,
+  active:(ownerId,projectId)=>state.jobs.some(j=>j.ownerId===ownerId&&(j.stickerGenerationTask?.projectId===projectId||j.stickerTask?.packId==='custom-'+projectId)&&isActiveJob(j)),
+  removed:async(ownerId,projectId)=>{for(const a of state.artifacts.filter(a=>a.ownerId===ownerId&&a.kind==='sticker-pack'&&a.sticker?.packId==='custom-'+projectId))detachArtifact(state,ownerId,a.id);for(const s of state.sessions.filter(s=>s.ownerId===ownerId))if(s.toolWorkspace)s.toolWorkspace.nodes=s.toolWorkspace.nodes.filter(n=>n.sourceKind!=='sticker'||n.sourceId!==projectId);await saveState();},
   pricing:async()=>{const model=await getModelConfig('image');if(!model)return null;const p=await credits.imagePricing(model.modelId);return {...p,styleCandidates:p.pointsPerImage*2,selectedSamples:p.pointsPerImage*3,staticSamples:p.pointsPerImage*3,dynamicSamples:p.pointsPerImage*4,batch:p.pointsPerImage*21};},
   quote:async(user,task)=>{const model=await getModelConfig('image');if(!model)throw Error('图片模型尚未配置。');return credits.imageQuote(user.id,model.modelId,await stickerStudio.pendingImageIds(user.id,task));},
   version:async()=>{const entry=videoTemplates.find(item=>item.workflow==='sticker-pack');return entry?(await loadVideoTemplate(entry)).skillHash:undefined;},
@@ -1236,6 +1262,21 @@ mountScheduledTasks(app, scheduledTasks, (id, ownerId) => state.jobs.find(j => j
 const scheduleTimer = setInterval(() => { scheduledTasks.tick().catch(error => console.error('scheduled-tasks.tick:', error.message)); }, 15000);
 scheduleTimer.unref();
 app.get('/api/state', async (request, response) => response.json(await publicState(userOf(request))));
+mountLifecycleRoutes(app,{state:()=>state,save:saveState,snapshot:publicState,stickerOwner:(ownerId,id)=>stickerStudio.load(ownerId,id)});
+mountCreativeNotes(app,{state:()=>state,save:saveState});
+mountMvRecreation(app,{state:()=>state,save:saveState,snapshot:publicState,kick:()=>{void processQueue();},session:async user=>{const profile=await profileOf(user),s={...newSession(profile.settings.defaultModelId),ownerId:user.id,mode:'work' as const,title:'MV复刻项目'};state.sessions.unshift(s);return s.id;},start:async(user,p,phase)=>{const s=getSession(p.sessionId,user.id);if(!s)throw Error('项目会话已删除。');const job=await enqueueAgentMessage(s,'MV复刻「'+p.name+'」 · '+phase,[],undefined,undefined,'create');job.mvTask={projectId:p.id,phase};}});
+mountToolBatchRoutes(app,{state:()=>state,templates:()=>videoTemplates.map(publicTemplate),save:saveState,snapshot:publicState,kick:()=>{void processQueue();},
+ stop:(user,id)=>{const session=getSession(id,user.id);if(!session)return;for(const job of jobRunner.stopSession(state.jobs,user.id,id,now()))if(job.status==='cancelled')addReply(session,job,'已停止运行。');},
+ start:async(user,batch,index)=>{
+   const entry=videoTemplates.find(t=>t.id===batch.templateId&&t.workflow!=='sticker-pack'&&t.workflow!=='defold-game');if(!entry)throw Error('视频模板已不可用。');
+   if(batch.attachmentIds.some(id=>!state.media.some(m=>m.id===id&&owned(m,user.id))))throw Error('素材已删除，请重新选择。');
+   const requestId='batch_'+batch.id+'_'+index;let session=state.sessions.find(s=>s.ownerId===user.id&&s.toolBatchId===batch.id&&s.id===batch.items[index].sessionId);
+   if(!session){const profile=await profileOf(user),first=state.sessions.find(s=>s.id===batch.items[0]?.sessionId),position={x:Math.min(1e9,batch.position.x+index%3*180),y:Math.min(1e9,batch.position.y+Math.floor(index/3)*220)};session={...newSession(first?.modelId??profile.settings.defaultModelId),ownerId:user.id,mode:'work',toolBatchId:batch.id,title:batch.items[index].topic.slice(0,40),toolWorkspace:{version:1,category:'video',templateId:entry.id,draft:'',attachmentIds:[...batch.attachmentIds],nodes:[],camera:{x:position.x-16,y:position.y-16,zoom:1},nextPosition:position,includeHistory:false,updatedAt:now()}};state.sessions.unshift(session);batch.items[index].sessionId=session.id;await saveState();}
+   const previous=state.jobs.find(j=>j.ownerId===user.id&&j.sessionId===session!.id&&j.clientRequestId===requestId);if(previous)return {sessionId:session.id,jobId:previous.id};
+   const topic=batch.items[index].topic,prompt=toolPrompt(publicTemplate(entry)).replace(/【填写】/g,topic)+'\n本条主题：'+topic+'。只制作本条独立视频，创意细节根据主题补齐，按原模板查证事实并执行技术检查；不要等待其他主题或逐条追问。';
+   const job=await enqueueAgentMessage(session,prompt,batch.attachmentIds,undefined,undefined,'create');job.clientRequestId=requestId;job.toolPlacement=session.toolWorkspace!.nextPosition;return {sessionId:session.id,jobId:job.id};
+ }
+});
 app.post('/api/sessions', async (request, response) => {
   const user = userOf(request), profile = await profileOf(user);
   const mode = request.body?.mode === 'chat' ? 'chat' : 'work';
@@ -1294,6 +1335,7 @@ app.post('/api/sessions/:id/stop', async (request, response) => {
   await saveState();
   response.json(await publicState(user));
 });
+const submitChat=createChatSubmissions();
 app.post('/api/chat', async (request, response) => {
   const user = userOf(request);
   const session = getSession(String(request.body?.sessionId || ''), user.id);
@@ -1314,8 +1356,14 @@ app.post('/api/chat', async (request, response) => {
     try { resolveTemplateRequest(text, session, videoTemplates); }
     catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : '请选择有效的视频模板。' }); }
   }
-  await enqueueAgentMessage(session, text, attachments, request.body?.voiceTicket, undefined, interaction, researchMode);
-  await saveState(); response.json(await publicState(user)); void processQueue();
+  let position;try{position=canvasPoint(request.body?.position,true);}catch(e){return response.status(400).json({error:(e as Error).message});}
+  const payload={text,attachments,interaction,researchMode,...(position?{position}:{})};
+  try{const snapshot=await submitChat(state.jobs,user.id,session.id,request.body?.requestId,payload,async()=>{
+    const job=await enqueueAgentMessage(session,text,attachments,request.body?.voiceTicket,undefined,interaction,researchMode);
+    if(position)job.toolPlacement=position;
+    if(request.body?.requestId){job.clientRequestId=request.body.requestId;job.clientRequestHash=createHash('sha256').update(JSON.stringify(payload)).digest('hex');}
+    await saveState();return publicState(user);
+  },()=>publicState(user));response.json(snapshot);void processQueue();}catch(e){response.status((e as any).status||400).json({error:e instanceof Error?e.message:'提交未完成，请重试。',...(e instanceof CreditError?{code:e.code}:{})});}
 });
 app.post('/api/media', upload.array('files', 6), async (request, response) => {
   const user = userOf(request);
@@ -1440,8 +1488,10 @@ app.delete('/api/media/:id', async (request, response) => {
   const user = userOf(request);
   const item = state.media.find((media) => media.id === request.params.id && owned(media, user.id));
   if (!item) return response.status(404).json({ error: '素材不存在。' });
-    if(state.jobs.some(j=>j.ownerId===user.id&&j.filmTask?.sourceId===item.id&&['queued','running','stopping'].includes(j.status)))return response.status(409).json({error:'请先停止或等待该原片的拉片、归档任务完成。'});
+  if(state.jobs.some(j=>j.ownerId===user.id&&isActiveJob(j)&&((j.mvTask&&(state.mvRecreations||[]).some(p=>p.id===j.mvTask!.projectId&&[p.referenceId,p.audioId,...p.sourceIds].includes(item.id)))||j.authorAvatarId===item.id||j.filmTask?.sourceId===item.id||state.bgmBySession[j.sessionId]===item.id||state.sessions.some(s=>s.ownerId===user.id&&s.id===j.sessionId&&(s.messages.some(m=>m.attachmentIds?.includes(item.id))||s.plan?.clips.some(c=>c.sourceId===item.id)||s.plan?.coverMediaId===item.id)))))return response.status(409).json({error:'素材正在任务中使用，请先停止或等待任务完成。'});
   state.media = state.media.filter((media) => media.id !== item.id);
+  for(const note of state.creativeNotes||[])if(note.ownerId===user.id)note.attachmentIds=note.attachmentIds.filter(id=>id!==item.id);
+  for(const session of state.sessions.filter(s=>owned(s,user.id))){for(const m of session.messages)m.attachmentIds=(m.attachmentIds||[]).filter(id=>id!==item.id);if(session.toolWorkspace){session.toolWorkspace.attachmentIds=session.toolWorkspace.attachmentIds.filter(id=>id!==item.id);session.toolWorkspace.nodes=session.toolWorkspace.nodes.filter(n=>n.sourceKind!=='media'||n.sourceId!==item.id);}}
   const profile=await profileOf(user);
   if(profile.settings.authorAvatarId===item.id)profile.settings.authorAvatarId=null;
   for (const session of state.sessions) if (owned(session, user.id) && (session.plan?.clips.some((clip) => clip.sourceId === item.id) || session.plan?.coverMediaId === item.id)) session.plan = null;
@@ -1533,7 +1583,9 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   if(job.cancelReason==='superseded')return response.status(409).json({error:'此任务已被后续要求替代，请继续最新任务，不能重试旧版本。'});
   const candidate=state.artifacts.find(a=>a.id===job.artifactId&&owned(a,user.id));
   const needsLessonRepair=job.status==='succeeded'&&candidate?.plan?.lesson&&candidate.review?.status==='needs-review';
-  if (job.status !== 'failed'&&!needsLessonRepair) return response.status(409).json({ error: '只有失败的任务或未通过审查的教学成片可以重试。' });
+  const resumeSticker=job.status==='cancelled'&&Boolean(job.stickerGenerationTask);
+  const resumeBatch=job.status==='cancelled'&&Boolean(retrySession.toolBatchId||job.mvTask);
+  if (job.status !== 'failed'&&!needsLessonRepair&&!resumeSticker&&!resumeBatch) return response.status(409).json({ error: '只有失败任务、已停止的表情或批量任务、未通过审查的教学成片可以继续。' });
   if(job.stickerGenerationTask){
     if(job.failure&&(JSON.stringify(job.failure).includes('STICKER_REFERENCE_UNSUITABLE')||JSON.stringify(job.failure).includes('InputImageSensitiveContentDetected')))return response.status(409).json({error:jobFailureMessage(job.failure,job.stage),code:'STICKER_REPLACE_REFERENCE'});
     try{await stickerStudio.load(user.id,job.stickerGenerationTask.projectId);}catch{return response.status(409).json({error:'旧项目记录不可用，请在表情工坊点击“调整设定”后重新提交。',code:'STICKER_TEMPLATE_UPDATED'});}
@@ -1543,7 +1595,7 @@ app.post('/api/jobs/:id/retry', async (request, response) => {
   // An unavailable auditor has no content correction to make. Recheck the
   // existing artifact instead of restarting today's research and rendering.
   if(needsLessonRepair&&candidate?.review)job.kind=reviewNeedsContentRepair(candidate.review)?'export':'review';
-  job.status = 'queued'; job.error = undefined; job.progress = 0; job.updatedAt = now();
+  job.status = 'queued'; job.stopRequestedAt=undefined;job.cancelledAt=undefined;job.cancelReason=undefined;job.error = undefined; job.progress = 0; job.updatedAt = now();
   const session = getSession(job.sessionId);
   if(session){session.messages=session.messages.filter(m=>!(m.role==='assistant'&&m.jobId===job.id));job.capabilities=structuredClone(session.capabilities||defaultAgentCapabilities());}
   await saveState(); response.json(await publicState(user)); void processQueue();

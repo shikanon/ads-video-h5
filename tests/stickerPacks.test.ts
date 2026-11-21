@@ -109,12 +109,11 @@ test('saved sticker deliveries restore their story settings and changing account
   assert.equal(page.data.title,'被你哄好的一天');assert.equal(page.data.result,null);assert.equal(page._sessionId,'b');page.onUnload();
 });
 
-test('using the sticker tool opens style choice in the current workspace without submitting a message or replacing a draft',async()=>{
-  const calls:any[]=[],templates=[{id:'qingmao-stickers',name:'动态表情套装',description:'',output:'sticker-pack',defaults:{seconds:24}}];
-  const app:any={_generation:1,state:{activeSessionId:'one',templates},pendingAttachments:['keep'],subscribe:()=>()=>{},refresh:async()=>app.state,client:{hasSession:()=>true,request:async()=>({templates}),templateAssetUrl:()=>''}};
-  const page=await capturePage('templates',app,{showShareMenu(){},navigateTo:(v:any)=>calls.push(v)});page.onShow();await new Promise(r=>setTimeout(r,0));
-  page.use({currentTarget:{dataset:{id:'qingmao-stickers'}}});assert.equal(calls.length,1);assert.equal(calls[0].url,'/pages/sticker-studio/index?from=template&styleId=lightmao&mode=dynamic&sessionId=one');
-  assert.deepEqual(app.pendingAttachments,['keep']);assert.equal(app.pendingTemplate,undefined);page.onHide();
+test('using the sticker template fills the tool draft and preserves pending chat attachments without generation',async()=>{
+ const calls:any[]=[],templates=[{id:'qingmao-stickers',name:'动态表情套装',description:'',output:'sticker-pack',defaults:{seconds:24}}];
+ const app:any={_generation:1,state:{activeSessionId:'one',sessions:[],media:[],artifacts:[],jobs:[],templates},pendingAttachments:['keep'],subscribe:()=>()=>{},refresh:async()=>app.state,client:{hasSession:()=>true,request:async()=>({templates}),templateAssetUrl:()=>''}};
+ const page=await capturePage('templates',app,{showShareMenu(){},navigateTo:(v:any)=>calls.push(v)});page.onLoad();page.onShow();await new Promise(r=>setTimeout(r,0));
+ page.chooseTemplate({currentTarget:{dataset:{id:'qingmao-stickers'}}});assert.match(page.data.prompt,/@动态表情套装/);assert.equal(calls.length,0);assert.deepEqual(app.pendingAttachments,['keep']);assert.equal(app.pendingTemplate,undefined);page.onHide();
 });
 
 test('a late sticker submission receipt cannot navigate away from a newer page or conversation',async()=>{

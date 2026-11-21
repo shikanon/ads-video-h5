@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { readFileSync as requireSource } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -73,8 +74,19 @@ export async function capturePage(name: string, app: any, platform: any) {
   const helperFile = path.join(miniRoot, 'utils/page.js');
   runInNewContext(await readFile(helperFile, 'utf8'), { module: nativePageModule, wx: platform, getApp: () => app }, { filename: helperFile });
   const nodeRequire = createRequire(file);
+  const helpers = new Map<string, any>();
+  const scopedRequire = (id: string): any => {
+    if (id === '../../utils/page' || id === './page') return nativePageModule.exports;
+    if (!/infinite-canvas|tool-projects/.test(id)) return nodeRequire(id);
+    const helper = path.join(miniRoot, 'utils', path.basename(id) + '.js');
+    if (helpers.has(helper)) return helpers.get(helper).exports;
+    const mod: any = { exports: {} }; helpers.set(helper, mod);
+    const nativeRequire = createRequire(helper);
+    runInNewContext(requireSource(helper,'utf8'), {module:mod,wx:platform,getApp:()=>app,require:(name:string)=>name==='./page'?nativePageModule.exports:nativeRequire(name),setTimeout,clearTimeout},{filename:helper});
+    return mod.exports;
+  };
   runInNewContext(await readFile(file, 'utf8'), { Page: (definition: any) => { page = definition; }, getApp: () => app, wx: platform,
-    require: (id: string) => id === '../../utils/page' ? nativePageModule.exports : nodeRequire(id), setTimeout, clearTimeout, setInterval, clearInterval }, { filename: file });
+    require: scopedRequire, setTimeout, clearTimeout, setInterval, clearInterval }, { filename: file });
   page.data = structuredClone(page.data); page.setData = (patch: any, callback?: () => void) => { Object.assign(page.data, patch); callback?.(); };
   page.selectComponent = () => null;
   return page;

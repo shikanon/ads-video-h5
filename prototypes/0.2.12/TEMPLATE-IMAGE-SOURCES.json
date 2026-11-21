@@ -1,0 +1,26 @@
+{
+  "template-lightmao-01": {
+    "source": "skills/qingmao-stickers/assets/pack/01/still.png",
+    "sourceSha256": "d812b1cbe061706930ef6f3d123e74f7b6ae4f85ee71a75776629aa62370457b"
+  },
+  "template-lightmao-03": {
+    "source": "skills/qingmao-stickers/assets/pack/03/still.png",
+    "sourceSha256": "ed4772cdfa6ca92a6b5ee11b2b3c8b7ae0e6d22a83d86103dfd60cd9cd524831"
+  },
+  "template-interface": {
+    "source": "skills/video-style-interface/assets/poster.png",
+    "sourceSha256": "8a85142f72506ecc95e1f0d4c22817eaad945bfcd545f4b514e3c51255493c80"
+  },
+  "template-diagram": {
+    "source": "skills/video-style-diagram/assets/poster.png",
+    "sourceSha256": "38159df4ed8f0dcc01119aca970643de36fb36c887cd518ae4a1dabe7a87f5c8"
+  },
+  "template-spatial": {
+    "source": "skills/video-style-spatial/assets/poster.png",
+    "sourceSha256": "626be7f01a4c4126eda4f57eeef7b75778b5a8d0f23c685c2c07ee5d338a29a4"
+  },
+  "template-news": {
+    "source": "skills/daily-ai-frontier/assets/poster.png",
+    "sourceSha256": "d55b98b6b2649abb872d9508e38fb8e6fbec917ea73bbb75c14d3ee3d9226219"
+  }
+}

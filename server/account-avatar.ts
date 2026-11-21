@@ -11,6 +11,7 @@ export async function mountAccountAvatar(app: Express, dataDir: string, publicBa
   await mkdir(directory, { recursive: true });
   const prefix = publicBase + '/api/account/avatar/';
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1, fields: 0 } }).single('avatar');
+  app.delete('/api/account/avatar',async(req,res,next)=>{try{const user=userOf(req),previous=user.avatarUrl,updated=await save(user.id,'');const id=previous?.startsWith(prefix)?previous.slice(prefix.length):'';if(/^[a-f0-9-]{36}$/.test(id))await rm(path.join(directory,id+'.jpg'),{force:true});res.json({user:updated});}catch(e){next(e);}});
   app.post('/api/account/avatar', (req: Request, res: Response, next: NextFunction) => {
     upload(req, res, error => {
       if (error) { res.status(400).json({ error: '请选择一张不超过 4 MB 的 PNG、JPEG 或 WebP 头像。' }); return; }

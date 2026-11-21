@@ -13,6 +13,7 @@ export interface Shot {
 }
 
 export interface MediaItem {
+  creativeAsset?: {role:'character'|'scene';identity:string};
   document?: {text:string;truncated:boolean};
   visualText?: {sourceHash:string;text:string;modelId:string};
   filmAnalysis?: import('./film').FilmIndex;
@@ -365,6 +366,10 @@ export interface JobAttempt {
 }
 
 export interface Job {
+  mvTask?: {projectId:string;phase:'plan'|'preview'|'render';planHash?:string};
+  toolPlacement?: {x:number;y:number};
+  clientRequestId?: string;
+  clientRequestHash?: string;
   stickerGenerationTask?: import('./stickerPacks').StickerGenerationTask;
   stickerTask?: import('./stickerPacks').StickerTask;
   stickerRequestId?: string;
@@ -401,6 +406,8 @@ export interface Job {
 }
 
 export interface Session {
+  toolBatchId?: string;
+  toolWorkspace?: import('./toolWorkspace').ToolWorkspace;
   mode?: 'chat' | 'work';
   archivedAt?: string | null;
   taskSpec?: import('./taskRuntime').TaskSpec;
@@ -439,6 +446,8 @@ export interface AppSettings {
 }
 
 export interface AppState {
+  creativeNoteLinks?: Array<{id:string;sessionId?:string;title:string}>;
+  toolBatches?: import('./toolBatches').ToolBatchView[];
   notifications?: import('./notifications').NoticeInbox;
   account?: { id: string; displayName: string; avatarUrl?: string; authProvider?: 'email' | 'wechat' };
   features?: { conversationModes: boolean; sessionManagement: boolean; schedules: boolean; accountAvatars?: boolean; researchModes?: boolean; notifications?: boolean; filmAnalysis?: boolean };

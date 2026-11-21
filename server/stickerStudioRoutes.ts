@@ -4,6 +4,7 @@ import { userOf, type PublicUser } from './auth';
 import { validateStickerRecipe, type StickerStudio, type StickerRecipe } from './stickerStudio';
 import type { StickerGenerationTask } from '../shared/stickerPacks';
 import { stickerStyles } from './stickerStyles';
+import { displayName,canvasPoint } from './lifecycleRoutes';
 const requestIdPattern=/^[a-zA-Z0-9_-]{16,80}$/;
 export function mountStickerStudioRoutes(app:Express,o:{studio:StickerStudio;ready:()=>Promise<boolean>;
   base?:string;
@@ -12,20 +13,24 @@ export function mountStickerStudioRoutes(app:Express,o:{studio:StickerStudio;rea
   quote:(user:PublicUser,task:StickerGenerationTask)=>Promise<unknown>;
   start:(user:PublicUser,projectId:string,task:StickerGenerationTask,pricingHash:string)=>Promise<unknown>;
   reference:(user:PublicUser,sessionId:string,recipe:StickerRecipe)=>Promise<string>;
+  active?:(ownerId:string,projectId:string)=>boolean;
+  removed?:(ownerId:string,projectId:string)=>Promise<void>;
 }) {
   const wrap=(action:(q:any,r:any)=>Promise<unknown>)=>async(q:any,r:any)=>{try{await action(q,r);}catch(error){const fsError=['ENOENT','EACCES','ENOTDIR'].includes((error as any).code);r.status(fsError?404:(error as any).status||400).json({error:fsError?'项目素材尚不可用，请刷新制作状态。':error instanceof Error?error.message:'表情制作未能开始。'});}};
   app.get('/api/sticker-projects/config',wrap(async(_q,r)=>{let pricing=null,pricingError='';try{pricing=await o.pricing();await o.studio.assertCapacity(4);}catch(e){pricingError=(e as Error).message;}r.json({available:await o.ready()&&Boolean(pricing)&&!pricingError,pricing,pricingError,styles:stickerStyles.map(({file,...s})=>({...s,sampleUrl:file?(o.base||'')+'/api/sticker-styles/'+s.id:''})),templateHash:await o.version?.(),sampleCount:3,totalCount:24,modes:['static','dynamic']});}));
-  app.get('/api/sticker-projects',wrap(async(q,r)=>r.json({projects:await o.studio.list(userOf(q).id)})));
+  app.get('/api/sticker-projects',wrap(async(q,r)=>r.json({projects:await o.studio.list(userOf(q).id,typeof q.query.sessionId==='string'?q.query.sessionId:undefined)})));
   app.post('/api/sticker-projects',wrap(async(q,r)=>{
-    const {sessionId,requestId,recipe,pricingHash}=q.body||{};
-    if(typeof sessionId!=='string'||!/^[a-f0-9-]{36}$/.test(sessionId)||typeof requestId!=='string'||!requestIdPattern.test(requestId)||Object.keys(q.body).some(k=>!['sessionId','requestId','recipe','pricingHash'].includes(k)))throw Error('表情项目请求无效。');
+    const {sessionId,requestId,recipe,pricingHash,position}=q.body||{};const placement=canvasPoint(position,true);
+    if(typeof sessionId!=='string'||!/^[a-f0-9-]{36}$/.test(sessionId)||typeof requestId!=='string'||!requestIdPattern.test(requestId)||Object.keys(q.body).some(k=>!['sessionId','requestId','recipe','pricingHash','position'].includes(k)))throw Error('表情项目请求无效。');
     if(!await o.ready())throw Error('请管理员配置图片生成及画面质检模型后再制作。');
     const checked=validateStickerRecipe(recipe),user=userOf(q),hash=await o.reference(user,sessionId,checked);
-    const project=await o.studio.create(user.id,sessionId,requestId,checked,hash);
+    const project=await o.studio.create(user.id,sessionId,requestId,checked,hash,placement);
     const receipt=await o.start(user,project.id,{projectId:project.id,phase:checked.styleSelection?'styles':'samples',makeVideo:false,bgm:false},pricingHash);
     r.status(202).json({project:await o.studio.view(user.id,project.id),state:receipt});
   }));
   app.get('/api/sticker-projects/:id',wrap(async(q,r)=>r.json({project:await o.studio.view(userOf(q).id,q.params.id)})));
+  app.patch('/api/sticker-projects/:id',wrap(async(q,r)=>{if(Object.keys(q.body||{}).some(k=>k!=='name'))throw Error('名称请求无效。');r.json({project:await o.studio.rename(userOf(q).id,q.params.id,displayName(q.body?.name,40))});}));
+  app.delete('/api/sticker-projects/:id',wrap(async(q,r)=>{const user=userOf(q);await o.studio.load(user.id,q.params.id);if(o.active?.(user.id,q.params.id))throw Object.assign(Error('请先停止或等待项目任务完成。'),{status:409});await o.studio.remove(user.id,q.params.id);await o.removed?.(user.id,q.params.id);r.json({ok:true});}));
   app.get('/api/sticker-projects/:id/quote',wrap(async(q,r)=>{
     if(!['styles','samples','batch'].includes(q.query.phase))throw Error('制作阶段无效。');
     const task:StickerGenerationTask={projectId:q.params.id,phase:q.query.phase,makeVideo:false,bgm:false};

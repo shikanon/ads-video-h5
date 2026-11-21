@@ -1,0 +1,138 @@
+<div id="lightmao-tools-0212" class="viz-dotted-background"><div class="qt-phone" aria-label="第二个工具Tab原型"></div></div>
+<style>
+#lightmao-tools-0212{--qt-bg:light-dark(#fff9ee,#241c17);--qt-paper:light-dark(#fffdf8,#30261f);--qt-ink:light-dark(#69473c,#f5e7d8);--qt-muted:light-dark(#947052,#c5aa90);--qt-line:light-dark(#e4d2b4,#5a4433);--qt-soft:light-dark(#f4e3c6,#463023);--qt-accent:#c9612f;font-family:'Songti SC','STSong','SimSun',serif;color:var(--qt-ink);padding:16px 0;}
+#lightmao-tools-0212 *{box-sizing:border-box;}
+#lightmao-tools-0212 [hidden]{display:none!important;}
+#lightmao-tools-0212 button,#lightmao-tools-0212 textarea,#lightmao-tools-0212 select{font:inherit;color:inherit;}
+#lightmao-tools-0212 button{border:0;background:none;cursor:pointer;}
+#lightmao-tools-0212 button:disabled{opacity:.45;cursor:default;}
+#lightmao-tools-0212 button:focus-visible{outline:2px solid var(--qt-accent);outline-offset:3px;}
+#lightmao-tools-0212 svg{width:18px;height:18px;stroke-width:1.6;}
+#lightmao-tools-0212 .qt-phone{width:min(390px,100%);margin:auto;background:var(--qt-bg);border:1px solid var(--qt-line);border-radius:28px;overflow:hidden;position:relative;box-shadow:0 10px 40px #301b0b12;font-size:14px;line-height:1.5;}
+#lightmao-tools-0212 .qt-status{display:flex;justify-content:space-between;padding:9px 20px 3px;background:var(--qt-accent);color:#fff9ee;font:500 11px/1.5 system-ui,sans-serif;}
+#lightmao-tools-0212 .qt-header{height:49px;display:flex;align-items:center;justify-content:center;background:var(--qt-accent);color:#fff9ee;position:relative;font-size:17px;}
+#lightmao-tools-0212 .qt-capsule{position:absolute;right:15px;display:flex;align-items:center;gap:10px;border:1px solid #ffffff45;border-radius:22px;padding:3px 10px;font-family:system-ui,sans-serif;font-size:14px;}
+#lightmao-tools-0212 .qt-capsule span{height:14px;width:1px;background:#ffffff40;}
+#lightmao-tools-0212 .qt-toolbar{display:flex;justify-content:space-between;align-items:center;padding:9px 13px;gap:5px;min-height:53px;}
+#lightmao-tools-0212 .qt-title{font-size:15px;font-weight:500;flex:1;}
+#lightmao-tools-0212 .qt-icon{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;flex-shrink:0;border-radius:8px;}
+#lightmao-tools-0212 .qt-select{border:0;background:transparent;font-size:12px;max-width:70px;padding:5px 0;}
+#lightmao-tools-0212 .qt-canvas{border:1px solid var(--qt-line);border-radius:15px;background:light-dark(#f3ede1,#1e1915);margin:0 13px;overflow:hidden;}
+#lightmao-tools-0212 .qt-canvasbar{height:36px;padding:3px 10px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--qt-muted);}
+#lightmao-tools-0212 .qt-choices{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:0 10px 11px;}
+#lightmao-tools-0212 .qt-choice{position:relative;min-width:0;background:var(--qt-paper);border:1px solid var(--qt-line);border-radius:12px;padding:6px 0 9px;}
+#lightmao-tools-0212 .qt-choice[aria-pressed=true]{border:2px solid var(--qt-accent);padding:5px 0 8px;}
+#lightmao-tools-0212 .qt-choice img{display:block;width:100%;height:228px;object-fit:contain;}
+#lightmao-tools-0212 .qt-choice span{font-size:14px;display:block;padding-top:4px;}
+#lightmao-tools-0212 .qt-tick{position:absolute;right:8px;top:8px;background:var(--qt-accent);color:#fff9ee;border-radius:50%;font:11px/18px system-ui,sans-serif;width:18px;height:18px;}
+#lightmao-tools-0212 .qt-work{height:260px;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;background-image:radial-gradient(var(--qt-line) .7px,transparent .7px);background-size:14px 14px;}
+#lightmao-tools-0212 .qt-work img{height:238px;max-width:90%;object-fit:contain;user-select:none;-webkit-user-drag:none;}
+#lightmao-tools-0212 .qt-bottomtools{display:flex;align-items:center;justify-content:center;gap:5px;font-size:11px;color:var(--qt-muted);height:35px;}
+#lightmao-tools-0212 .qt-bottomtools button{width:32px;min-height:30px;}
+#lightmao-tools-0212 .qt-samples{display:flex;gap:6px;padding:0 10px 10px;}
+#lightmao-tools-0212 .qt-samples button{flex:1;border:1px solid var(--qt-line);border-radius:8px;padding:7px 3px;font-size:12px;}
+#lightmao-tools-0212 .qt-samples button[aria-pressed=true]{border-color:var(--qt-accent);background:var(--qt-soft);}
+#lightmao-tools-0212 .qt-agent{display:flex;align-items:center;gap:7px;margin:10px 16px 8px;font-size:13px;min-height:25px;}
+#lightmao-tools-0212 .qt-agent svg{color:var(--qt-accent);width:17px;height:17px;flex-shrink:0;}
+#lightmao-tools-0212 .qt-action{margin:0 14px 10px;}
+#lightmao-tools-0212 .qt-primary{width:100%;border-radius:12px;background:var(--qt-accent);color:#fff9ee;font-size:15px;min-height:44px;padding:9px;}
+#lightmao-tools-0212 .qt-composer{display:flex;align-items:center;gap:4px;padding:7px;margin:0 14px 12px;border:1px solid var(--qt-line);border-radius:14px;background:var(--qt-paper);}
+#lightmao-tools-0212 .qt-input{min-width:0;flex:1;background:transparent;border:0;outline:none;resize:none;padding:8px 2px;height:39px;font-size:14px;line-height:1.5;}
+#lightmao-tools-0212 .qt-send{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--qt-accent);color:#fff9ee;}
+#lightmao-tools-0212 .qt-shelf{border-top:1px solid var(--qt-line);padding:7px 14px 11px;}
+#lightmao-tools-0212 .qt-shelfbar{display:flex;justify-content:space-between;align-items:center;height:29px;font-size:12px;}
+#lightmao-tools-0212 .qt-shelfbar button{display:flex;align-items:center;gap:4px;min-height:29px;padding:0;}
+#lightmao-tools-0212 .qt-templates{display:flex;gap:7px;margin-top:5px;}
+#lightmao-tools-0212 .qt-template{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;background:var(--qt-paper);border:1px solid var(--qt-line);border-radius:10px;min-height:49px;padding:5px 3px;font-size:12px;}
+#lightmao-tools-0212 .qt-template[aria-pressed=true]{border-color:var(--qt-accent);background:var(--qt-soft);}
+#lightmao-tools-0212 .qt-tabbar{display:grid;grid-template-columns:repeat(4,1fr);background:var(--qt-bg);border-top:1px solid var(--qt-line);padding:9px 12px 7px;}
+#lightmao-tools-0212 .qt-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:45px;font-size:12px;color:var(--qt-muted);padding:0;}
+#lightmao-tools-0212 .qt-tab img{width:25px;height:25px;object-fit:contain;}
+#lightmao-tools-0212 .qt-tab[aria-current=page]{color:#b8582b;}
+#lightmao-tools-0212 .qt-homebar{height:4px;width:96px;background:var(--qt-ink);border-radius:8px;margin:3px auto 8px;opacity:.8;}
+#lightmao-tools-0212 .qt-mask{position:absolute;inset:79px 0 0;background:#24140655;display:flex;align-items:flex-end;z-index:5;}
+#lightmao-tools-0212 .qt-sheet{width:100%;padding:13px 18px 24px;background:var(--qt-paper);border-radius:22px 22px 0 0;}
+#lightmao-tools-0212 .qt-handle{width:31px;height:4px;border-radius:5px;background:var(--qt-line);margin:0 auto 10px;}
+#lightmao-tools-0212 .qt-sheettitle{display:flex;justify-content:space-between;align-items:center;font-size:16px;margin-bottom:10px;}
+#lightmao-tools-0212 .qt-row{display:flex;justify-content:space-between;align-items:center;padding:13px 0;border-bottom:1px solid var(--qt-line);gap:6px;width:100%;text-align:left;font-size:14px;}
+#lightmao-tools-0212 .qt-check{border-radius:12px;background:var(--qt-soft);padding:14px;margin:12px 0;font-size:14px;}
+#lightmao-tools-0212 .qt-switch{display:flex;gap:8px;margin:12px 0;}
+#lightmao-tools-0212 .qt-switch button{flex:1;min-height:39px;border:1px solid var(--qt-line);border-radius:9px;font-size:13px;}
+#lightmao-tools-0212 .qt-switch button[aria-pressed=true]{border-color:var(--qt-accent);background:var(--qt-soft);}
+#lightmao-tools-0212 .qt-empty{height:272px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px;}
+#lightmao-tools-0212 .qt-empty>svg{width:35px;height:35px;color:var(--qt-muted);}
+#lightmao-tools-0212 .qt-notice{position:absolute;bottom:80px;left:25px;right:25px;text-align:center;background:var(--qt-ink);color:var(--qt-bg);border-radius:10px;padding:10px;z-index:9;font-size:13px;}
+@media(max-width:360px){#lightmao-tools-0212 .qt-choice img{height:210px;}#lightmao-tools-0212 .qt-template{gap:3px;}#lightmao-tools-0212 .qt-template svg{width:15px;}}
+@media(pointer:coarse){#lightmao-tools-0212 .qt-icon,#lightmao-tools-0212 .qt-bottomtools button,#lightmao-tools-0212 .qt-shelfbar button{min-height:44px;}#lightmao-tools-0212 .qt-input{font-size:16px;}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('lightmao-tools-0212'),phone=root.querySelector('.qt-phone'),media=__LIGHTMAO_DEMO_MEDIA__;
+const icon=n=>`<i data-lucide="${n}" aria-hidden="true"></i>`;
+const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const templates=[{id:'lightmao',name:'轻喵表情',icon:'cat',prompt:'参考轻喵表情，生成两种画风。'},{id:'cut',name:'素材精剪',icon:'scissors',prompt:'精剪我的素材，保留原声。'},{id:'diagram',name:'知识图解',icon:'lightbulb',prompt:'把这个知识点做成图解。'}];
+const saved=window.openai?.widgetState?.privateContent,sessionId='tools-'+Math.random().toString(36).slice(2);
+const state={template:'lightmao',phase:'styles',style:null,output:'static',sample:0,zoom:1,pan:{x:0,y:0},draft:'',shelf:true,sheet:null,bad:false,notice:'',projects:{},...(saved?.revision==='tools-tab-v2'?saved.state:{})};
+state.sheet=null;state.notice='';
+const styleName=()=>state.style==='soft'?'柔彩':'萌系';
+const currentImage=()=>state.style==='soft'?media['sample'+state.sample]:media.round;
+function persist(){window.openai?.setWidgetState?.({modelContent:{prototype:'lightmao-0.2.12',scope:'second-tab-only',selectedStyle:state.style,stage:state.phase},privateContent:{revision:'tools-tab-v2',sessionId,state:{...state,sheet:null,notice:''}}}).catch(()=>{});}
+function tell(message){state.notice=message;render();setTimeout(()=>{state.notice='';render();},1800);}
+function canvas(){
+if(state.template!=='lightmao'||state.phase==='ready')return `<div class="qt-canvas"><div class="qt-empty">${icon(state.template==='cut'?'clapperboard':state.template==='diagram'?'lightbulb':'image-plus')}<span>${state.template==='cut'?'添加素材':state.template==='diagram'?'输入主题':'上传角色图'}</span><button class="qt-icon" data-action="attach" aria-label="添加素材">${icon('plus')}</button></div></div>`;
+if(state.phase==='styles')return `<div class="qt-canvas"><div class="qt-canvasbar"><span>选择画风</span><button class="qt-icon" data-action="reference" aria-label="更换参考图">${icon('image-plus')}</button></div><div class="qt-choices">${['soft','round'].map(s=>`<button class="qt-choice" data-action="style" data-value="${s}" aria-pressed="${state.style===s}" aria-label="选择${s==='soft'?'柔彩':'萌系'}画风">${state.style===s?'<b class="qt-tick">✓</b>':''}<img src="${media[s]}" alt="${s==='soft'?'柔彩':'萌系'}画风候选" draggable="false"><span>${s==='soft'?'柔彩':'萌系'}</span></button>`).join('')}</div></div>`;
+return `<div class="qt-canvas"><div class="qt-canvasbar"><span>${state.phase==='samples'?'样张 '+(state.sample+1)+'/3':state.phase==='batch'?'制作中':'已完成'}</span><span>${icon('lock-keyhole')} ${styleName()}</span></div><div class="qt-work"><img src="${state.phase==='samples'?currentImage():media[state.style||'round']}" alt="角色作品示意" data-draggable="true" draggable="false" style="transform:translate(${state.pan.x}px,${state.pan.y}px) scale(${state.zoom})"></div><div class="qt-bottomtools"><button data-action="out" aria-label="缩小">−</button><span>${Math.round(state.zoom*100)}%</span><button data-action="in" aria-label="放大">＋</button><button data-action="fit" aria-label="适应画布">${icon('maximize')}</button></div>${state.phase==='samples'?`<div class="qt-samples">${['贴贴','摸头','心动'].map((n,i)=>`<button data-action="sample" data-value="${i}" aria-pressed="${state.sample===i}">${n}</button>`).join('')}</div>`:''}</div>`;
+}
+function agent(){if(state.notice)return state.notice;if(state.template!=='lightmao')return '补充要求';return {ready:'先放角色图',styles:state.style?'已选'+styleName():'选个画风',samples:'看看样张',batch:'可稍后回来',complete:'制作完成'}[state.phase];}
+function primary(){if(state.template!=='lightmao')return `<button class="qt-primary" data-action="start">开始制作</button>`;if(state.phase==='ready')return `<button class="qt-primary" data-action="reference">生成画风 · 240积分</button>`;if(state.phase==='styles')return `<button class="qt-primary" data-action="samples" ${state.style?'':'disabled'}>生成样张 · 360积分</button>`;if(state.phase==='samples')return `<button class="qt-primary" data-action="confirm">制作整套 · 2520积分</button>`;if(state.phase==='batch')return `<button class="qt-primary" data-action="finish">查看完成</button>`;return `<button class="qt-primary" data-action="export">导出</button>`;}
+function sheet(){
+if(!state.sheet)return '';
+let title='',body='';
+if(state.sheet==='reference'){title='参考图';body=`<div class="qt-switch"><button data-action="check" data-value="good" aria-pressed="${!state.bad}">清晰角色</button><button data-action="check" data-value="bad" aria-pressed="${state.bad}">模糊截图</button></div><div class="qt-check" ${state.bad?'role="alert"':''}>${state.bad?'人物太小，请换清晰角色图':'可以制作'}</div><button class="qt-primary" data-action="${state.bad?'replace':'styles'}">${state.bad?'重新上传':'生成画风 · 240积分'}</button>`;}
+if(state.sheet==='attach'){title='添加';body=`<button class="qt-row" data-action="reference"><span>角色图</span>${icon('image-plus')}</button><button class="qt-row" data-action="file"><span>文件</span>${icon('file-text')}</button><button class="qt-row" data-action="material"><span>素材</span>${icon('folder-open')}</button>`;}
+if(state.sheet==='settings'){title='设置';body=`<label class="qt-row"><span>输出</span><select data-setting="output" class="qt-select" aria-label="输出形式"><option value="static" ${state.output==='static'?'selected':''}>静态</option><option value="dynamic" ${state.output==='dynamic'?'selected':''}>动态</option></select></label><label class="qt-row"><span>模型</span><select class="qt-select" aria-label="模型"><option>豆包</option><option>DeepSeek</option></select></label><button class="qt-row" data-action="reference"><span>换图</span>${icon('image-plus')}</button>`;}
+if(state.sheet==='confirm'){title='继续制作';body=`<div class="qt-check">${styleName()} · 剩余21张</div><button class="qt-primary" data-action="batch">确认 · 2520积分</button>`;}
+if(state.sheet==='export'){title='导出';body=`<button class="qt-row" data-action="download"><span>保存</span>${icon('download')}</button><button class="qt-row" data-action="share"><span>分享</span>${icon('share-2')}</button>`;}
+if(state.sheet==='projects'){title='项目';body=`<button class="qt-row" data-action="resume"><span>日常表情</span>${icon('arrow-up-right')}</button><button class="qt-row" data-action="new"><span>新建</span>${icon('plus')}</button>`;}
+return `<div class="qt-mask" data-action="dismiss"><section class="qt-sheet" role="dialog" aria-modal="true" aria-label="${title}"><div class="qt-handle"></div><div class="qt-sheettitle">${title}<button class="qt-icon" data-action="close" aria-label="关闭">${icon('x')}</button></div>${body}</section></div>`;
+}
+function render(){phone.innerHTML=`<div class="qt-status"><span>9:41</span><span>交互原型</span></div><header class="qt-header">轻喵LightMao<div class="qt-capsule" aria-hidden="true">•••<span></span>◉</div></header><div class="qt-toolbar"><button class="qt-icon" data-action="projects" aria-label="项目">${icon('panel-left')}</button><span class="qt-title">${templates.find(t=>t.id===state.template).name}</span><select class="qt-select" data-setting="output" aria-label="输出形式"><option value="static" ${state.output==='static'?'selected':''}>静态</option><option value="dynamic" ${state.output==='dynamic'?'selected':''}>动态</option></select><button class="qt-icon" data-action="settings" aria-label="设置">${icon('sliders-horizontal')}</button></div>${canvas()}<div class="qt-agent" aria-live="polite">${icon('cat')}<span>${agent()}</span></div><div class="qt-action">${primary()}</div><div class="qt-composer"><button class="qt-icon" data-action="attach" aria-label="添加">${icon('plus')}</button><textarea class="qt-input" maxlength="1000" aria-label="制作要求" placeholder="说说你的想法…">${escape(state.draft)}</textarea><button class="qt-send" data-action="send" aria-label="发送">${icon('arrow-up')}</button></div><div class="qt-shelf"><div class="qt-shelfbar"><span>模板</span><button data-action="shelf" aria-label="${state.shelf?'收起模板':'展开模板'}">${icon(state.shelf?'chevron-down':'chevron-up')}</button></div>${state.shelf?`<div class="qt-templates">${templates.map(t=>`<button class="qt-template" data-action="template" data-value="${t.id}" aria-pressed="${state.template===t.id}">${icon(t.icon)}<span>${t.name}</span></button>`).join('')}</div>`:''}</div><nav class="qt-tabbar" aria-label="原版导航">${[['create','创作'],['idea','工具'],['library','资源'],['profile','我的']].map(([id,n])=>`<button class="qt-tab" data-action="original-tab" data-value="${id}" ${id==='idea'?'aria-current="page"':''}><img src="${media['tab-'+id]}" alt=""><span>${n}</span></button>`).join('')}</nav><div class="qt-homebar"></div>${sheet()}${state.notice?`<div class="qt-notice" role="status">${state.notice}</div>`:''}`;if(globalThis.lucide)lucide.createIcons({attrs:{width:18,height:18}});}
+phone.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action,v=b.dataset.value;if(a==='dismiss'&&e.target!==b)return;
+switch(a){
+case 'style':state.style=v;break;
+case 'samples':if(!state.style)return;state.phase='samples';state.sample=0;break;
+case 'sample':state.sample=Number(v);state.zoom=1;state.pan={x:0,y:0};break;
+case 'in':state.zoom=Math.min(2,state.zoom+.25);break;
+case 'out':state.zoom=Math.max(.5,state.zoom-.25);break;
+case 'fit':state.zoom=1;state.pan={x:0,y:0};break;
+case 'confirm':case 'reference':case 'attach':case 'settings':case 'projects':case 'export':state.sheet=a;break;
+case 'dismiss':case 'close':case 'resume':state.sheet=null;break;
+case 'check':state.bad=v==='bad';break;
+case 'replace':state.bad=false;return tell('已换示例图');
+case 'styles':state.template='lightmao';state.phase='styles';state.style=null;state.sheet=null;break;
+case 'batch':state.phase='batch';state.sheet=null;break;
+case 'finish':state.phase='complete';break;
+case 'new':state.template='lightmao';state.phase='ready';state.style=null;state.sheet=null;state.draft='';break;
+case 'template':{const {phase,style,output,sample,zoom,pan,draft}=state;state.projects[state.template]={phase,style,output,sample,zoom,pan:{...pan},draft};state.template=v;Object.assign(state,state.projects[v]||{phase:'ready',style:null,sample:0,zoom:1,pan:{x:0,y:0},draft:templates.find(t=>t.id===v).prompt});break;}
+case 'shelf':state.shelf=!state.shelf;break;
+case 'send':if(!state.draft.trim())return;state.draft='';return tell('已收到');
+case 'start':return tell('制作演示');
+case 'file':state.sheet=null;state.draft='已附文档';break;
+case 'material':state.sheet=null;return tell('素材入口');
+case 'download':case 'share':return tell('导出演示');
+case 'original-tab':if(v!=='idea')return tell('沿用原版');break;
+}
+persist();render();});
+phone.addEventListener('input',e=>{if(e.target.matches('.qt-input'))state.draft=e.target.value;});
+phone.addEventListener('change',e=>{if(e.target.dataset.setting==='output'){state.output=e.target.value;persist();render();}});
+const pointers=new Map();let drag=null,pinch=null;
+const distance=()=>{const p=[...pointers.values()];return p.length===2?Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y):0;};
+phone.addEventListener('pointerdown',e=>{if(!e.target.matches('[data-draggable]'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});drag={id:e.pointerId,x:e.clientX,y:e.clientY,pan:{...state.pan},node:e.target};e.target.setPointerCapture(e.pointerId);if(pointers.size===2)pinch={distance:distance(),zoom:state.zoom};});
+phone.addEventListener('pointermove',e=>{if(!drag||!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pinch&&pointers.size===2)state.zoom=Math.max(.5,Math.min(2,pinch.zoom*distance()/Math.max(1,pinch.distance)));else if(e.pointerId===drag.id)state.pan={x:Math.max(-90,Math.min(90,drag.pan.x+e.clientX-drag.x)),y:Math.max(-65,Math.min(65,drag.pan.y+e.clientY-drag.y))};drag.node.style.transform=`translate(${state.pan.x}px,${state.pan.y}px) scale(${state.zoom})`;});
+const release=e=>{if(!pointers.has(e.pointerId))return;pointers.delete(e.pointerId);pinch=null;if(!pointers.size){drag=null;render();}};
+phone.addEventListener('pointerup',release);phone.addEventListener('pointercancel',release);
+window.addEventListener('openai:set_globals',e=>{const s=e.detail?.globals?.widgetState?.privateContent;if(s?.revision==='tools-tab-v2'&&s.sessionId!==sessionId){Object.assign(state,s.state,{sheet:null,notice:''});render();}});
+render();
+if(globalThis.Tweak){const design={templates:true};const tweak=new Tweak({container:phone,onChange:()=>{state.shelf=design.templates;render();}});tweak.addToggle(design,'templates',{label:'展开模板'});}
+})();
+</script>

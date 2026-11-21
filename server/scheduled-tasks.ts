@@ -42,6 +42,15 @@ export async function createScheduledTasks(file: string, execute: (task: Schedul
       }
       task.enabled = enabled; await save();
     },
+    async edit(ownerId:string,id:string,body:Record<string,unknown>){
+      const task=tasks.find(t=>t.ownerId===ownerId&&t.id===id);if(!task)throw Error('定时任务不存在。');
+      if(Object.keys(body).some(k=>!['title','prompt','nextRunAt','frequency','interaction'].includes(k)))throw Error('修改内容无效。');
+      const next={...task,...body};
+      if(typeof next.title!=='string'||!next.title.trim()||Array.from(next.title.trim()).length>60||typeof next.prompt!=='string'||!next.prompt.trim()||next.prompt.length>2000)throw Error('请填写60字以内名称和2000字以内内容。');
+      if(!['once','daily','weekly'].includes(String(next.frequency))||!['chat','explore','create'].includes(String(next.interaction)))throw Error('任务频率或执行方式无效。');
+      if(typeof next.nextRunAt!=='string'||!Number.isFinite(Date.parse(next.nextRunAt))||Date.parse(next.nextRunAt)<=Date.now())throw Error('请选择未来的执行时间。');
+      Object.assign(task,{title:next.title.trim(),prompt:next.prompt.trim(),nextRunAt:new Date(next.nextRunAt).toISOString(),frequency:next.frequency,interaction:next.interaction});await save();
+    },
     async remove(ownerId: string, id: string) { tasks = tasks.filter(t => !(t.ownerId === ownerId && t.id === id)); await save(); },
     async tick(now = Date.now()) {
       if (ticking) return;
@@ -66,6 +75,6 @@ export function mountScheduledTasks(app: Express, scheduler: Awaited<ReturnType<
   const list = (ownerId: string) => ({ tasks: scheduler.list(ownerId).map(t => ({ ...t, runs: t.runs.map(r => ({ ...r, status: r.error ? 'failed' : r.jobId ? status(r.jobId, ownerId) : 'queued' })) })) });
   app.get('/api/schedules', (req, res) => res.json(list(userOf(req).id)));
   app.post('/api/schedules', async (req, res) => { const owner = userOf(req).id; try { await scheduler.create(owner, req.body || {}); res.json(list(owner)); } catch (e) { res.status(400).json({ error: (e as Error).message }); } });
-  app.patch('/api/schedules/:id', async (req, res) => { const owner = userOf(req).id; try { await scheduler.toggle(owner, String(req.params.id), req.body?.enabled); res.json(list(owner)); } catch (e) { res.status(400).json({ error: (e as Error).message }); } });
+  app.patch('/api/schedules/:id', async (req, res) => { const owner = userOf(req).id; try { const body=req.body||{};if(Object.keys(body).length===1&&Object.hasOwn(body,'enabled'))await scheduler.toggle(owner,String(req.params.id),body.enabled);else await scheduler.edit(owner,String(req.params.id),body);res.json(list(owner)); } catch (e) { res.status(400).json({ error: (e as Error).message }); } });
   app.delete('/api/schedules/:id', async (req, res) => { const owner = userOf(req).id; await scheduler.remove(owner, String(req.params.id)); res.json(list(owner)); });
 }

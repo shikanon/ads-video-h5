@@ -121,6 +121,7 @@ test('real API supports twenty owned attachments and private resized thumbnails;
   const accepted = await client.request('/api/chat', { sessionId: state.activeSessionId, message: '用一句话描述功能', attachmentIds: ids });
   assert.equal(accepted.sessions.find((session: any) => session.id === state.activeSessionId).messages.at(-1).attachmentIds.length, 20);
   const ownCookie = [...platform.storage.values()][0];
-  await fixture.request(String(ownCookie), '/api/media/' + ids[0], undefined, 'DELETE');
+  await fixture.request(String(ownCookie), '/api/sessions/'+state.activeSessionId+'/stop', {});for(let i=0;i<200;i++){const s:any=await client.request('/api/state');if(!s.jobs.some((j:any)=>['queued','running','stopping'].includes(j.status)))break;await new Promise(r=>setTimeout(r,20));}
+  assert.equal((await fixture.request(String(ownCookie), '/api/media/' + ids[0], undefined, 'DELETE')).status,200);
   assert.equal((await fixture.request(String(ownCookie), item.thumbnailUrl)).status, 404);
 });

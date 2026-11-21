@@ -59,4 +59,4 @@ function galleryCards(templates, client) {
   return cards.concat(skillStarters.map(item=>Object.assign({},item,{categoryName:categoryLabels[item.category],skill:true,starter:true,sample:null,seconds:0,format:'创作工具',input:item.studioMode?'一张清晰的角色图、套装名称':'主题或自己的素材、用途与要求',steps:item.studioMode?['生成两种候选画风','点选一种后制作3个样张','确认后补齐24个动作']:['补充输入与要求','执行制作','检查并导出作品'],result:item.studioMode?'保持同一画风的角色表情':'按输入制作的作品'})));
 }
 
-module.exports = { selectedTemplateName, withoutTemplateMentions, galleryCards, galleryCategories, skillStarter, isSkillPrompt };
+module.exports = { selectedTemplateName, withoutTemplateMentions, galleryCards, galleryCategories, skillStarter, skillStarters, isSkillPrompt };

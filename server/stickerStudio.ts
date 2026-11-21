@@ -23,7 +23,7 @@ import { getStickerReviewConfig, readStickerIdentity, reviewStickerImage, sticke
 export interface StickerRecipe {
   referenceMediaId: string; name: string; style: string; styleId?:'soft'|'round'|'lightmao'|'custom'; styleSelection?:'lightmao'; mode: 'static' | 'dynamic';
 }
-interface Project { id: string; ownerId: string; sessionId: string; recipe: StickerRecipe; referenceHash: string; createdAt: string; recipeHash: string; generationHash: string; generationVersion?:2;styleReferenceHash?:string; }
+interface Project { id: string; ownerId: string; sessionId: string; recipe: StickerRecipe; displayName?:string; deletedAt?:string; canvasPosition?:{x:number;y:number}; referenceHash: string; createdAt: string; recipeHash: string; generationHash: string; generationVersion?:2;styleReferenceHash?:string; }
 interface ItemReceipt { id: string; files: Record<string,string>; modelId: string; quality?:StickerQualityReceipt; processingVersion?:2; }
 const uid = /^[a-f0-9]{64}$/;
 const sampleIds = ['01','03','20'];
@@ -52,7 +52,7 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
     return path.join(root,stateHash(ownerId),id);
   }
   async function load(ownerId: string,id: string): Promise<Project> {
-    try { const p=await json(path.join(folder(ownerId,id),'project.json'));if(p.ownerId!==ownerId||p.id!==id)throw Error();return p; }
+    try { const p=await json(path.join(folder(ownerId,id),'project.json'));if(p.ownerId!==ownerId||p.id!==id||p.deletedAt)throw Error();return p; }
     catch { throw Object.assign(Error('表情项目不存在。'),{status:404}); }
   }
   async function styleCandidates(ownerId:string,id:string){
@@ -101,10 +101,10 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
   }
   async function pack(ownerId: string,packId: string) {
     if(!packId.startsWith('custom-'))return undefined;
-    const id=packId.slice(7);await load(ownerId,id);
+    const id=packId.slice(7),project=await load(ownerId,id);
     const base=folder(ownerId,id),manifest:PackManifest=await json(path.join(base,'assets','pack.json')).catch(()=>{throw Object.assign(Error('整套表情尚未完成。'),{status:404});});
     if(manifest.id!==packId||manifest.items.length!==24||!manifest.mode)throw Error('整套表情尚未完成。');
-    return {pack:manifest,assetsRoot:path.join(base,'assets')};
+    return {pack:project.displayName?{...manifest,name:project.displayName}:manifest,assetsRoot:path.join(base,'assets')};
   }
   async function view(ownerId: string,id: string) {
     const p=await load(ownerId,id),base=folder(ownerId,id);let hash='',ready=false;
@@ -113,12 +113,12 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
     const approved=await json(path.join(base,'approval.json')).catch(()=>null);
     const completed:Array<{id:string;name:string;thumbnailUrl:string;previewUrl:string}>=[];for(const item of (await loadStickerPack()).items)try{const [record]=await receipts(ownerId,id,[item.id]);completed.push({id:item.id,name:item.name,thumbnailUrl:`/api/sticker-projects/${id}/items/${item.id}/thumb?v=${record.files['thumb.png']}`,previewUrl:`/api/sticker-projects/${id}/items/${item.id}/${p.recipe.mode==='static'?'still':'preview'}?v=${record.files[p.recipe.mode==='static'?'still.png':'animation.gif']}`});}catch{}
     const chosen=await styleSelection(ownerId,id),candidates=await styleCandidates(ownerId,id);
-    return {id:p.id,sessionId:p.sessionId,recipe:p.recipe,createdAt:p.createdAt,previewHash:hash,approved:Boolean(hash&&approved?.hash===hash),ready,packId:ready?'custom-'+id:null,completed,completedCount:completed.length,totalCount:24,compatible:p.generationHash===await generationHash(),styleSelection:chosen,styleCandidates:candidates.map(({file,...item})=>({...item,previewUrl:`/api/sticker-projects/${id}/styles/${item.id}?v=${item.hash}`})),
+    return {id:p.id,sessionId:p.sessionId,canvasPosition:p.canvasPosition,recipe:{...p.recipe,name:p.displayName||p.recipe.name},createdAt:p.createdAt,previewHash:hash,approved:Boolean(hash&&approved?.hash===hash),ready,packId:ready?'custom-'+id:null,completed,completedCount:completed.length,totalCount:24,compatible:p.generationHash===await generationHash(),styleSelection:chosen,styleCandidates:candidates.map(({file,...item})=>({...item,previewUrl:`/api/sticker-projects/${id}/styles/${item.id}?v=${item.hash}`})),
       samples:hash?sampleIds.map(itemId=>{const item=completed.find(item=>item.id===itemId)!;return {id:item.id,thumbnailUrl:item.thumbnailUrl,previewUrl:item.previewUrl};}):[]};
   }
-  async function list(ownerId: string) {
+  async function list(ownerId: string, sessionId?: string) {
     const dir=path.join(root,stateHash(ownerId));const ids=(await readdir(dir).catch(()=>[])).filter(id=>uid.test(id));
-    return Promise.all(ids.slice(-100).map(id=>view(ownerId,id)));
+    const projects=await Promise.all(ids.map(async id=>{try{const p=await load(ownerId,id);return !sessionId||p.sessionId===sessionId?await view(ownerId,id):null;}catch{return null;}}));return projects.filter((p):p is NonNullable<typeof p>=>Boolean(p)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,100);
   }
   async function publicPack(ownerId: string,id: string) {
     const loaded=await pack(ownerId,'custom-'+id);if(!loaded)throw Error('表情不存在。');
@@ -127,6 +127,8 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
   }
   return {
     load,pack,view,list,publicPack,folder,previewHash,capacity,assertCapacity,styleCandidates,styleSelection,selectStyle,
+    async rename(ownerId:string,id:string,name:string){const base=folder(ownerId,id);await withFileLock(path.join(base,'project-lock'),async()=>{const p=await load(ownerId,id);p.displayName=name;await save(path.join(base,'project.json'),p);});return view(ownerId,id);},
+    async remove(ownerId:string,id:string){const base=folder(ownerId,id);await withFileLock(path.join(base,'project-lock'),async()=>{const p=await load(ownerId,id);p.deletedAt=new Date().toISOString();await save(path.join(base,'project.json'),p);});},
     async retryProof(ownerId:string,task:StickerGenerationTask,reference:Buffer){
       const project=await load(ownerId,task.projectId);
       if(project.generationHash!==await generationHash()||project.recipeHash!==stateHash({recipe:project.recipe,referenceHash:project.referenceHash,sessionId:project.sessionId,generationHash:project.generationHash})||stateHash(reference.toString('base64'))!==project.referenceHash)throw Error('表情角色或制作配方已变化，请重新确认角色与样张。');
@@ -147,13 +149,13 @@ export function createStickerStudio(dataDir: string, imageGenerator=generateImag
       for(const id of ids)try{await receipts(ownerId,p.id,[id]);}catch{pending.push(p.id+'_'+id);}
       return pending;
     },
-    async create(ownerId: string,sessionId: string,requestId: string,recipe: StickerRecipe,referenceHash: string) {
+    async create(ownerId: string,sessionId: string,requestId: string,recipe: StickerRecipe,referenceHash: string,canvasPosition?:{x:number;y:number}) {
       const id=stateHash({ownerId,requestId}),base=folder(ownerId,id);await mkdir(base,{recursive:true,mode:0o700});
       return withFileLock(path.join(base,'project-lock'),async()=>{
         const old=await json(path.join(base,'project.json')).catch(()=>null);
         const rulesHash=await generationHash(),recipeHash=stateHash({recipe,referenceHash,sessionId,generationHash:rulesHash});
-        if(old){if(old.recipeHash!==recipeHash)throw Object.assign(Error('重复请求的角色设定已变化，请重新提交。'),{status:409});return old as Project;}
-        const project:Project={id,ownerId,sessionId,recipe,referenceHash,recipeHash,generationHash:rulesHash,generationVersion:2,createdAt:new Date().toISOString()};const style=stickerStyleFile(recipe.styleId);if(recipe.styleSelection){await save(path.join(base,'style-guides.json'),await Promise.all(stickerStyleVariants.map(v=>freezeStickerStyleGuide(base,v.id))));}else if(style){const target=path.join(base,'style-reference.png');await copyFile(style,target);project.styleReferenceHash=await fileDigest(target);}await save(path.join(base,'project.json'),project);return project;
+        if(old){if(old.deletedAt)throw Object.assign(Error('项目已删除，请重新创建。'),{status:409});if(old.recipeHash!==recipeHash)throw Object.assign(Error('重复请求的角色设定已变化，请重新提交。'),{status:409});return old as Project;}
+        const project:Project={id,ownerId,sessionId,recipe,referenceHash,recipeHash,...(canvasPosition?{canvasPosition}:{}),generationHash:rulesHash,generationVersion:2,createdAt:new Date().toISOString()};const style=stickerStyleFile(recipe.styleId);if(recipe.styleSelection){await save(path.join(base,'style-guides.json'),await Promise.all(stickerStyleVariants.map(v=>freezeStickerStyleGuide(base,v.id))));}else if(style){const target=path.join(base,'style-reference.png');await copyFile(style,target);project.styleReferenceHash=await fileDigest(target);}await save(path.join(base,'project.json'),project);return project;
       });
     },
     async approve(ownerId: string,id: string,hash: string) {

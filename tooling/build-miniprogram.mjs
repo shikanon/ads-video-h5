@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const project = path.join(repo, 'apps/miniprogram'), source = path.join(project, 'miniprogram');
 const req = createRequire(path.join(project, 'package.json'));
+// Use the same prompt builder as the backend and copy only original curated images.
+execFileSync(process.execPath, ['--import', 'tsx', path.join(repo, 'tooling/build-tool-catalog.ts')], { cwd: repo });
 const config = JSON.parse(await readFile(path.join(project, 'project.config.json'), 'utf8'));
 const app = JSON.parse(await readFile(path.join(source, 'app.json'), 'utf8'));
 const appid = process.env.QINGJIAN_MINI_APPID || config.appid;

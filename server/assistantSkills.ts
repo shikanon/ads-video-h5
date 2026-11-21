@@ -3,8 +3,9 @@ import { Type } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 export interface PublicSkill { id:string;name:string;category:string;needs:string;delivers:string;entry:string;status:'available'|'needs-configuration';limit:string; }
 export function isCapabilityInquiry(prompt:string){return /(?:你|轻喵|小程序).{0,12}(?:能做什么|会做什么|有什么功能|有哪些功能|有哪些技能|有哪些模板|支持哪些|能帮我做什么)|(?:介绍|列出|看看).{0,8}(?:你的|轻喵的).{0,8}(?:技能|功能|模板)/i.test(prompt);}
-export function publicSkillGuide(templates:VideoTemplate[],ready:{text:boolean;image:boolean;audio:boolean;game?:boolean}):PublicSkill[]{
+export function publicSkillGuide(templates:VideoTemplate[],ready:{text:boolean;image:boolean;audio:boolean;understanding?:boolean;game?:boolean}):PublicSkill[]{
   const skills:PublicSkill[]=[
+    {id:'qingjian-mv-recreation',name:'原素材MV复刻',category:'音乐MV',needs:'参考片、配乐与原素材',delivers:'实际抽帧依据、可修改分镜、20秒样片、节点视频与整片',entry:'工具 → 音乐MV → 原素材复刻MV',status:ready.text&&ready.understanding?'available':'needs-configuration',limit:'最多100个原素材、10分钟；先确认分镜和样片；不生成角色，不复制参考片冒充新成片'},
     {id:'research',name:'联网查证与深度探索',category:'研究',needs:'问题、领域或来源链接',delivers:'带原文依据与限制的答复',entry:'创作页选择联网搜索或深度探索',status:ready.text?'available':'needs-configuration',limit:'以本轮实际检索为准，不承诺已读取不可访问网页'},
     {id:'qingjian-hot-video',name:'热点新闻图解',category:'新闻',needs:'领域、主题、时效要求；不强制上传素材',delivers:'核验后的脚本、图解、旁白与视频',entry:'工具页新闻分类，或说“制作一个新闻资讯视频，主题……”',status:ready.text&&ready.audio?'available':'needs-configuration',limit:'时效和证据不足会明确报告；不自动发抖音'},
     {id:'qingjian-teaching-video',name:'知识教学视频',category:'知识',needs:'知识点、受众和大致时长',delivers:'有依据的讲解、图解、旁白与成片',entry:'工具页知识分类',status:ready.text&&ready.audio?'available':'needs-configuration',limit:'没有真实实验不能宣称实测'},

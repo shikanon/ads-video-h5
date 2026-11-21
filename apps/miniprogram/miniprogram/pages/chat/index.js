@@ -255,10 +255,11 @@ Page({
     const session = state.sessions.find(s => s.id === id);
     if (!session) return;
     if (!state.features || !state.features.sessionManagement) { notify(new Error('当前连接的版本暂不支持归档和删除。')); return; }
-    if (state.jobs.some(j => j.sessionId === id && ['queued', 'running', 'stopping'].includes(j.status))) { notify(new Error('请先停止或等待当前任务完成。')); return; }
     this.setData({ sidebarBusy: true });
     try {
-      const choice = await new Promise(resolve => wx.showActionSheet({ itemList: [session.archivedAt ? '取消归档' : '归档', '删除'], success: r => resolve(r.tapIndex), fail: () => resolve(-1) }));
+      const choice = await new Promise(resolve => wx.showActionSheet({ itemList: [session.archivedAt ? '取消归档' : '归档', '删除', '重命名'], success: r => resolve(r.tapIndex), fail: () => resolve(-1) }));
+      if(choice===2){const name=await require('../../utils/manage').editName('会话名称',session.title);if(name!==null)await app.mutate('/api/sessions/'+encodeURIComponent(id),{title:name},'PATCH');return;}
+      if(choice>=0&&state.jobs.some(j=>j.sessionId===id&&['queued','running','stopping'].includes(j.status)))throw Error('请先停止或等待当前任务完成。');
       if (choice === 0) await app.mutate('/api/sessions/' + encodeURIComponent(id) + '/archive', { archived: !session.archivedAt }, 'PATCH');
       if (choice === 1) {
         const confirmed = await new Promise(resolve => wx.showModal({ title: '删除这段对话？', content: '删除后无法恢复，素材和已生成的作品会保留。', confirmText: '删除', success: r => resolve(r.confirm), fail: () => resolve(false) }));
@@ -305,6 +306,8 @@ Page({
   async stop() { try { await getApp().mutate('/api/sessions/' + encodeURIComponent(this.data.sessionId) + '/stop', {}); } catch (error) { notify(error); } },
   async retry(event) { const app=getApp(),job=app.state&&(app.state.jobs||[]).find(j=>j.id===event.currentTarget.dataset.id);if(job&&job.stickerGenerationTask){wx.navigateTo({url:'/pages/sticker-studio/index?sessionId='+encodeURIComponent(job.sessionId)+'&projectId='+encodeURIComponent(job.stickerGenerationTask.projectId)});return;}try { await app.mutate('/api/jobs/' + encodeURIComponent(event.currentTarget.dataset.id) + '/retry', {}); } catch (error) { notify(error); } },
   play(event) { wx.navigateTo({ url: '/pages/player/index?type=artifact&id=' + encodeURIComponent(event.currentTarget.dataset.id) }); },
+  openProject(event){const {openProject}=require('../../utils/project-links');const message=(this.data.messages||[]).find(m=>m.id===event.currentTarget.dataset.message);openProject(message&&(message.projectLinks||[]).find(l=>l.id===event.currentTarget.dataset.id));},
+  deleteSource(event){return require('../../utils/manage').deleteMedia(this,event.currentTarget.dataset.id);},
   credits() { wx.navigateTo({ url: '/pages/credits/index' }); },
   livePhotoHelp,
   sourceCoverError(event) { coverError(this, 'sources', event, getApp().client); },
@@ -328,6 +331,7 @@ Page({
     this.render(getApp().state); this.pick();
   },
   removeAttachment(event) { this.setData({ attachmentIds: this.data.attachmentIds.filter(id => id !== event.currentTarget.dataset.id) }); this.render(getApp().state); },
+  async sourceMenu(event){const id=event.currentTarget.dataset.id,item=(getApp().state.media||[]).find(m=>m.id===id);if(!item)return;const choice=await new Promise(resolve=>wx.showActionSheet({itemList:['查看素材','重命名','删除素材'],success:r=>resolve(r.tapIndex),fail:()=>resolve(-1)}));if(choice===0)return this.openAttachment(event);if(choice===1)return require('../../utils/manage').rename(this,'/api/media/'+encodeURIComponent(id),'name',item.name);if(choice===2){await require('../../utils/manage').deleteMedia(this,id);if(this.data.pick)this.pick();}},
   async upload(event) {
     if (this.data.creatingSession || this.data.uploading) return;
     if (!requireLogin()) return;
