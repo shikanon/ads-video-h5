@@ -1,7 +1,7 @@
 <view class="nt theme-{{theme}}" style="height:{{pageHeight-keyboardHeight}}px">
  <block wx:if="{{!editor}}">
   <view class="nt-list-head"><button class="nt-back" bindtap="back">‹</button><text>笔记</text><text class="nt-total">{{notes.length}}</text></view>
-  <view class="nt-search"><image src="{{icons.history}}"/><input placeholder="搜索笔记" value="{{query}}" bindinput="search"/></view>
+  <view class="nt-search"><view class="nt-search-icon"/><input placeholder="搜索笔记" value="{{query}}" bindinput="search"/></view>
   <scroll-view class="nt-categories" scroll-x><button wx:for="{{categories}}" wx:key="*this" data-name="{{item}}" class="{{filter===item?'selected':''}}" bindtap="chooseCategory">{{item}}</button></scroll-view>
   <scroll-view class="nt-list" scroll-y>
    <view wx:for="{{shownNotes}}" wx:key="id" class="nt-note" data-id="{{item.id}}" bindtap="open"><view class="nt-note-title">{{item.title}}</view><view class="nt-snippet">{{item.snippet}}</view><view class="nt-note-meta"><text>{{item.date}}</text><text>{{item.category}}</text></view><button class="nt-delete" data-id="{{item.id}}" catchtap="remove" aria-label="删除笔记">×</button></view>
