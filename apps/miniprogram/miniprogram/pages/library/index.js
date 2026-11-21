@@ -61,8 +61,8 @@ Page({
     if (section === 'materials') {
       materialOptions.push({name:'移入文件夹',run:()=>{this.setData({selectedIds:[item.id],pickingFolder:true});}});
       const original=(app.state.media||[]).find(m=>m.id===item.id);if(original?.folderId&&['video','audio'].includes(item.kind)){if(item.kind==='video')materialOptions.push({name:'设为MV参考片',run:()=>this.setMvRole(original,'referenceId')});materialOptions.push({name:'设为MV配乐',run:()=>this.setMvRole(original,'audioId')});}
-      if (!item.production) materialOptions.push({ name: '用来创作', run: () => this.use(event) });
-      if (item.kind === 'video' && !item.production) materialOptions.push({ name: '拉片分析', run: () => this.film(event) });
+      if (!item.production) options.push({ name: '用来创作', run: () => this.use(event) });
+      if (item.kind === 'video' && !item.production) options.push({ name: '拉片分析', run: () => this.film(event) });
       if (item.production || item.productionSource) materialOptions.push({ name: item.production ? '恢复到可用素材' : '移到制作归档', run: () => this.moveCollection({ currentTarget: { dataset: { id: item.id, collection: item.production ? 'library' : 'production' } } }) });
       options.push({ name: '删除素材', run: () => this.remove(event) });
     }
