@@ -31,3 +31,8 @@ test('editor undo, redo, save and draft recovery retain mixed content and separa
 test('conflicted saves retain the exact local draft and do not close the editor',async()=>{
  const f=fixture(),p=await capturePage('notes',f.app,f.wx);p.onLoad({});p.edit({id:'n',revision:1,title:'本地修改',text:'不得丢失',attachmentIds:[],strokes:[]});p.setData({dirty:true});f.app.client.request=async()=>{throw Object.assign(Error('conflict'),{status:409});};await p.done();assert.equal(p.data.editor,true);assert.equal(p.data.dirty,true);assert.match(p.data.error,/别处更新/);p.onHide();assert.equal(f.storage.get('lightmao.note-draft.a').title,'本地修改');
 });
+test('all note entry points reach the full-page editor while MV and template drafts retain their specialized tools',async()=>{
+ const f=fixture(),routes:string[]=[];f.wx.navigateTo=(o:any)=>routes.push(o.url);f.wx.redirectTo=(o:any)=>routes.push(o.url);const old=await capturePage('creative-studio',f.app,f.wx);old.onLoad({mode:'character'});await old.mode({currentTarget:{dataset:{id:'note'}}});assert.equal(routes.pop(),'/pages/notes/index');
+ old.onLoad({noteId:'legacy'});f.app.client.request=async()=>({notes:[{id:'legacy',kind:'note'}]});await old.loadNotes();assert.equal(routes.pop(),'/pages/notes/index?noteId=legacy');
+ const p=await capturePage('notes',f.app,f.wx);p.onLoad({});for(const kind of ['mv','template']){p.edit({id:'draft',kind});assert.equal(routes.pop(),'/pages/creative-studio/index?mode='+kind+'&noteId=draft');}assert.equal(p.data.editor,false);
+});
