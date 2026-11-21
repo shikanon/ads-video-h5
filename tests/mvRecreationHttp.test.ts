@@ -8,6 +8,7 @@ import {capturePage,waitFor,miniRequire} from './fixtures/nativeClient';
 
 test('real service executes the MV queue, persists a plan and publishes a rendered artifact reachable from its project',{timeout:90000},async t=>{
  const f=await startCreditServer({structuredReply:body=>{
+  if(body.messages[1].content[0].type==='input_audio')return {sentences:[{complete:true,words:[{start:.1,end:.6,text:'测试'},{start:.7,end:1.5,text:'歌词'}]}]};
   const input=JSON.parse(body.messages[1].content[0].text);
   if(input.sources)return {story:'原片叙事',shots:[{sourceId:input.sources[0].id,start:0,duration:2,chapter:'重逢',reason:'使用已抽帧的原录屏',transition:'cut'}],captions:[],limitations:['受控供应商回复，仅验证执行链路']};
   return {description:'实际受控红色画面；稀疏抽帧未验证完整动作。'};
@@ -22,6 +23,7 @@ test('real service executes the MV queue, persists a plan and publishes a render
  const terminal=async()=>{let state:any,job:any;for(let i=0;i<300;i++){state=await(await f.request(cookie,'/api/state')).json();job=state.jobs.slice().reverse().find((j:any)=>j.mvTask?.projectId===p.id);if(job&&['failed','succeeded','cancelled'].includes(job.status))break;await new Promise(r=>setTimeout(r,100));}assert.equal(job?.status,'succeeded',JSON.stringify(job));return {state,job};};
  assert.equal((await f.request(cookie,'/api/mv-recreations/'+p.id+'/plan',{requestId:'mv_plan_http_0001'})).status,202);await terminal();
  const planned=(await(await f.request(cookie,'/api/mv-recreations')).json() as any).projects[0];assert.equal(planned.plan.shots[0].sourceId,'original-source');
+ assert.equal((await f.request(cookie,'/api/mv-recreations/'+p.id+'/lyrics',{requestId:'mv_lyrics_http_01',planHash:planned.planHash})).status,202);await terminal();const lyricDraft=(await(await f.request(cookie,'/api/mv-recreations')).json() as any).projects[0];assert.equal(lyricDraft.planHash,planned.planHash);assert.equal(lyricDraft.approvedHash,undefined);assert.equal(lyricDraft.plan.captions.length,0);assert.equal(lyricDraft.lyricDraft.captions[0].text,'测试歌词');assert.equal(lyricDraft.lyricDraft.timing,'model-estimated');
  const preview=await f.request(cookie,'/api/mv-recreations/'+p.id+'/preview',{requestId:'mv_preview_http_01',planHash:planned.planHash});assert.equal(preview.status,202);const rendered=await terminal(),artifact=rendered.state.artifacts.find((a:any)=>a.id===rendered.job.artifactId);assert.ok(artifact);assert.equal(artifact.kind,'video');
  const bytes=await f.request(cookie,'/api/artifacts/'+artifact.id);assert.equal(bytes.status,200);const video=path.join(f.directory,'downloaded.mp4');await writeFile(video,Buffer.from(await bytes.arrayBuffer()));assert.equal((await probeVideo(video)).hasAudio,true);
  assert.equal((await f.request(other,'/api/mv-recreations/'+p.id+'/preview',{requestId:'mv_foreign_http01',planHash:planned.planHash})).status,404);

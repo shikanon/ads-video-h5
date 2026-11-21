@@ -366,7 +366,7 @@ export interface JobAttempt {
 }
 
 export interface Job {
-  mvTask?: {projectId:string;phase:'plan'|'preview'|'render';planHash?:string};
+  mvTask?: {projectId:string;phase:'plan'|'lyrics'|'preview'|'render';planHash?:string};
   toolPlacement?: {x:number;y:number};
   clientRequestId?: string;
   clientRequestHash?: string;

@@ -8,6 +8,7 @@ import {mountCreativeNotes} from './creativeNoteRoutes';
 import type {MvRecreation} from '../shared/mvRecreation';
 import {mountMvRecreation} from './mvRecreationRoutes';
 import {planMv,renderMv} from './mvRecreation';
+import {recognizeMvLyrics} from './mvLyrics';
 import {createChatSubmissions} from './chatSubmission';
 import {createNotifications,disabledNotifications} from './wechatNotifications';
 import {analyzeFilm,readFilmReport,filmDirectory,reusableShot,removeFilmData} from './filmAnalysis';
@@ -300,6 +301,7 @@ async function performJob(job: Job): Promise<void> {
     await currentTaskExecution()?.observeDependency('mv-project',{referenceId:p.referenceId,audioId:p.audioId,sourceIds:p.sourceIds,instructions:p.instructions,duration:p.duration,...(task.phase!=='plan'?{planHash:p.planHash}:{})});
     const directory=path.join(dataDir,'mv-recreations',p.id),file=async(id:string)=>{if(!state.media.some(m=>m.id===id&&m.ownerId===job.ownerId))throw Error('原素材已删除或无权使用。');const target=path.join(mediaDir,id);await oss?.ensure(job.ownerId!,'media',id,target);return target;},progress=async(s:string)=>{throwIfJobCancelled();job.stage=s;updateReply(session,job,s,'commentary','mv-progress');await saveState();};
     if(task.phase==='plan'){const vision=await getModelConfig('understanding'),text=await getModelConfig('text',job.textModel?.id||session.modelId);if(!vision||!text)throw Error('请先配置画面理解模型与文本模型。');await planMv({project:p,media,file,directory,vision,text,save:saveState,progress});addReply(session,job,'已保存原素材MV分镜，请打开复刻项目核对镜头、字幕和限制，确认后制作20秒样片；样片通过后可渲染整片。');}
+    else if(task.phase==='lyrics'){const config=await getModelConfig('understanding');if(!config)throw Error('请先配置音频理解模型。');await recognizeMvLyrics({project:p,file:await file(p.audioId),directory,config,save:saveState,progress});addReply(session,job,'已保存歌词识别草稿。请打开MV项目试听、校对歌词和时间后采用；尚未替换已确认分镜或宣称歌词正确。');}
     else{const existing=task.phase==='preview'?p.previewArtifactId:p.artifactId;if(existing&&state.artifacts.some(a=>a.id===existing&&a.ownerId===job.ownerId)){job.artifactId=existing;addReply(session,job,'已复用本版分镜的成片。',existing);return;}
       const result=await renderMv({project:p,media,file,directory,preview:task.phase==='preview',progress,onNode:async(index,file,duration)=>{p.nodeArtifacts||={};const key=String(index),old=p.nodeArtifacts[key];if(old&&state.artifacts.some(a=>a.id===old&&a.ownerId===job.ownerId))return;throwIfJobCancelled();currentTaskExecution()?.guard();const a=await addArtifact(session,job,'video',p.name+' · 节点'+(index+1)+'（无声）',await readFile(file),'video/mp4',undefined,duration);p.nodeArtifacts[key]=a.id;await saveState();}});throwIfJobCancelled();currentTaskExecution()?.guard();const artifact=await addArtifact(session,job,'video',p.name+(task.phase==='preview'?' · 20秒样片':' · 复刻成片'),await readFile(result.file),'video/mp4',undefined,result.receipt.duration);job.artifactId=artifact.id;if(task.phase==='preview')p.previewArtifactId=artifact.id;else p.artifactId=artifact.id;p.updatedAt=now();await saveState();addReply(session,job,'原素材MV已实际渲染，时长、音轨和全片解码检查通过。视觉与节奏仍需你验收；没有生成新角色。',artifact.id);
     }return;

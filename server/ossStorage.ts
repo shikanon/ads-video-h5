@@ -15,7 +15,7 @@ export function createOssStorage() {
   const publicRead = process.env.OSS_PUBLIC_READ === 'true';
   const prefix = (process.env.OSS_PREFIX || 'qingjian').replace(/^\/+|\/+$/g, '');
   const client = new OSS({
-    region, bucket, secure: true, authorizationV4: true, timeout: 180_000,
+    region, bucket, secure: true, internal: process.env.OSS_INTERNAL === 'true', authorizationV4: true, timeout: 180_000,
     accessKeyId: process.env.OSS_ACCESS_KEY_ID!,
     accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET!,
   });
