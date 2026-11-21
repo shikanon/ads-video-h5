@@ -13,4 +13,5 @@ function insertMedia(blocks,activeId,cursor,ids){
  out.splice(at,b&&b.type==='text'?1:0,...(b&&b.type==='text'?[{...b,text:b.text.slice(0,pos)}]:[]),...ids.map(mediaId=>({id:id(),type:'media',mediaId})),after);return {blocks:out,activeId:after.id};
 }
 function removeBlock(blocks,blockId){const out=blocks.filter(b=>b.id!==blockId);return out.length?out:[textBlock()];}
-module.exports={id,textBlock,blocksOf,contents,insertMedia,removeBlock};
+function legacySketch(strokes,width,height){const w=Math.min(width,height*1.5),h=w/1.5,x=(width-w)/2,y=(height-h)/2;return strokes.map(points=>({points:points.map(p=>({x:(x+p.x*w)/width,y:(y+p.y*h)/height})),color:'#69473c',width:2*w/300,erase:false}));}
+module.exports={id,textBlock,blocksOf,contents,insertMedia,removeBlock,legacySketch};
