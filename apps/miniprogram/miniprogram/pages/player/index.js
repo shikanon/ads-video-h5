@@ -20,15 +20,22 @@ Page({
     }
     this._item = item;
     this.setData({documentText:item.document?.text||'',documentTruncated:Boolean(item.document?.truncated),isWord:/\.docx$/i.test(item.name)});
-    this.setData({ item: { id: item.id, name: this._type === 'artifact' ? brandText(item.name) : item.name, kind: item.kind, project: Boolean(item.projectUrl), date: beijingTime(item.createdAt), duration: item.duration ? Math.round(item.duration) + ' 秒' : '' }, analysis: item.analysis && item.analysis.transcript || '' });
+    this.setData({ item: { id: item.id, name: this._type === 'artifact' ? brandText(item.name) : item.name, kind: item.kind, project: Boolean(item.projectUrl), largeVideo:item.kind==='video'&&item.sizeBytes>200*1024*1024, date: beijingTime(item.createdAt), duration: item.duration ? Math.round(item.duration) + ' 秒' : '' }, analysis: item.analysis && item.analysis.transcript || '' });
     if (item.kind!=='document' && !this.data.src && !this.data.loading) this.load();
   },
   async load() {
     if (!this._item || this.data.loading) return;
     this.setData({ loading: true, error: '' });
     try {
-      const client = getApp().client;
-      const src = client.previewUrl(this._item.url) || await client.download(this._item.url);
+      const app=getApp(),generation=app._generation,client = app.client;
+      let src = client.previewUrl(this._item.url);
+      if(!src&&this._item.kind==='video'&&typeof client.request==='function'){
+        const playback=await client.request('/api/media-playback',{type:this._type,id:this._id});
+        if(generation!==app._generation)return;
+        if(!playback||typeof playback.url!=='string')throw Error('视频播放地址暂不可用，请重试。');
+        src=client.mediaUrl(playback.url);
+      }
+      if(!src)src=await client.download(this._item.url);
       if (!this._visible) return;
       this.setData({ src });
       if (this._item.kind === 'audio') {
@@ -48,6 +55,7 @@ Page({
   async image() { if (!this.data.src) return; try { await privacy(); wx.previewImage({ urls: [this.data.src], current: this.data.src }); } catch (error) { notify(error); } },
   async save() {
     if (this.data.saving || !this._item || this._item.kind==='document') return;
+    if(this._item.kind==='video'&&this._item.sizeBytes>200*1024*1024)return this.copyVideoLink();
     this.setData({ saving: true, error: '' });
     try {
       await privacy();
@@ -57,6 +65,7 @@ Page({
       wx.showToast({ title: '已保存到相册', icon: 'success' });
     } catch (error) { this.setData({ error: error.message }); } finally { this.setData({ saving: false }); }
   },
+  async copyVideoLink(){if(this.data.saving||!this._item)return;const app=getApp(),g=app._generation;const ok=await new Promise(resolve=>wx.showModal({title:'下载高清原片',content:'高清原片超过微信直接保存的大小。复制下载链接，在浏览器中保存；链接30分钟有效。',confirmText:'复制链接',success:r=>resolve(r.confirm),fail:()=>resolve(false)}));if(!ok||g!==app._generation)return;this.setData({saving:true,error:''});try{const r=await app.client.request('/api/media-playback',{type:this._type,id:this._id,download:true});if(g!==app._generation)return;const data=app.client.mediaUrl(r.url);if(!data)throw Error('下载链接暂不可用。');await new Promise((resolve,reject)=>wx.setClipboardData({data,success:resolve,fail:reject}));}catch(e){if(g===app._generation)this.setData({error:e.message||'复制未完成，请重试。'});}finally{if(g===app._generation)this.setData({saving:false});}},
   use() { if (this._type === 'media') { getApp().pendingAttachments = [this._id]; wx.switchTab({ url: '/pages/chat/index' }); } },
   async manage(){if(!this._item)return;const item=this._item,choice=await new Promise(resolve=>wx.showActionSheet({itemList:['重命名',this._type==='media'?'删除素材':'删除作品'],success:r=>resolve(r.tapIndex),fail:()=>resolve(-1)})),manage=require('../../utils/manage');if(choice===0)return manage.rename(this,'/api/'+(this._type==='media'?'media':'artifacts')+'/'+encodeURIComponent(item.id),'name',item.name);if(choice===1){const removed=await(this._type==='media'?manage.deleteMedia(this,item.id):manage.deleteArtifact(this,item.id));if(removed&&this._visible)wx.navigateBack();}},
   async project() {

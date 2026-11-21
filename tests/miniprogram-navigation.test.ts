@@ -100,8 +100,9 @@ test('resource menu keeps operations available and drops a choice after switchin
   let sheet: any; f.wx.showActionSheet = (options: any) => { sheet = options; };
   const page = await capturePage('library', f.app, f.wx); page.onLoad(); page.onShow();
   assert.equal(page.data.kindCounts.video, 1);
-  const pending = page.itemMenu(event({ id: 'm' })); assert.deepEqual(Array.from(sheet.itemList), ['预览', '重命名', '用来创作', '拉片分析', '删除素材']);
+  const pending = page.itemMenu(event({ id: 'm' })); assert.deepEqual(Array.from(sheet.itemList), ['预览', '重命名', '用来创作', '拉片分析', '删除素材', '素材整理 / MV设置']);assert.ok(sheet.itemList.length<=6);
   page.section(event({ section: 'films' })); sheet.success({ tapIndex: 1 }); await pending; assert.equal(f.app.pendingAttachments, undefined);
   page.section(event({ section: 'materials' })); const choice = page.itemMenu(event({ id: 'm' })); sheet.success({ tapIndex: 2 }); await choice;
-  assert.deepEqual(Array.from(f.app.pendingAttachments), ['m']); page.onHide();
+  assert.deepEqual(Array.from(f.app.pendingAttachments), ['m']);
+  const folders=page.itemMenu(event({id:'m'}));sheet.success({tapIndex:5});await tick();assert.ok(sheet.itemList.includes('移入文件夹'));sheet.success({tapIndex:0});await folders;assert.equal(page.data.pickingFolder,true);assert.deepEqual(Array.from(page.data.selectedIds),['m']);page.onHide();
 });

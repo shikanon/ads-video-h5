@@ -8,6 +8,10 @@ import {mountCreativeNotes} from './creativeNoteRoutes';
 import type {MvRecreation} from '../shared/mvRecreation';
 import {mountMvRecreation} from './mvRecreationRoutes';
 import {planMv,renderMv} from './mvRecreation';
+import {recognizeMvLyrics} from './mvLyrics';
+import {createMediaPlayback} from './mediaPlayback';
+import {mountMediaFolders} from './mediaFolders';
+import type {MediaFolder} from '../shared/mediaFolders';
 import {createChatSubmissions} from './chatSubmission';
 import {createNotifications,disabledNotifications} from './wechatNotifications';
 import {analyzeFilm,readFilmReport,filmDirectory,reusableShot,removeFilmData} from './filmAnalysis';
@@ -31,7 +35,7 @@ import { createJobQueue } from './jobQueue';
 import multer from 'multer';
 import { randomUUID, createHash } from 'node:crypto';
 import {createJsonStateWriter} from './jsonStateWriter';
-import { cp, copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, copyFile, link, mkdir, readFile, rename, rm, writeFile,stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -136,6 +140,7 @@ const extensions = createExtensions(dataDir);
 await extensions.load();
 
 interface StoredState {
+  mediaFolders?: MediaFolder[];
   mvRecreations?: MvRecreation[];
   creativeNotes?: CreativeNote[];
   toolBatches?: ToolBatch[];
@@ -200,7 +205,7 @@ async function profileOf(user: PublicUser) {
 const shortName = (name: string) => path.basename(name).replace(/[\u0000-\u001f/\\]/g, '').slice(0, 120) || '素材';
 const extFor = (mime: string) => mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : mime === 'image/png' ? 'png' : mime === 'audio/mpeg' ? 'mp3' : mime === 'audio/wav' || mime === 'audio/x-wav' ? 'wav' : mime === 'audio/ogg' ? 'ogg' : 'bin';
 
-async function publicState(user:PublicUser):Promise<AppState>{const snapshot=await basePublicState(user);return{...snapshot,media:snapshot.media.map(m=>m.kind==='video'?{...m,thumbnailUrl:publicUrl('/api/media/'+m.id+'/thumbnail')}:m),features:{...snapshot.features!,notifications:notifications.ready,filmAnalysis:true},notifications:notifications.list(user.id)};}
+async function publicState(user:PublicUser):Promise<AppState>{const snapshot=await basePublicState(user);return{...snapshot,mediaFolders:(state.mediaFolders||[]).filter(f=>f.ownerId===user.id),media:snapshot.media.map(m=>m.kind==='video'?{...m,thumbnailUrl:publicUrl('/api/media/'+m.id+'/thumbnail')}:m),features:{...snapshot.features!,notifications:notifications.ready,filmAnalysis:true},notifications:notifications.list(user.id)};}
 let stickerPublicHash:Promise<string>|undefined;
 async function basePublicState(user: PublicUser): Promise<AppState> {
   const stickerEntry=videoTemplates.find(t=>t.workflow==='sticker-pack');
@@ -214,7 +219,7 @@ async function basePublicState(user: PublicUser): Promise<AppState> {
 function addReply(session: Session, job: Job, text: string, artifactId?: string) {
   return updateReply(session, job, text, 'final', 'final', artifactId);
 }
-async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['kind'],'game'|'sticker-pack'>, name: string, bytes: Buffer, mimeType: string, text?: string, duration?: number): Promise<Artifact> {
+async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['kind'],'game'|'sticker-pack'>, name: string, bytes: Buffer|string, mimeType: string, text?: string, duration?: number): Promise<Artifact> {
   throwIfJobCancelled();
   const id = randomUUID();
   const filename = `${id}.${kind==='video'?'mp4':extFor(mimeType)}`;
@@ -223,8 +228,9 @@ async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['k
   const mediaId = randomUUID();
   const mediaPath = path.join(mediaDir, mediaId);
   try {
-    await writeFile(artifactPath, bytes, { mode: 0o600 });
-    await copyFile(artifactPath, mediaPath);
+    const immutableLink=async(source:string,target:string)=>{try{await link(source,target);}catch(e){if(!['EXDEV','EPERM','EOPNOTSUPP'].includes((e as NodeJS.ErrnoException).code||''))throw e;await copyFile(source,target);}};
+    if(typeof bytes==='string'){if(kind!=='video')throw Error('仅不可变视频节点可按文件发布。');await immutableLink(bytes,artifactPath);await immutableLink(artifactPath,mediaPath);}
+    else{await writeFile(artifactPath, bytes, { mode: 0o600 });await copyFile(artifactPath, mediaPath);}
     await oss?.put(session.ownerId!, category, id, artifactPath, mimeType);
     await oss?.put(session.ownerId!, 'media', mediaId, mediaPath, mimeType);
     throwIfJobCancelled();
@@ -235,9 +241,10 @@ async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['k
   }
   const version = state.artifacts.filter((item) => item.sessionId === session.id && item.kind === kind).length + 1;
   const artifact: Artifact = { id, ownerId: session.ownerId, sessionId: session.id, messageId: job.messageId, kind, name, url: `/api/artifacts/${id}`, downloadUrl: `/api/download/${id}`, createdAt: now(), version, ...(text ? { text } : {}), ...(duration ? { duration } : {}) };
+  artifact.sizeBytes=typeof bytes==='string'?(await stat(bytes)).size:bytes.length;
   state.artifacts.push(artifact); state.artifactFiles[id] = filename;
   artifact.mediaId = mediaId;
-  state.media.push({ id: mediaId, ownerId: session.ownerId, name, mimeType, kind, ...(duration ? { duration } : {}), url: `/api/media/${mediaId}`, createdAt: now(), origin: 'generated' });
+  state.media.push({ id: mediaId, ownerId: session.ownerId, name, mimeType, kind, sizeBytes:artifact.sizeBytes,...(duration ? { duration } : {}), url: `/api/media/${mediaId}`, createdAt: now(), origin: 'generated' });
   return artifact;
 }
 async function performJob(job: Job): Promise<void> {
@@ -300,8 +307,9 @@ async function performJob(job: Job): Promise<void> {
     await currentTaskExecution()?.observeDependency('mv-project',{referenceId:p.referenceId,audioId:p.audioId,sourceIds:p.sourceIds,instructions:p.instructions,duration:p.duration,...(task.phase!=='plan'?{planHash:p.planHash}:{})});
     const directory=path.join(dataDir,'mv-recreations',p.id),file=async(id:string)=>{if(!state.media.some(m=>m.id===id&&m.ownerId===job.ownerId))throw Error('原素材已删除或无权使用。');const target=path.join(mediaDir,id);await oss?.ensure(job.ownerId!,'media',id,target);return target;},progress=async(s:string)=>{throwIfJobCancelled();job.stage=s;updateReply(session,job,s,'commentary','mv-progress');await saveState();};
     if(task.phase==='plan'){const vision=await getModelConfig('understanding'),text=await getModelConfig('text',job.textModel?.id||session.modelId);if(!vision||!text)throw Error('请先配置画面理解模型与文本模型。');await planMv({project:p,media,file,directory,vision,text,save:saveState,progress});addReply(session,job,'已保存原素材MV分镜，请打开复刻项目核对镜头、字幕和限制，确认后制作20秒样片；样片通过后可渲染整片。');}
+    else if(task.phase==='lyrics'){const config=await getModelConfig('understanding');if(!config)throw Error('请先配置音频理解模型。');await recognizeMvLyrics({project:p,file:await file(p.audioId),directory,config,save:saveState,progress});addReply(session,job,'已保存歌词识别草稿。请打开MV项目试听、校对歌词和时间后采用；尚未替换已确认分镜或宣称歌词正确。');}
     else{const existing=task.phase==='preview'?p.previewArtifactId:p.artifactId;if(existing&&state.artifacts.some(a=>a.id===existing&&a.ownerId===job.ownerId)){job.artifactId=existing;addReply(session,job,'已复用本版分镜的成片。',existing);return;}
-      const result=await renderMv({project:p,media,file,directory,preview:task.phase==='preview',progress,onNode:async(index,file,duration)=>{p.nodeArtifacts||={};const key=String(index),old=p.nodeArtifacts[key];if(old&&state.artifacts.some(a=>a.id===old&&a.ownerId===job.ownerId))return;throwIfJobCancelled();currentTaskExecution()?.guard();const a=await addArtifact(session,job,'video',p.name+' · 节点'+(index+1)+'（无声）',await readFile(file),'video/mp4',undefined,duration);p.nodeArtifacts[key]=a.id;await saveState();}});throwIfJobCancelled();currentTaskExecution()?.guard();const artifact=await addArtifact(session,job,'video',p.name+(task.phase==='preview'?' · 20秒样片':' · 复刻成片'),await readFile(result.file),'video/mp4',undefined,result.receipt.duration);job.artifactId=artifact.id;if(task.phase==='preview')p.previewArtifactId=artifact.id;else p.artifactId=artifact.id;p.updatedAt=now();await saveState();addReply(session,job,'原素材MV已实际渲染，时长、音轨和全片解码检查通过。视觉与节奏仍需你验收；没有生成新角色。',artifact.id);
+      const result=await renderMv({project:p,media,file,directory,preview:task.phase==='preview',progress,onNode:async(index,file,duration)=>{p.nodeArtifacts||={};const key=String(index),old=p.nodeArtifacts[key];if(old&&state.artifacts.some(a=>a.id===old&&a.ownerId===job.ownerId))return;throwIfJobCancelled();currentTaskExecution()?.guard();const a=await addArtifact(session,job,'video',p.name+' · 节点'+(index+1)+'（无声）',p.plan?.referenceEdit?file:await readFile(file),'video/mp4',undefined,duration);p.nodeArtifacts[key]=a.id;await saveState();}});throwIfJobCancelled();currentTaskExecution()?.guard();const artifact=await addArtifact(session,job,'video',p.name+(task.phase==='preview'?' · 20秒样片':' · 复刻成片'),p.plan?.referenceEdit?result.file:await readFile(result.file),'video/mp4',undefined,result.receipt.duration);job.artifactId=artifact.id;if(task.phase==='preview')p.previewArtifactId=artifact.id;else p.artifactId=artifact.id;p.updatedAt=now();await saveState();addReply(session,job,'原素材MV已实际渲染，时长、音轨和全片解码检查通过。视觉与节奏仍需你验收；没有生成新角色。',artifact.id);
     }return;
   }
   if(job.filmTask){
@@ -1079,6 +1087,10 @@ catch (error) { console.error(JSON.stringify({ event: 'release-evaluation.init-f
 
 const app = express();
 const creativePreviews=createCreativePreviews(publicBase);creativePreviews.mount(app);
+const mediaPlayback=createMediaPlayback({base:publicBase,lookup:(ownerId,kind,id)=>{
+ if(kind==='media'){const m=state.media.find(m=>m.id===id&&m.ownerId===ownerId&&m.kind==='video');if(!m)return;return {mimeType:m.mimeType,filename:m.name,prepare:async()=>{const file=path.join(mediaDir,m.id);await oss?.ensure(ownerId,'media',m.id,file);return file;}};}
+ const a=state.artifacts.find(a=>a.id===id&&a.ownerId===ownerId&&a.kind==='video'),file=a&&artifactFile(a);if(!a||!file)return;return {mimeType:'video/mp4',filename:a.name.endsWith('.mp4')?a.name:a.name+'.mp4',prepare:async()=>{await oss?.ensure(ownerId,'exports',a.id,file);return file;}};
+}});mediaPlayback.mountPublic(app);
 app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
 const auth = createAuth(dataDir, publicBase);
@@ -1133,6 +1145,7 @@ mountStickerSamples(app);
 const stickerShares=createStickerShares(dataDir,stickerStudio,publicBase);stickerShares.mountPublic(app);
 app.get('/api/sticker-styles/:id',(_q,r)=>{const file=stickerStyleFile(_q.params.id);if(!file)return r.status(404).end();r.sendFile(file,{maxAge:'1h'});});
 auth.mount(app, credits.readiness, user => credits.snapshot(user.id));
+mediaPlayback.mountOwned(app);
 stickerShares.mountPrivate(app);
 const startingStickerSessions=new Set<string>();
 mountStickerRoutes(app,{base:publicBase,
@@ -1263,6 +1276,7 @@ const scheduleTimer = setInterval(() => { scheduledTasks.tick().catch(error => c
 scheduleTimer.unref();
 app.get('/api/state', async (request, response) => response.json(await publicState(userOf(request))));
 mountLifecycleRoutes(app,{state:()=>state,save:saveState,snapshot:publicState,stickerOwner:(ownerId,id)=>stickerStudio.load(ownerId,id)});
+mountMediaFolders(app,{state:()=>state,save:saveState,snapshot:publicState});
 mountCreativeNotes(app,{state:()=>state,save:saveState});
 mountMvRecreation(app,{removeCache:async p=>{const base=path.resolve(dataDir,'mv-recreations'),target=path.resolve(base,p.id);if(path.dirname(target)!==base||!/^[a-f0-9-]{36}$/.test(p.id))throw Error('Invalid cache path');await rm(target,{recursive:true,force:true});},state:()=>state,save:saveState,snapshot:publicState,kick:()=>{void processQueue();},session:async user=>{const profile=await profileOf(user),s={...newSession(profile.settings.defaultModelId),ownerId:user.id,mode:'work' as const,title:'MV复刻项目'};state.sessions.unshift(s);return s.id;},start:async(user,p,phase)=>{const s=getSession(p.sessionId,user.id);if(!s)throw Error('项目会话已删除。');const job=await enqueueAgentMessage(s,'MV复刻「'+p.name+'」 · '+phase,[],undefined,undefined,'create');job.mvTask={projectId:p.id,phase};}});
 mountToolBatchRoutes(app,{state:()=>state,templates:()=>videoTemplates.map(publicTemplate),save:saveState,snapshot:publicState,kick:()=>{void processQueue();},

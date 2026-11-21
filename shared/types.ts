@@ -13,6 +13,8 @@ export interface Shot {
 }
 
 export interface MediaItem {
+  sizeBytes?: number;
+  folderId?: string;
   creativeAsset?: {role:'character'|'scene';identity:string};
   document?: {text:string;truncated:boolean};
   visualText?: {sourceHash:string;text:string;modelId:string};
@@ -302,6 +304,7 @@ export interface MusicSearch {
 }
 
 export interface Artifact {
+  sizeBytes?: number;
   sticker?: import('./stickerPacks').StickerDelivery;
   creative?: {engine:'defold';sourceHash:string;artifactHash?:string;technicalPassed:boolean;modelSelfChecked:boolean;userAccepted:false};
   template?: import('./videoTemplates').TemplateSelection & { panels: number; technicalPassed: boolean; userAccepted: false; boundary: string; basis: string[]; animationMode?:'code'|'declarative'; sourceHash?:string; motion?:{meanChangedAreaPct:number;activeFramePct:number} };
@@ -366,7 +369,7 @@ export interface JobAttempt {
 }
 
 export interface Job {
-  mvTask?: {projectId:string;phase:'plan'|'preview'|'render';planHash?:string};
+  mvTask?: {projectId:string;phase:'plan'|'lyrics'|'preview'|'render';planHash?:string};
   toolPlacement?: {x:number;y:number};
   clientRequestId?: string;
   clientRequestHash?: string;
@@ -446,6 +449,7 @@ export interface AppSettings {
 }
 
 export interface AppState {
+  mediaFolders?: import('./mediaFolders').MediaFolder[];
   creativeNoteLinks?: Array<{id:string;sessionId?:string;title:string}>;
   toolBatches?: import('./toolBatches').ToolBatchView[];
   notifications?: import('./notifications').NoticeInbox;
