@@ -36,3 +36,6 @@ test('all note entry points reach the full-page editor while MV and template dra
  old.onLoad({noteId:'legacy'});f.app.client.request=async()=>({notes:[{id:'legacy',kind:'note'}]});await old.loadNotes();assert.equal(routes.pop(),'/pages/notes/index?noteId=legacy');
  const p=await capturePage('notes',f.app,f.wx);p.onLoad({});for(const kind of ['mv','template']){p.edit({id:'draft',kind});assert.equal(routes.pop(),'/pages/creative-studio/index?mode='+kind+'&noteId=draft');}assert.equal(p.data.editor,false);
 });
+test('discarding unsaved edits exits without writing or deleting the saved note and cannot resurrect its draft',async()=>{
+ const f=fixture(),p=await capturePage('notes',f.app,f.wx);p.onLoad({});p.edit({id:'existing',revision:2,title:'已保存',text:'原正文',strokes:[],attachmentIds:[]});p.field({currentTarget:{dataset:{field:'title'}},detail:{value:'临时修改'}});p.stash();assert.ok(f.storage.has('lightmao.note-draft.a'));let label='';f.wx.showModal=(o:any)=>{label=o.cancelText;o.success({cancel:true});};await p.back();await new Promise(r=>setTimeout(r,350));assert.equal(label,'不保存');assert.equal(p.data.editor,false);assert.equal(p.data.dirty,false);assert.equal(f.storage.has('lightmao.note-draft.a'),false);assert.ok(f.calls.every(c=>c.body===undefined));p.onUnload();
+});
