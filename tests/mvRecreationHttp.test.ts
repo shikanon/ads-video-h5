@@ -4,7 +4,7 @@ import {readFile,writeFile,mkdir,copyFile,access} from 'node:fs/promises';
 import path from 'node:path';
 import {startCreditServer} from './fixtures/creditServer';
 import {runFFmpeg,probeVideo} from '../server/core';
-import {capturePage,waitFor} from './fixtures/nativeClient';
+import {capturePage,waitFor,miniRequire} from './fixtures/nativeClient';
 
 test('real service executes the MV queue, persists a plan and publishes a rendered artifact reachable from its project',{timeout:90000},async t=>{
  const f=await startCreditServer({structuredReply:body=>{
@@ -33,4 +33,11 @@ test('native MV page restores the plan, lists ordered nodes, renames projects an
  const calls:any[]=[],p:any={id:'p',name:'MV',duration:250,sourceIds:['source'],plan:{story:'旧约到重逢',shots:[{sourceId:'source',start:1,duration:5,chapter:'旧约'}],limitations:[]},nodeArtifacts:{10:'eleven',2:'three'}};
  const app:any={_generation:1,state:{media:[{id:'source',name:'原录屏'}],jobs:[]},client:{hasSession:()=>true,request:async(url:string,body:any,method:string)=>{calls.push({url,body,method});return {projects:[p]};}},subscribe:()=>()=>{},refresh:async()=>{}};
  const wx:any={showModal:(o:any)=>o.success({confirm:true,content:'新MV名称'}),showToast(){}};const page=await capturePage('mv-recreate',app,wx);page.onLoad({projectId:'p'});page.onShow();await waitFor(()=>Boolean(page.data.project));assert.equal(page.data.shots[0].name,'原录屏');assert.deepEqual(Array.from(page.data.nodes,(n:any)=>n.index),[3,11]);await page.rename();assert.equal(calls.find(c=>c.method==='PATCH').body.name,'新MV名称');app._generation++;page.onShow();assert.equal(page.data.project,null);assert.equal(page.data.planText,'');assert.equal(page.data.sourceCount,0);page.onHide();
+});
+
+test('MV chat keeps the project and requested movies visible without listing every internal node',()=>{
+ const {projectLinks}=miniRequire('./miniprogram/utils/project-links.js');
+ const message={id:'m',artifactIds:['full','preview']},job={sessionId:'s',messageId:'m',artifactId:'full',mvTask:{projectId:'p'}};
+ const artifacts=Array.from({length:35},(_,i)=>({id:'node-'+i,kind:'video',sessionId:'s',messageId:'m'})).concat([{id:'full',kind:'video',sessionId:'s',messageId:'m'},{id:'preview',kind:'video',sessionId:'s',messageId:'m'}]);
+ assert.deepEqual(projectLinks(message,job,{artifacts}).map((l:any)=>l.id),['mv-p','full','preview']);
 });

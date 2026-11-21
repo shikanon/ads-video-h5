@@ -3,7 +3,7 @@ function projectLinks(message,job,state){
   if(job&&job.stickerGenerationTask)links.push({id:'sticker-'+job.stickerGenerationTask.projectId,label:job.status==='succeeded'?'查看表情项目':'打开表情项目',kind:'sticker',projectId:job.stickerGenerationTask.projectId,sessionId:job.sessionId});
   if(job&&job.mvTask)links.push({id:'mv-'+job.mvTask.projectId,label:'查看MV复刻项目',kind:'mv',projectId:job.mvTask.projectId});
   const ids=new Set([...(message.artifactIds||[]),...(job&&job.artifactId?[job.artifactId]:[])]);
-  for(const a of state.artifacts||[])if(ids.has(a.id)||a.messageId===message.id||job&&a.sessionId===job.sessionId&&a.messageId===job.messageId)links.push({id:a.id,label:'查看'+(a.kind==='sticker-pack'?'表情作品':a.kind==='game'?'交互作品':'制作结果'),kind:'artifact',artifactId:a.id,sessionId:a.sessionId});
+  for(const a of state.artifacts||[])if((ids.has(a.id)||a.messageId===message.id||job&&a.sessionId===job.sessionId&&a.messageId===job.messageId)&&(!job||!job.mvTask||ids.has(a.id)))links.push({id:a.id,label:'查看'+(a.kind==='sticker-pack'?'表情作品':a.kind==='game'?'交互作品':'制作结果'),kind:'artifact',artifactId:a.id,sessionId:a.sessionId});
   const session=job&&(state.sessions||[]).find(s=>s.id===job.sessionId);
   if(session&&session.toolWorkspace)links.push({id:'workspace-'+session.id,label:'返回项目画布',kind:'workspace',sessionId:session.id,category:session.toolWorkspace.category});
   for(const n of state.creativeNoteLinks||[])if(job&&n.sessionId===job.sessionId)links.push({id:'note-'+n.id,label:'返回创作笔记',kind:'creative',noteId:n.id});
