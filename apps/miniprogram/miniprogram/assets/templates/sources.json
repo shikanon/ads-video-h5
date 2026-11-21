@@ -1,0 +1,32 @@
+[
+  {
+    "id": "qingmao-stickers",
+    "source": "skills/qingmao-stickers/assets/pack/01/thumb.png",
+    "target": "assets/templates/qingmao-stickers.png",
+    "sha256": "fdd0a37956d5c86d277fde651c0c63887733f73fa837d63c26f06a4db60f260b"
+  },
+  {
+    "id": "video-style-interface",
+    "source": "skills/video-style-interface/assets/poster.png",
+    "target": "assets/templates/video-style-interface.png",
+    "sha256": "8a85142f72506ecc95e1f0d4c22817eaad945bfcd545f4b514e3c51255493c80"
+  },
+  {
+    "id": "video-style-diagram",
+    "source": "skills/video-style-diagram/assets/poster.png",
+    "target": "assets/templates/video-style-diagram.png",
+    "sha256": "38159df4ed8f0dcc01119aca970643de36fb36c887cd518ae4a1dabe7a87f5c8"
+  },
+  {
+    "id": "video-style-spatial",
+    "source": "skills/video-style-spatial/assets/poster.png",
+    "target": "assets/templates/video-style-spatial.png",
+    "sha256": "626be7f01a4c4126eda4f57eeef7b75778b5a8d0f23c685c2c07ee5d338a29a4"
+  },
+  {
+    "id": "daily-ai-frontier",
+    "source": "skills/daily-ai-frontier/assets/poster.png",
+    "target": "assets/templates/daily-ai-frontier.png",
+    "sha256": "d55b98b6b2649abb872d9508e38fb8e6fbec917ea73bbb75c14d3ee3d9226219"
+  }
+]

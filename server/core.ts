@@ -343,8 +343,8 @@ async function answerUsingModel(prompt: string, config: ModelConfig, media: Medi
   // Registry storage binds to the configured data directory at import time.
   // Keep core imports side-effect free for callers that provision it later.
   const {getModelConfig}=await import('./modelRegistry');
-  const [templates,imageModel,audioModel,conversationStyle,game]=await Promise.all([loadVideoTemplateCatalog(),getModelConfig('image'),getModelConfig('audio'),loadEditingSkill('lightmao-conversation'),defoldEnvironment()]);
-  const guide=publicSkillGuide(templates.map(publicTemplate),{text:Boolean(config.enabled),image:Boolean(imageModel?.enabled&&/^doubao-seedream-/.test(imageModel.modelId)),audio:Boolean(audioModel?.enabled),game:game.available});
+  const [templates,imageModel,audioModel,visionModel,conversationStyle,game]=await Promise.all([loadVideoTemplateCatalog(),getModelConfig('image'),getModelConfig('audio'),getModelConfig('understanding'),loadEditingSkill('lightmao-conversation'),defoldEnvironment()]);
+  const guide=publicSkillGuide(templates.map(publicTemplate),{text:Boolean(config.enabled),image:Boolean(imageModel?.enabled&&/^doubao-seedream-/.test(imageModel.modelId)),audio:Boolean(audioModel?.enabled),understanding:Boolean(visionModel?.enabled),game:game.available});
   const guideTool=skillGuideTool(guide);
   let reply = '',turns=0;
   const trace=createToolTrace(progress||(async()=>{}),[config.apiKey],events);

@@ -1,0 +1,242 @@
+<div id="lightmao-canvas-0212" class="viz-dotted-background"><div class="mc-app" aria-label="轻喵工具画布"></div></div>
+<style>
+#lightmao-canvas-0212{--mc-bg:light-dark(#fff9ee,#241d18);--mc-paper:light-dark(#fffdf8,#302720);--mc-ink:light-dark(#69473c,#f5e8d9);--mc-muted:light-dark(#947052,#c5ad95);--mc-line:light-dark(#e6d7bd,#5b4636);--mc-soft:light-dark(#f4e3c6,#483426);--mc-accent:#c9612f;color:var(--mc-ink);font-family:'Songti SC','STSong','SimSun',serif;padding:14px 0;}
+#lightmao-canvas-0212 *{box-sizing:border-box;}
+#lightmao-canvas-0212 [hidden]{display:none!important;}
+#lightmao-canvas-0212 button,#lightmao-canvas-0212 textarea,#lightmao-canvas-0212 select{font:inherit;color:inherit;}
+#lightmao-canvas-0212 button{border:0;background:none;cursor:pointer;}
+#lightmao-canvas-0212 button:focus-visible{outline:2px solid var(--mc-accent);outline-offset:2px;}
+#lightmao-canvas-0212 button:disabled{opacity:.45;cursor:default;}
+#lightmao-canvas-0212 svg{height:18px;width:18px;stroke-width:1.6;}
+#lightmao-canvas-0212 .mc-app{max-width:760px;width:100%;margin:auto;position:relative;border:1px solid var(--mc-line);border-radius:24px;overflow:hidden;background:var(--mc-bg);font-size:14px;line-height:1.5;box-shadow:0 12px 40px #3e220c12;}
+#lightmao-canvas-0212 .mc-status{background:var(--mc-accent);color:#fff9ee;padding:8px 19px 2px;display:flex;justify-content:space-between;font:500 11px/1.5 system-ui,sans-serif;}
+#lightmao-canvas-0212 .mc-header{position:relative;height:48px;background:var(--mc-accent);color:#fff9ee;display:flex;align-items:center;justify-content:center;font-size:17px;}
+#lightmao-canvas-0212 .mc-capsule{position:absolute;right:14px;border:1px solid #ffffff45;border-radius:20px;display:flex;gap:10px;align-items:center;padding:3px 10px;font:13px/1.5 system-ui,sans-serif;}
+#lightmao-canvas-0212 .mc-capsule span{height:13px;width:1px;background:#ffffff45;}
+#lightmao-canvas-0212 .mc-body{display:grid;grid-template-columns:51px minmax(0,1fr);}
+#lightmao-canvas-0212 .mc-sidebar{border-right:1px solid var(--mc-line);display:flex;flex-direction:column;align-items:center;gap:8px;padding:11px 3px 10px;}
+#lightmao-canvas-0212 .mc-side{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;width:43px;min-height:57px;border-radius:12px;font-size:11px;color:var(--mc-muted);}
+#lightmao-canvas-0212 .mc-side svg{width:21px;height:21px;}
+#lightmao-canvas-0212 .mc-side[aria-pressed=true]{background:var(--mc-soft);color:var(--mc-accent);}
+#lightmao-canvas-0212 .mc-history{margin-top:auto;}
+#lightmao-canvas-0212 .mc-main{min-width:0;}
+#lightmao-canvas-0212 .mc-topbar{display:flex;align-items:center;justify-content:space-between;gap:5px;padding:7px 9px;min-height:46px;}
+#lightmao-canvas-0212 .mc-title{font-size:14px;font-weight:500;}
+#lightmao-canvas-0212 .mc-tools{display:flex;align-items:center;gap:2px;}
+#lightmao-canvas-0212 .mc-icon{width:32px;min-height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+#lightmao-canvas-0212 .mc-select{background:transparent;border:0;padding:4px 0;font-size:12px;max-width:67px;}
+#lightmao-canvas-0212 .mc-workspace{display:grid;grid-template-columns:minmax(0,1fr) 216px;border-top:1px solid var(--mc-line);border-bottom:1px solid var(--mc-line);}
+#lightmao-canvas-0212 .mc-stage-wrap{min-width:0;position:relative;background:light-dark(#f4efe5,#1d1915);}
+#lightmao-canvas-0212 .mc-stage{height:356px;position:relative;overflow:hidden;touch-action:none;background-image:radial-gradient(var(--mc-line) .8px,transparent .8px);background-size:15px 15px;}
+#lightmao-canvas-0212 .mc-scene{position:absolute;inset:0;transform-origin:0 0;}
+#lightmao-canvas-0212 .mc-node{position:absolute;border:1px solid var(--mc-line);border-radius:11px;background:var(--mc-paper);box-shadow:0 3px 8px #44270e0b;touch-action:none;user-select:none;}
+#lightmao-canvas-0212 .mc-node[data-selected=true]{border:1.5px solid var(--mc-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--mc-accent) 10%,transparent);}
+#lightmao-canvas-0212 .mc-nodehead{display:flex;align-items:center;justify-content:space-between;height:27px;padding:0 4px 0 8px;font-size:11px;color:var(--mc-muted);}
+#lightmao-canvas-0212 .mc-nodehead button{width:25px;height:25px;display:grid;place-items:center;}
+#lightmao-canvas-0212 .mc-nodehead svg{width:12px;height:12px;}
+#lightmao-canvas-0212 .mc-node-art{width:100%;height:calc(100% - 57px);object-fit:contain;display:block;pointer-events:none;-webkit-user-drag:none;}
+#lightmao-canvas-0212 .mc-nodeblank{height:calc(100% - 57px);display:grid;place-items:center;color:var(--mc-muted);background:var(--mc-soft);margin:0 5px;border-radius:5px;font-size:12px;}
+#lightmao-canvas-0212 .mc-nodeblank svg{height:28px;width:28px;}
+#lightmao-canvas-0212 .mc-nodefoot{height:29px;display:flex;justify-content:center;align-items:center;gap:4px;font-size:12px;}
+#lightmao-canvas-0212 .mc-nodefoot svg{width:13px;height:13px;color:var(--mc-accent);}
+#lightmao-canvas-0212 .mc-resize{position:absolute;right:-5px;bottom:-5px;width:15px;height:15px;background:var(--mc-paper);border:1px solid var(--mc-accent);border-radius:4px;cursor:nwse-resize;touch-action:none;}
+#lightmao-canvas-0212 .mc-viewtools{height:35px;display:flex;align-items:center;justify-content:space-between;padding:0 6px;background:var(--mc-bg);border-top:1px solid var(--mc-line);font-size:11px;color:var(--mc-muted);}
+#lightmao-canvas-0212 .mc-viewtools .mc-icon{width:27px;min-height:29px;}
+#lightmao-canvas-0212 .mc-empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--mc-muted);font-size:13px;}
+#lightmao-canvas-0212 .mc-empty>svg{height:29px;width:29px;}
+#lightmao-canvas-0212 .mc-agent{border-left:1px solid var(--mc-line);background:var(--mc-paper);min-width:0;display:flex;flex-direction:column;}
+#lightmao-canvas-0212 .mc-agenthead{display:flex;justify-content:space-between;align-items:center;gap:5px;padding:6px 10px;font-size:12px;color:var(--mc-accent);min-height:35px;}
+#lightmao-canvas-0212 .mc-agenthead span{display:flex;gap:5px;align-items:center;}
+#lightmao-canvas-0212 .mc-agenthead svg{width:15px;height:15px;}
+#lightmao-canvas-0212 .mc-chat{padding:3px 10px 9px;display:flex;flex-direction:column;gap:8px;}
+#lightmao-canvas-0212 .mc-message{font-size:12px;line-height:1.65;overflow-wrap:anywhere;}
+#lightmao-canvas-0212 .mc-message.user{align-self:flex-end;background:var(--mc-soft);border-radius:10px 10px 2px 10px;padding:6px 9px;max-width:90%;}
+#lightmao-canvas-0212 .mc-message.assistant{padding:1px 0;}
+#lightmao-canvas-0212 .mc-message span{font-size:10px;color:var(--mc-muted);display:block;}
+#lightmao-canvas-0212 .mc-message button{font-size:11px;color:var(--mc-accent);padding:3px 0;}
+#lightmao-canvas-0212 .mc-agentaction{margin:auto 10px 10px;}
+#lightmao-canvas-0212 .mc-primary{border-radius:10px;background:var(--mc-accent);color:#fff9ee;font-size:12px;min-height:38px;width:100%;padding:8px 5px;}
+#lightmao-canvas-0212 .mc-compose{padding:8px 10px;}
+#lightmao-canvas-0212 .mc-context{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--mc-muted);margin:0 0 5px;min-height:20px;}
+#lightmao-canvas-0212 .mc-context button{color:var(--mc-accent);padding:1px 4px;display:inline-flex;align-items:center;gap:3px;}
+#lightmao-canvas-0212 .mc-context svg{width:13px;height:13px;}
+#lightmao-canvas-0212 .mc-inputrow{border:1px solid var(--mc-line);border-radius:12px;display:flex;align-items:center;gap:3px;padding:5px;background:var(--mc-paper);}
+#lightmao-canvas-0212 .mc-input{min-width:0;flex:1;border:0;outline:none;resize:none;background:transparent;height:38px;max-height:100px;padding:7px 1px;font-size:13px;line-height:1.6;}
+#lightmao-canvas-0212 .mc-send{height:32px;width:32px;border-radius:9px;background:var(--mc-accent);color:#fff9ee;display:grid;place-items:center;flex-shrink:0;}
+#lightmao-canvas-0212 .mc-shelf{border-top:1px solid var(--mc-line);padding:5px 10px 10px;}
+#lightmao-canvas-0212 .mc-shelfhead{display:flex;justify-content:space-between;align-items:center;font-size:12px;min-height:31px;gap:5px;}
+#lightmao-canvas-0212 .mc-filters{display:flex;gap:2px;flex-wrap:wrap;}
+#lightmao-canvas-0212 .mc-filters button{font-size:11px;min-height:29px;padding:0 9px;border-radius:7px;}
+#lightmao-canvas-0212 .mc-filters button[aria-pressed=true]{color:var(--mc-accent);background:var(--mc-soft);}
+#lightmao-canvas-0212 .mc-templates{display:flex;gap:7px;}
+#lightmao-canvas-0212 .mc-template{flex:1;min-width:0;border:1px solid var(--mc-line);border-radius:10px;background:var(--mc-paper);padding:10px 3px 7px;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:12px;}
+#lightmao-canvas-0212 .mc-template svg{height:22px;width:22px;color:var(--mc-muted);}
+#lightmao-canvas-0212 .mc-template[aria-pressed=true]{background:var(--mc-soft);border-color:var(--mc-accent);}
+#lightmao-canvas-0212 .mc-tabbar{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--mc-line);padding:9px 12px 7px;background:var(--mc-bg);}
+#lightmao-canvas-0212 .mc-tab{padding:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px;min-height:45px;font-size:12px;color:var(--mc-muted);}
+#lightmao-canvas-0212 .mc-tab img{width:25px;height:25px;object-fit:contain;}
+#lightmao-canvas-0212 .mc-tab[aria-current=page]{color:#b8582b;}
+#lightmao-canvas-0212 .mc-homebar{height:4px;width:96px;background:var(--mc-ink);opacity:.8;border-radius:6px;margin:3px auto 8px;}
+#lightmao-canvas-0212 .mc-mask{position:absolute;inset:76px 0 0;z-index:20;background:#24150755;display:flex;align-items:flex-end;}
+#lightmao-canvas-0212 .mc-sheet{background:var(--mc-paper);border-radius:20px 20px 0 0;padding:12px 18px 23px;width:100%;}
+#lightmao-canvas-0212 .mc-sheethead{display:flex;align-items:center;justify-content:space-between;font-size:15px;margin-bottom:8px;}
+#lightmao-canvas-0212 .mc-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 0;width:100%;border-bottom:1px solid var(--mc-line);font-size:13px;text-align:left;}
+#lightmao-canvas-0212 .mc-check{background:var(--mc-soft);border-radius:10px;padding:12px;margin:10px 0;font-size:13px;}
+#lightmao-canvas-0212 .mc-switch{display:flex;gap:8px;}
+#lightmao-canvas-0212 .mc-switch button{flex:1;border:1px solid var(--mc-line);border-radius:8px;min-height:39px;font-size:12px;}
+#lightmao-canvas-0212 .mc-switch button[aria-pressed=true]{background:var(--mc-soft);border-color:var(--mc-accent);}
+#lightmao-canvas-0212 .mc-toast{position:absolute;z-index:30;bottom:83px;left:65px;right:16px;background:var(--mc-ink);color:var(--mc-bg);border-radius:10px;display:flex;justify-content:center;align-items:center;gap:12px;padding:10px;font-size:12px;}
+#lightmao-canvas-0212 .mc-toast button{color:var(--mc-bg);text-decoration:underline;}
+@media(max-width:540px){#lightmao-canvas-0212 .mc-app{max-width:390px;}#lightmao-canvas-0212 .mc-workspace{display:flex;flex-direction:column;}#lightmao-canvas-0212 .mc-stage{height:310px;}#lightmao-canvas-0212 .mc-agent{border-left:0;border-top:1px solid var(--mc-line);}#lightmao-canvas-0212 .mc-agenthead{min-height:30px;padding:4px 9px;}#lightmao-canvas-0212 .mc-chat{padding:1px 9px 6px;gap:5px;}#lightmao-canvas-0212 .mc-message{font-size:12px;}#lightmao-canvas-0212 .mc-agentaction{margin:2px 9px 8px;}#lightmao-canvas-0212 .mc-node-art{height:calc(100% - 57px);}#lightmao-canvas-0212 .mc-compose{padding:7px 9px;}#lightmao-canvas-0212 .mc-message span{display:none;}}
+@media(pointer:coarse){#lightmao-canvas-0212 .mc-input{font-size:16px;}#lightmao-canvas-0212 .mc-primary{min-height:44px;}#lightmao-canvas-0212 .mc-nodehead button{height:29px;width:29px;}#lightmao-canvas-0212 .mc-resize{width:22px;height:22px;right:-9px;bottom:-9px;}}
+#lightmao-canvas-0212 .mc-app{max-width:390px;height:844px;display:flex;flex-direction:column;}
+#lightmao-canvas-0212 .mc-status,#lightmao-canvas-0212 .mc-header,#lightmao-canvas-0212 .mc-tabbar,#lightmao-canvas-0212 .mc-homebar{flex-shrink:0;}
+#lightmao-canvas-0212 .mc-body{flex:1;min-height:0;}
+#lightmao-canvas-0212 .mc-main{display:flex;flex-direction:column;min-height:0;}
+#lightmao-canvas-0212 .mc-topbar{flex-shrink:0;}
+#lightmao-canvas-0212 .mc-workspace{display:flex;flex-direction:column;flex:1;min-height:0;}
+#lightmao-canvas-0212 .mc-stage-wrap{display:flex;flex-direction:column;flex:1;min-height:175px;}
+#lightmao-canvas-0212 .mc-stage{height:auto;flex:1;min-height:140px;}
+#lightmao-canvas-0212 .mc-viewtools{flex-shrink:0;}
+#lightmao-canvas-0212 .mc-agent{border-left:0;border-top:1px solid var(--mc-line);flex-shrink:0;}
+#lightmao-canvas-0212 .mc-agenthead{min-height:28px;padding:1px 9px;}
+#lightmao-canvas-0212 .mc-chat{max-height:66px;overflow-y:auto;padding:1px 9px 5px;gap:4px;}
+#lightmao-canvas-0212 .mc-message{font-size:12px;}
+#lightmao-canvas-0212 .mc-message span{display:none;}
+#lightmao-canvas-0212 .mc-agentaction{margin:2px 9px 7px;}
+#lightmao-canvas-0212 .mc-primary{min-height:36px;}
+#lightmao-canvas-0212 .mc-compose{padding:6px 9px;flex-shrink:0;}
+#lightmao-canvas-0212 .mc-shelf{padding:4px 9px 8px;flex-shrink:0;min-width:0;}
+#lightmao-canvas-0212 .mc-shelfhead{min-height:29px;}
+#lightmao-canvas-0212 .mc-templates{overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;gap:8px;padding:2px 1px 5px;scrollbar-width:thin;}
+#lightmao-canvas-0212 .mc-template{flex:0 0 166px;scroll-snap-align:start;display:block;padding:0 0 6px;overflow:hidden;}
+#lightmao-canvas-0212 .mc-template>span:last-child{display:block;padding:5px 4px 0;font-size:12px;}
+#lightmao-canvas-0212 .mc-template-preview{height:93px;width:100%;display:flex;align-items:center;justify-content:center;gap:2px;background:var(--mc-paper);overflow:hidden;}
+#lightmao-canvas-0212 .mc-template-preview img{height:88px;width:48%;object-fit:contain;}
+#lightmao-canvas-0212 .mc-preview-type{font-size:30px;letter-spacing:3px;background:var(--mc-soft);color:var(--mc-accent);width:100%;height:100%;display:grid;place-items:center;}
+#lightmao-canvas-0212 .mc-preview-cut{width:100%;height:100%;display:flex;align-items:center;justify-content:center;gap:3px;padding:12px;background:var(--mc-soft);}
+#lightmao-canvas-0212 .mc-preview-cut img{background:var(--mc-paper);width:31%;height:70px;border-radius:5px;}
+#lightmao-canvas-0212 .mc-preview-diagram{width:100%;height:100%;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--mc-soft);font:11px/1.5 system-ui,sans-serif;}
+#lightmao-canvas-0212 .mc-preview-diagram span{background:var(--mc-paper);border-radius:7px;padding:8px 5px;}
+#lightmao-canvas-0212 .mc-preview-talk{width:100%;height:100%;position:relative;display:flex;align-items:center;justify-content:center;background:var(--mc-soft);}
+#lightmao-canvas-0212 .mc-preview-talk img{height:87px;width:70%;object-fit:contain;}
+#lightmao-canvas-0212 .mc-preview-talk span{position:absolute;bottom:8px;left:18px;right:18px;background:var(--mc-paper);padding:2px;font-size:11px;}
+#lightmao-canvas-0212 .mc-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding-top:5px;max-height:405px;overflow-y:auto;}
+#lightmao-canvas-0212 .mc-gallery .mc-template{width:100%;min-width:0;}
+#lightmao-canvas-0212 .mc-gallery .mc-template-preview{height:125px;}
+#lightmao-canvas-0212 .mc-gallery .mc-template-preview img{height:118px;}
+#lightmao-canvas-0212 .mc-gallery .mc-preview-cut img{height:83px;}
+#lightmao-canvas-0212 .mc-sheet .mc-chat{max-height:390px;}
+#lightmao-canvas-0212 .mc-gallery-button{font-size:11px;color:var(--mc-muted);margin-left:auto;padding:2px 7px;min-height:29px;}
+#lightmao-canvas-0212 .mc-stageaction{padding:5px 9px 7px;flex-shrink:0;}
+#lightmao-canvas-0212 .mc-template-preview.mc-original img{width:100%;height:100%;object-fit:contain;}
+#lightmao-canvas-0212 .mc-template-preview.mc-original.mc-original-stickers img{width:48%;height:100%;}
+#lightmao-canvas-0212 .mc-no-example{font-size:12px;color:var(--mc-muted);}
+@media(max-width:360px){#lightmao-canvas-0212 .mc-app{height:800px;}#lightmao-canvas-0212 .mc-body{grid-template-columns:45px minmax(0,1fr);}#lightmao-canvas-0212 .mc-sidebar{padding-left:0;padding-right:0;}#lightmao-canvas-0212 .mc-side{width:39px;}#lightmao-canvas-0212 .mc-template{flex-basis:150px;}#lightmao-canvas-0212 .mc-template-preview{height:82px;}#lightmao-canvas-0212 .mc-template-preview img{height:78px;}}
+#lightmao-canvas-0212 .mc-templates{gap:9px;scrollbar-width:none;}
+#lightmao-canvas-0212 .mc-templates::-webkit-scrollbar{display:none;}
+#lightmao-canvas-0212 .mc-template{flex:0 0 70px;width:70px;min-width:70px;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:4px;padding:3px 0;overflow:visible;}
+#lightmao-canvas-0212 .mc-template[aria-pressed=true]{background:transparent;}
+#lightmao-canvas-0212 .mc-template-preview,#lightmao-canvas-0212 .mc-gallery .mc-template-preview{height:56px;width:56px;border-radius:10px;background:var(--mc-paper);}
+#lightmao-canvas-0212 .mc-template-preview.mc-original img,#lightmao-canvas-0212 .mc-template-preview.mc-original.mc-original-stickers img,#lightmao-canvas-0212 .mc-gallery .mc-template-preview img{width:56px;height:56px;object-fit:cover;}
+#lightmao-canvas-0212 .mc-template-preview.mc-original.mc-original-stickers img{object-fit:contain;}
+#lightmao-canvas-0212 .mc-template[aria-pressed=true] .mc-template-preview{outline:1.5px solid var(--mc-accent);outline-offset:2px;}
+#lightmao-canvas-0212 .mc-template>span:last-child{font-size:11px;padding:2px 0 0;max-width:70px;white-space:nowrap;}
+#lightmao-canvas-0212 .mc-gallery{grid-template-columns:repeat(4,minmax(0,1fr));gap:15px 8px;padding:5px 2px;}
+#lightmao-canvas-0212 .mc-gallery .mc-template{width:100%;min-width:0;}
+@media(max-width:360px){#lightmao-canvas-0212 .mc-gallery{grid-template-columns:repeat(3,minmax(0,1fr));}}
+#lightmao-canvas-0212 .mc-input{height:68px;max-height:132px;}
+#lightmao-canvas-0212 .mc-input:focus{height:132px;}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('lightmao-canvas-0212'),app=root.querySelector('.mc-app'),media=__LIGHTMAO_DEMO_MEDIA__;
+const I=n=>`<i data-lucide="${n}" aria-hidden="true"></i>`;
+const E=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const defs={lightmao:{name:'轻喵画风',category:'stickers',group:'all',icon:'cat',prompt:'参考轻喵24张表情，为我的角色制作两种画风，选定后再生成3张样张。'},interface:{name:'界面动效',category:'video',group:'edit',icon:'panels-top-left',prompt:'@界面动效 制作产品界面演示，需求：'},diagram:{name:'原理拆解',category:'video',group:'explain',icon:'lightbulb',prompt:'@原理拆解 用节点和路径解释这个原理，主题：'},spatial:{name:'空间发布',category:'video',group:'talk',icon:'box',prompt:'@空间发布 制作产品结构与功能展示，产品：'},news:{name:'AI前沿图解',category:'video',group:'explain',icon:'newspaper',prompt:'@AI前沿图解 查证并图解这个AI进展，主题：'}};
+const originalVideoPrompts=__LIGHTMAO_VIDEO_PROMPTS__;
+const legacyVideoPrompts=Object.fromEntries(Object.entries(defs).filter(([id,t])=>t.category==='video').map(([id,t])=>[id,t.prompt]));
+for(const [id,prompt] of Object.entries(originalVideoPrompts))defs[id].prompt=prompt;
+const initialNodes=()=>[{id:'soft',image:'soft',label:'柔彩',type:'style',x:12,y:10,w:116,h:176},{id:'round',image:'round',label:'萌系',type:'style',x:140,y:27,w:116,h:176}];
+const initialMessages=()=>[{role:'user',text:'做一套日常表情'},{role:'assistant',text:'两种画风，你选哪种？'}];
+const sessionId='canvas-'+Math.random().toString(36).slice(2),saved=window.openai?.widgetState?.privateContent;
+const state={category:'stickers',filter:'all',template:null,phase:'ready',style:null,nodes:[],selected:null,draft:'',attachment:null,shelf:true,chatOpen:false,messages:[],zoom:1,pan:{x:0,y:0},output:'static',sheet:null,bad:false,toast:'',undo:null,workspaces:{},...(saved?.revision==='original-templates-v5'?saved.state:{})};
+state.sheet=null;state.toast='';if(state.template==='text'){state.template=null;state.draft='';}let noticeTimer;
+function save(){window.openai?.setWidgetState?.({modelContent:{prototype:'lightmao-0.2.12',scope:'second-tab-only',category:state.category,selectedTemplate:state.template,selectedStyle:state.style,stage:state.phase},privateContent:{revision:'original-templates-v5',sessionId,state:{...state,sheet:null,toast:'',undo:null}}}).catch(()=>{});}
+function tell(s){state.toast=s;render();clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>{state.toast='';render();},2600);}
+function message(role,text){state.messages.push({role,text});state.messages=state.messages.slice(-10);}
+function selected(){return state.nodes.find(n=>n.id===state.selected);}
+function groupSnapshot(){const {filter,template,phase,style,nodes,selected,draft,attachment,messages,zoom,pan,output}=state;return JSON.parse(JSON.stringify({filter,template,phase,style,nodes,selected,draft,attachment,messages,zoom,pan,output}));}
+function renderNode(n,index){return `<article class="mc-node" data-node="${n.id}" data-selected="${state.selected===n.id}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;z-index:${state.selected===n.id?10:index+1}"><div class="mc-nodehead" data-drag="${n.id}"><span>${n.type==='style'?'候选':n.type==='sample'?'样张':'产物'}</span><button data-action="delete" data-value="${n.id}" aria-label="删除${n.label}">${I('x')}</button></div>${n.image?`<img class="mc-node-art" src="${media[n.image]}" alt="${n.label}示意图" draggable="false">`:`<div class="mc-nodeblank">${I(n.type==='video'?'clapperboard':'type')}</div>`}<button class="mc-nodefoot" data-action="select" data-value="${n.id}" style="width:100%">${state.selected===n.id?I('check'):''}${E(n.label)}</button>${state.selected===n.id?`<button class="mc-resize" data-resize="${n.id}" aria-label="调整${n.label}大小"></button>`:''}</article>`;}
+function primary(){if(state.category==='video'||state.template==='text')return '';if(state.phase==='styles')return `<button class="mc-primary" data-action="samples" ${state.style?'':'disabled'}>生成样张 · 360积分</button>`;if(state.phase==='samples')return `<button class="mc-primary" data-action="confirm">制作整套 · 2520积分</button>`;if(state.phase==='batch')return `<button class="mc-primary" data-action="finish">查看完成</button>`;if(state.phase==='complete')return `<button class="mc-primary" data-action="export">导出</button>`;return '';}
+function chat(full=false){const msgs=full||state.chatOpen?state.messages:state.messages.slice(-2);return `<div class="mc-chat" role="log" aria-label="Agent对话记录">${msgs.map(m=>`<div class="mc-message ${m.role}">${full?`<span>${m.role==='user'?'你':'轻喵'}</span>`:''}${E(m.text)}</div>`).join('')}</div>`;}
+function sheet(){if(!state.sheet)return '';let title='',content='';
+if(state.sheet==='chat'){title='对话记录';content=chat(true);}
+if(state.sheet==='reference'){title='角色图';content=`<div class="mc-switch"><button data-action="check" data-value="good" aria-pressed="${!state.bad}">清晰图</button><button data-action="check" data-value="bad" aria-pressed="${state.bad}">模糊图</button></div><div class="mc-check" ${state.bad?'role="alert"':''}>${state.bad?'人物太小，请换清晰角色图':'可以制作'}</div><button class="mc-primary" data-action="${state.bad?'replace':'attachimage'}">${state.bad?'重新上传':'使用此图'}</button>`;}
+if(state.sheet==='attach'){title='添加';content=`<button class="mc-row" data-action="reference"><span>角色图</span>${I('image-plus')}</button><button class="mc-row" data-action="file"><span>文档</span>${I('file-text')}</button><button class="mc-row" data-action="material"><span>素材</span>${I('folder-open')}</button>`;}
+if(state.sheet==='confirm'){title='继续制作';content=`<div class="mc-check">${state.style==='soft'?'柔彩':'萌系'} · 剩余21张</div><button class="mc-primary" data-action="batch">确认 · 2520积分</button>`;}
+if(state.sheet==='export'){title='导出';content=`<button class="mc-row" data-action="exportdemo"><span>保存</span>${I('download')}</button><button class="mc-row" data-action="exportdemo"><span>分享</span>${I('share-2')}</button>`;}
+if(state.sheet==='settings'){title='设置';content=`<label class="mc-row"><span>模型</span><select class="mc-select" aria-label="模型"><option>豆包</option><option>DeepSeek</option></select></label><button class="mc-row" data-action="reference"><span>换图</span>${I('image-plus')}</button>`;}
+if(state.sheet==='projects'){title='项目';content=`<button class="mc-row" data-action="close"><span>日常表情</span>${I('arrow-up-right')}</button><button class="mc-row" data-action="new"><span>新建</span>${I('plus')}</button>`;}
+if(state.sheet==='gallery'){title='模板';content='<div class="mc-gallery"></div>';}
+return `<div class="mc-mask" data-action="dismiss"><section class="mc-sheet" role="dialog" aria-modal="true" aria-label="${title}"><div class="mc-sheethead">${title}<button class="mc-icon" data-action="close" aria-label="关闭">${I('x')}</button></div>${content}</section></div>`;}
+function render(){const node=selected(),templates=Object.entries(defs).filter(([id,t])=>t.category===state.category&&(state.filter==='all'||t.group===state.filter));app.innerHTML=`<div class="mc-status"><span>9:41</span><span>交互原型</span></div><header class="mc-header">轻喵LightMao<div class="mc-capsule" aria-hidden="true">•••<span></span>◉</div></header><div class="mc-body"><aside class="mc-sidebar" aria-label="工具分类"><button class="mc-side" data-action="category" data-value="stickers" aria-pressed="${state.category==='stickers'}">${I('cat')}<span>表情</span></button><button class="mc-side" data-action="category" data-value="video" aria-pressed="${state.category==='video'}">${I('clapperboard')}<span>视频</span></button><button class="mc-side mc-history" data-action="projects" aria-label="项目">${I('panel-left')}</button></aside><main class="mc-main"><div class="mc-topbar"><span class="mc-title">${state.category==='stickers'?'表情画布':'视频画布'}</span><div class="mc-tools">${state.category==='stickers'?`<select class="mc-select" data-setting="output" aria-label="输出"><option value="static" ${state.output==='static'?'selected':''}>静态</option><option value="dynamic" ${state.output==='dynamic'?'selected':''}>动态</option></select>`:''}<button class="mc-icon" data-action="settings" aria-label="设置">${I('sliders-horizontal')}</button></div></div><div class="mc-workspace"><section class="mc-stage-wrap" aria-label="生成产物画布"><div class="mc-stage" data-pan="true"><div class="mc-scene" style="transform:translate(${state.pan.x}px,${state.pan.y}px) scale(${state.zoom})">${state.nodes.map(renderNode).join('')}</div>${!state.nodes.length?`<div class="mc-empty">${I(state.category==='stickers'?'image-plus':'clapperboard')}<span>${state.category==='stickers'?'选模板，开始创作':'添加你的素材'}</span></div>`:''}</div><div class="mc-viewtools"><div class="mc-tools"><button class="mc-icon" data-action="out" aria-label="缩小画布">−</button><span>${Math.round(state.zoom*100)}%</span><button class="mc-icon" data-action="in" aria-label="放大画布">＋</button><button class="mc-icon" data-action="fit" aria-label="适应画布">${I('maximize')}</button></div><div class="mc-tools"><button class="mc-icon" data-action="attach" aria-label="添加素材">${I('plus')}</button><button class="mc-icon" data-action="chat" aria-label="展开对话记录">${I('messages-square')}</button></div></div></section><section class="mc-agent" aria-label="轻喵Agent"><div class="mc-agenthead"><span>${I('cat')}轻喵</span><button class="mc-icon" data-action="chat" aria-label="查看全部对话">${I('expand')}</button></div>${chat()}${primary()?`<div class="mc-agentaction">${primary()}</div>`:''}</section></div><div class="mc-compose"><div class="mc-context"><span>${node?'选中 '+E(node.label):defs[state.template]?.name||'制作要求'}</span>${state.attachment?`<button data-action="reference">${I('paperclip')}${E(state.attachment)}</button>`:''}${state.phase==='ready'&&state.template==='lightmao'?'<span>· 240积分</span>':''}</div><div class="mc-inputrow"><button class="mc-icon" data-action="attach" aria-label="添加">${I('plus')}</button><textarea class="mc-input" maxlength="1000" aria-label="输入制作要求" placeholder="输入要求…">${E(state.draft)}</textarea><button class="mc-send" data-action="send" aria-label="发送" ${state.draft.trim()?'':'disabled'}>${I('arrow-up')}</button></div></div><section class="mc-shelf" aria-label="模板"><div class="mc-shelfhead"><span>模板</span>${state.category==='video'&&state.shelf?`<div class="mc-filters">${[['all','全部'],['edit','剪辑'],['explain','图解'],['talk','口播']].map(([id,n])=>`<button data-action="filter" data-value="${id}" aria-pressed="${state.filter===id}">${n}</button>`).join('')}</div>`:''}<button class="mc-icon" data-action="shelf" aria-label="${state.shelf?'收起模板':'展开模板'}">${I(state.shelf?'chevron-down':'chevron-up')}</button></div>${state.shelf?`<div class="mc-templates">${templates.map(([id,t])=>`<button class="mc-template" data-action="template" data-value="${id}" aria-pressed="${state.template===id}">${I(t.icon)}<span>${t.name}</span></button>`).join('')}</div>`:''}</section></main></div><nav class="mc-tabbar" aria-label="原版导航">${[['create','创作'],['idea','工具'],['library','资源'],['profile','我的']].map(([id,n])=>`<button class="mc-tab" data-action="original-tab" data-value="${id}" ${id==='idea'?'aria-current="page"':''}><img src="${media['tab-'+id]}" alt=""><span>${n}</span></button>`).join('')}</nav><div class="mc-homebar"></div>${sheet()}${state.toast?`<div class="mc-toast" role="status">${E(state.toast)}${state.undo?'<button data-action="undo">撤销</button>':''}</div>`:''}`;if(globalThis.lucide)lucide.createIcons({attrs:{width:18,height:18}});}
+function previewFor(id){const box=document.createElement('span');box.className='mc-template-preview';const img=(key)=>{const n=document.createElement('img');n.src=media[key];n.alt='模板例图';n.draggable=false;return n;};
+if(id==='lightmao'){box.classList.add('mc-original','mc-original-stickers');box.append(img('template-lightmao-01'));}
+else if(media['template-'+id]){box.classList.add('mc-original');box.append(img('template-'+id));}
+return box;}
+function decorateTemplates(){const agent=app.querySelector('.mc-agent'),action=agent?.querySelector('.mc-agentaction');if(action){action.className='mc-stageaction';app.querySelector('.mc-workspace').append(action);}agent?.remove();const gallery=app.querySelector('.mc-gallery');if(gallery)Object.entries(defs).filter(([id,t])=>t.category===state.category&&(state.filter==='all'||t.group===state.filter)).forEach(([id,t])=>{const b=document.createElement('button');b.className='mc-template';b.dataset.action='template';b.dataset.value=id;b.setAttribute('aria-pressed',String(state.template===id));const name=document.createElement('span');name.textContent=t.name;b.append(name);gallery.append(b);});
+app.querySelectorAll('.mc-template').forEach(b=>{b.querySelector('svg,i')?.remove();b.prepend(previewFor(b.dataset.value));});
+const head=app.querySelector('.mc-shelfhead');if(head&&state.shelf){const b=document.createElement('button');b.className='mc-gallery-button';b.dataset.action='gallery';b.textContent='展开';b.setAttribute('aria-label','展开模板例图');head.insertBefore(b,head.lastElementChild);}app.querySelectorAll('[data-action="filter"]').forEach(b=>{if(b.dataset.value==='edit')b.textContent='界面';if(b.dataset.value==='talk')b.textContent='产品';});}
+const baseRender=render;render=()=>{if(state.template&&state.draft===legacyVideoPrompts[state.template])state.draft=defs[state.template].prompt;baseRender();decorateTemplates();};
+app.addEventListener('click',e=>{if(state.sheet==='gallery'&&e.target.closest('[data-action="template"]'))state.sheet=null;},{capture:true});
+function send(){const text=state.draft.trim();if(!text)return;message('user',text);state.draft='';if(state.category==='video'){message('assistant',state.attachment==='视频素材'?'素材已收到，可以开始剪辑。':'先添加素材。');state.phase='ready';}
+else if(state.template==='text'){state.nodes.push({id:'text-'+Date.now(),label:'文字表情',type:'text',x:30,y:35,w:155,h:160});message('assistant','文字表情已放入画布。');state.phase='complete';}
+else if(state.phase==='ready'||!state.nodes.length){if(!state.attachment){message('assistant','先加一张角色图。');}else{state.nodes=initialNodes();state.phase='styles';state.style=null;state.selected=null;message('assistant','两种画风，你选哪种？');}}
+else{message('assistant',selected()?'收到，调整「'+selected().label+'」。':'收到，按这个要求调整。');}save();render();}
+app.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action,v=b.dataset.value;if(a==='dismiss'&&e.target!==b)return;
+switch(a){
+case 'category':if(v===state.category)return;state.workspaces[state.category]=groupSnapshot();state.category=v;Object.assign(state,state.workspaces[v]||{filter:'all',template:null,phase:'ready',style:null,nodes:[],selected:null,draft:'',attachment:null,messages:[],zoom:1,pan:{x:0,y:0},output:'static'});break;
+case 'template':state.template=v;state.draft=defs[v].prompt;break;
+case 'filter':state.filter=v;break;
+case 'select':state.selected=v;{const n=selected();if(n?.type==='style'){state.style=n.id;message('assistant','选用'+n.label+'，整套保持一致。');}}break;
+case 'delete':{const idx=state.nodes.findIndex(n=>n.id===v);if(idx<0)return;state.undo={node:{...state.nodes[idx]},idx,style:state.style};state.nodes.splice(idx,1);if(state.selected===v)state.selected=null;if(state.style===v)state.style=null;save();return tell('已移出画布');}
+case 'undo':if(state.undo){state.nodes.splice(state.undo.idx,0,state.undo.node);state.style=state.undo.style;state.undo=null;state.toast='';}break;
+case 'samples':if(!state.style)return;state.phase='samples';state.nodes=[['贴贴','sample0'],['摸头','sample1'],['心动','sample2']].map(([label,image],i)=>({id:'sample-'+i,label,image:state.style==='soft'?image:'round',type:'sample',x:12+i*78,y:8+i*20,w:108,h:150}));state.selected='sample-0';message('assistant','3张样张好了，看看？');break;
+case 'confirm':case 'chat':case 'attach':case 'reference':case 'settings':case 'projects':case 'export':case 'gallery':state.sheet=a;break;
+case 'dismiss':case 'close':state.sheet=null;break;
+case 'check':state.bad=v==='bad';break;
+case 'replace':state.bad=false;return tell('已换示例图');
+case 'attachimage':state.attachment='角色图';state.sheet=null;break;
+case 'file':state.attachment='文档';state.sheet=null;break;
+case 'material':state.attachment=state.category==='video'?'视频素材':'角色图';state.sheet=null;break;
+case 'new':state.nodes=[];state.selected=null;state.style=null;state.phase='ready';state.template=null;state.draft='';state.messages=[];state.sheet=null;break;
+case 'send':return send();
+case 'batch':state.phase='batch';state.sheet=null;message('assistant','沿用选定画风，继续剩余21张。');break;
+case 'finish':state.phase='complete';message('assistant','整套完成，可以导出。');break;
+case 'in':state.zoom=Math.min(1.75,state.zoom+.25);break;
+case 'out':state.zoom=Math.max(.5,state.zoom-.25);break;
+case 'fit':state.zoom=1;state.pan={x:0,y:0};break;
+case 'shelf':state.shelf=!state.shelf;break;
+case 'exportdemo':return tell('导出演示');
+case 'original-tab':if(v!=='idea')return tell('沿用原版');break;
+}save();render();});
+app.addEventListener('input',e=>{if(e.target.matches('.mc-input')){state.draft=e.target.value;const b=app.querySelector('[data-action="send"]');if(b)b.disabled=!state.draft.trim();}});
+app.addEventListener('change',e=>{if(e.target.dataset.setting==='output'){state.output=e.target.value;save();}});
+let gesture=null,pinch=null,suppressClick=false;const pointers=new Map();
+const distance=()=>{const p=[...pointers.values()];return p.length===2?Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y):0;};
+app.addEventListener('pointerdown',e=>{const stage=e.target.closest('.mc-stage');if(!stage||e.target.closest('[data-action]'))return;const nodeElement=e.target.closest('[data-node]'),n=nodeElement?state.nodes.find(n=>n.id===nodeElement.dataset.node):null;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});stage.setPointerCapture(e.pointerId);gesture={id:e.pointerId,x:e.clientX,y:e.clientY,mode:e.target.dataset.resize?'resize':n?'node':'pan',node:n,start:n?{x:n.x,y:n.y,w:n.w,h:n.h}:{...state.pan},stage,moved:false};if(pointers.size===2)pinch={distance:distance(),zoom:state.zoom};});
+app.addEventListener('pointermove',e=>{if(!gesture||!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;gesture.moved=gesture.moved||Math.abs(dx)+Math.abs(dy)>3;
+if(pinch&&pointers.size===2){state.zoom=Math.max(.5,Math.min(1.75,pinch.zoom*distance()/Math.max(1,pinch.distance)));}
+else if(gesture.mode==='node'){const n=gesture.node;n.x=Math.max(0,Math.min(gesture.stage.clientWidth/state.zoom-n.w,gesture.start.x+dx/state.zoom));n.y=Math.max(0,Math.min(gesture.stage.clientHeight/state.zoom-n.h,gesture.start.y+dy/state.zoom));const el=app.querySelector('[data-node="'+n.id+'"]');if(el){el.style.left=n.x+'px';el.style.top=n.y+'px';}}
+else if(gesture.mode==='resize'){const n=gesture.node;n.w=Math.max(88,Math.min(180,gesture.start.w+dx/state.zoom));n.h=Math.max(140,Math.min(265,gesture.start.h+dy/state.zoom));const el=app.querySelector('[data-node="'+n.id+'"]');if(el){el.style.width=n.w+'px';el.style.height=n.h+'px';}}
+else state.pan={x:Math.max(-100,Math.min(100,gesture.start.x+dx)),y:Math.max(-90,Math.min(90,gesture.start.y+dy))};const scene=app.querySelector('.mc-scene');if(scene)scene.style.transform=`translate(${state.pan.x}px,${state.pan.y}px) scale(${state.zoom})`;});
+function release(e){if(!pointers.has(e.pointerId)||!gesture)return;pointers.delete(e.pointerId);pinch=null;if(!pointers.size){if(gesture.node&&!gesture.moved){state.selected=gesture.node.id;if(gesture.node.type==='style'){state.style=gesture.node.id;message('assistant','选用'+gesture.node.label+'，整套保持一致。');}}gesture=null;save();render();}}
+app.addEventListener('pointerup',release);app.addEventListener('pointercancel',release);
+let lastWidth=0;
+new ResizeObserver(()=>{const width=Math.round(app.clientWidth);if(width===lastWidth)return;lastWidth=width;const stage=app.querySelector('.mc-stage');if(!stage)return;state.nodes.forEach(n=>{n.w=Math.min(n.w,Math.max(88,stage.clientWidth-16));n.x=Math.max(8,Math.min(n.x,stage.clientWidth-n.w-8));n.y=Math.max(6,Math.min(n.y,stage.clientHeight-n.h-6));});render();}).observe(app);
+window.addEventListener('openai:set_globals',e=>{const s=e.detail?.globals?.widgetState?.privateContent;if(s?.revision==='original-templates-v5'&&s.sessionId!==sessionId){Object.assign(state,s.state,{sheet:null,toast:''});render();}});
+render();
+if(globalThis.Tweak){const design={templates:true};const tweak=new Tweak({container:app,onChange:()=>{state.shelf=design.templates;render();}});tweak.addToggle(design,'templates',{label:'展开模板'});}
+})();
+</script>

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { capturePage } from './fixtures/nativeClient';
 import { runInNewContext } from 'node:vm';
 import path from 'node:path';
 
@@ -29,14 +30,7 @@ function fixture(loggedIn = false) {
   };
   let chatPage: any;
   async function page(name: string) {
-    let definition: any;
-    const module: any = { exports: {} }, file = path.join(root, 'pages', name, 'index.js');
-    const globals = { wx: platform, getApp: () => app, setTimeout, clearTimeout };
-    runInNewContext(await readFile(path.join(root, 'utils/page.js'), 'utf8'), { ...globals, module });
-    runInNewContext(await readFile(file, 'utf8'), { ...globals, Page: (value: any) => { definition = value; }, require: (id: string) => id === '../../utils/page' ? module.exports : createRequire(file)(id) });
-    definition.data = structuredClone(definition.data);
-    definition.setData = (patch: any, callback?: any) => { Object.assign(definition.data, patch); callback?.(); };
-    definition.selectComponent = () => null;
+    const definition = await capturePage(name, app, platform);
     if (name === 'chat') chatPage = definition;
     return definition;
   }

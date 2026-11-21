@@ -58,6 +58,7 @@ Page({
     } catch (error) { this.setData({ error: error.message }); } finally { this.setData({ saving: false }); }
   },
   use() { if (this._type === 'media') { getApp().pendingAttachments = [this._id]; wx.switchTab({ url: '/pages/chat/index' }); } },
+  async manage(){if(!this._item)return;const item=this._item,choice=await new Promise(resolve=>wx.showActionSheet({itemList:['重命名',this._type==='media'?'删除素材':'删除作品'],success:r=>resolve(r.tapIndex),fail:()=>resolve(-1)})),manage=require('../../utils/manage');if(choice===0)return manage.rename(this,'/api/'+(this._type==='media'?'media':'artifacts')+'/'+encodeURIComponent(item.id),'name',item.name);if(choice===1){const removed=await(this._type==='media'?manage.deleteMedia(this,item.id):manage.deleteArtifact(this,item.id));if(removed&&this._visible)wx.navigateBack();}},
   async project() {
     if (!this._item || !this._item.projectUrl || this.data.saving) return;
     this.setData({ saving: true, error: '' });

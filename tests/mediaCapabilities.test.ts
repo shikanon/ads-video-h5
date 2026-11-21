@@ -54,6 +54,7 @@ test('real media API advertises twenty attachments and keeps resized previews pr
     finally { await rename(moved, original); }
   });
   await t.test('deleting media removes its cached preview and denies further access', async () => {
+    const current:any=await(await fixture.request(cookie,'/api/state')).json();if(current.jobs.some(j=>j.sessionId===state.activeSessionId&&['queued','running','stopping'].includes(j.status))){assert.equal((await fixture.request(cookie,`/api/media/${item.id}`,undefined,'DELETE')).status,409);await fixture.request(cookie,'/api/sessions/'+state.activeSessionId+'/stop',{});for(let i=0;i<200;i++){const s:any=await(await fixture.request(cookie,'/api/state')).json();if(!s.jobs.some(j=>['queued','running','stopping'].includes(j.status)))break;await new Promise(r=>setTimeout(r,20));}}
     assert.equal((await fixture.request(cookie, `/api/media/${item.id}`, undefined, 'DELETE')).status, 200);
     await assert.rejects(access(target));
     assert.equal((await fixture.request(cookie, item.thumbnailUrl)).status, 404);

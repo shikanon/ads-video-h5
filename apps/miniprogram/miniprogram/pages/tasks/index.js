@@ -32,8 +32,10 @@ Page({
   async create() {
     const nextRunAt = new Date(this.data.date + 'T' + this.data.time + ':00+08:00');
     if (!this.data.title.trim() || !this.data.prompt.trim() || !Number.isFinite(nextRunAt.getTime()) || nextRunAt.getTime() <= Date.now()) { this.setData({ error: '请填写名称、内容，并选择未来的执行时间。' }); return; }
-    if (await this.request('/api/schedules', { title: this.data.title, prompt: this.data.prompt, nextRunAt: nextRunAt.toISOString(), frequency: frequencies[this.data.frequencyIndex], interaction: interactions[this.data.interactionIndex] })) { this.setData({ title: '', prompt: '' }); wx.showToast({ title: '定时任务已保存', icon: 'none' }); }
+    if (await this.request('/api/schedules'+(this.data.editingId?'/'+encodeURIComponent(this.data.editingId):''), { title: this.data.title, prompt: this.data.prompt, nextRunAt: nextRunAt.toISOString(), frequency: frequencies[this.data.frequencyIndex], interaction: interactions[this.data.interactionIndex] },this.data.editingId?'PATCH':'POST')) { this.setData({ editingId:'',title: '', prompt: '' }); wx.showToast({ title: '定时任务已保存', icon: 'none' }); }
   },
+  edit(e){if(this.data.busy)return;const t=this.data.tasks.find(t=>t.id===e.currentTarget.dataset.id);if(!t)return;const local=new Date(Date.parse(t.nextRunAt)+8*3600000).toISOString();this.setData({editingId:t.id,title:t.title,prompt:t.prompt,date:local.slice(0,10),time:local.slice(11,16),frequencyIndex:frequencies.indexOf(t.frequency),interactionIndex:interactions.indexOf(t.interaction)});if(wx.pageScrollTo)wx.pageScrollTo({scrollTop:0,duration:200});},
+  cancelEdit(){this.setData({editingId:'',title:'',prompt:''});},
   async toggle(e) { await this.request('/api/schedules/' + encodeURIComponent(e.currentTarget.dataset.id), { enabled: !e.currentTarget.dataset.enabled }, 'PATCH'); },
   async remove(e) { if (this.data.busy) return; const result = await new Promise(resolve => wx.showModal({ title: '删除定时任务？', content: '后续不再执行，已生成的会话和成片会保留。', success: resolve, fail: () => resolve({ confirm: false }) })); if (result.confirm) await this.request('/api/schedules/' + encodeURIComponent(e.currentTarget.dataset.id), {}, 'DELETE'); },
   async open(e) {

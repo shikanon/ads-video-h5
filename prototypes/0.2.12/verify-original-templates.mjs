@@ -1,0 +1,62 @@
+import {chromium} from 'playwright';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const dir=path.dirname(fileURLToPath(import.meta.url)),repo=path.resolve(dir,'../..'),out='D:/ads-video-h5-diagnostics/prototype-0212-20261118/original-templates';
+await mkdir(out,{recursive:true});
+const provenance=JSON.parse(await readFile(path.join(dir,'TEMPLATE-IMAGE-SOURCES.json'),'utf8'));
+for(const v of Object.values(provenance)){const bytes=await readFile(path.join(repo,v.source));assert.equal(createHash('sha256').update(bytes).digest('hex'),v.sourceSha256);assert.match(v.source,/^skills\//);}
+const source=await readFile(path.join(dir,'workbench.fragment.html'),'utf8');
+const media=JSON.parse(source.match(/,media=(\{[^\n]+\});/)[1]);
+const expectedPrompts=JSON.parse(await readFile(path.join(dir,'VIDEO-PROMPTS-BUILT.json'),'utf8'));
+const browser=await chromium.launch({channel:'msedge',headless:true});
+try{
+const page=await browser.newPage({viewport:{width:850,height:1000}}),errors=[];
+page.on('pageerror',e=>errors.push(e.message));
+await page.goto(pathToFileURL(path.join(dir,'preview.html')).href);
+const frame=page.frameLocator('iframe'),app=frame.locator('.mc-app');
+await app.locator('.mc-template-preview img').first().waitFor();
+assert.equal(await app.locator('.mc-agent').count(),0);
+assert.equal(await app.locator('.mc-node').count(),0);
+assert.equal(await app.locator('textarea').inputValue(),'');
+const lightmao=app.locator('.mc-template[data-value="lightmao"]');
+assert.equal(await lightmao.locator('img').nth(0).getAttribute('src'),media['template-lightmao-01']);
+assert.equal(await lightmao.locator('img').count(),1);
+const thumbnail=await lightmao.locator('.mc-template-preview').boundingBox();
+assert.equal(thumbnail.width,56);assert.equal(thumbnail.height,56);
+assert.notEqual(await lightmao.locator('img').first().getAttribute('src'),media.soft);
+await lightmao.click();
+assert.match(await app.locator('textarea').inputValue(),/24张/);
+assert.equal(await app.locator('.mc-node').count(),0);
+assert.equal(await app.locator('.mc-agent').count(),0);
+await app.screenshot({path:path.join(out,'original-stickers.png')});
+await app.locator('[data-action="gallery"]').click();
+const gallery=app.getByRole('dialog',{name:'模板'});
+assert.equal(await gallery.locator('[data-value="lightmao"] img').first().getAttribute('src'),media['template-lightmao-01']);
+assert.equal(await gallery.locator('[data-value="text"]').count(),0);
+assert.doesNotMatch(await gallery.innerText(),/暂无例图|文字表情/);
+await app.locator('[data-action="close"]').click();
+await app.locator('[data-action="category"][data-value="video"]').click();
+assert.equal(await app.locator('.mc-agent').count(),0);
+for(const id of ['interface','diagram','spatial','news']){
+const card=app.locator('.mc-template[data-value="'+id+'"]');
+assert.equal(await card.locator('img').getAttribute('src'),media['template-'+id]);
+await card.click();
+assert.equal(await app.locator('textarea').inputValue(),expectedPrompts[id]);
+assert.equal(await app.locator('.mc-node').count(),0);
+}
+await app.locator('.mc-template[data-value="diagram"]').click();
+assert.match(await app.locator('textarea').inputValue(),/@原理拆解/);
+assert.equal(await app.locator('.mc-node').count(),0);
+assert.equal(await app.locator('video').count(),0);
+await app.screenshot({path:path.join(out,'original-video-posters.png')});
+await page.setViewportSize({width:320,height:1000});await page.waitForTimeout(100);
+const box=await app.boundingBox(),nav=await app.locator('.mc-tabbar').boundingBox();
+assert.ok(nav.y+nav.height<=box.y+box.height);
+assert.deepEqual(await app.locator('.mc-tab span').allTextContents(),['创作','工具','资源','我的']);
+assert.deepEqual(errors,[]);
+const result={passed:true,at:new Date().toISOString(),scope:'second-tab-only',inlineAgentRemoved:true,emptyInitialCanvas:true,templateSelectionOnlyFillsPrompt:true,originalTemplateImagesVerified:Object.keys(provenance).length,generatedImagesUsedAsTemplateExamples:false,productionCalls:false};
+await writeFile(path.join(out,'CHECK.json'),JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));
+}finally{await browser.close();}

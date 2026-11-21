@@ -53,6 +53,8 @@ Page({
     const item = this.data.items.find(item => item.id === event.currentTarget.dataset.id); if (!item) return;
     const app = getApp(), generation = app._generation, section = this.data.section;
     const options = [{ name: '预览', run: () => this.play(event) }];
+    options.push({name:'重命名',run:()=>require('../../utils/manage').rename(this,'/api/'+(section==='materials'?'media':'artifacts')+'/'+encodeURIComponent(item.id),'name',item.name)});
+    if(section==='films')options.push({name:'删除作品',run:()=>require('../../utils/manage').deleteArtifact(this,item.id)});
     if (section === 'materials') {
       if (!item.production) options.push({ name: '用来创作', run: () => this.use(event) });
       if (item.kind === 'video' && !item.production) options.push({ name: '拉片分析', run: () => this.film(event) });
