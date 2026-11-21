@@ -1,20 +1,20 @@
 <view class="nt theme-{{theme}}" style="height:{{pageHeight-keyboardHeight}}px">
- <block wx:if="!editor">
+ <block wx:if="{{!editor}}">
   <view class="nt-list-head"><button class="nt-back" bindtap="back">‹</button><text>笔记</text><text class="nt-total">{{notes.length}}</text></view>
   <view class="nt-search"><image src="{{icons.history}}"/><input placeholder="搜索笔记" value="{{query}}" bindinput="search"/></view>
   <scroll-view class="nt-categories" scroll-x><button wx:for="{{categories}}" wx:key="*this" data-name="{{item}}" class="{{filter===item?'selected':''}}" bindtap="chooseCategory">{{item}}</button></scroll-view>
   <scroll-view class="nt-list" scroll-y>
    <view wx:for="{{shownNotes}}" wx:key="id" class="nt-note" data-id="{{item.id}}" bindtap="open"><view class="nt-note-title">{{item.title}}</view><view class="nt-snippet">{{item.snippet}}</view><view class="nt-note-meta"><text>{{item.date}}</text><text>{{item.category}}</text></view><button class="nt-delete" data-id="{{item.id}}" catchtap="remove" aria-label="删除笔记">×</button></view>
-   <view wx:if="!shownNotes.length" class="nt-empty">{{query?'没有找到笔记':'记下你的灵感'}}</view>
+   <view wx:if="{{!shownNotes.length}}" class="nt-empty">{{query?'没有找到笔记':'记下你的灵感'}}</view>
    <view class="nt-list-space"/>
   </scroll-view>
   <button class="nt-add" bindtap="newNote" aria-label="新建笔记">＋</button>
  </block>
- <block wx:elif="!drawing">
+ <block wx:elif="{{!drawing}}">
   <view class="nt-editor-head"><button bindtap="back" aria-label="返回列表">‹</button><view class="nt-head-gap"/><button disabled="{{!canUndo||busy}}" bindtap="undo" aria-label="撤销">↶</button><button disabled="{{!canRedo||busy}}" bindtap="redo" aria-label="重做">↷</button><button bindtap="menu" disabled="{{busy}}" aria-label="更多">···</button><button class="nt-done" bindtap="done" disabled="{{busy||recording}}" loading="{{busy}}" aria-label="保存笔记">✓</button></view>
   <scroll-view class="nt-body" scroll-y>
    <input class="nt-title" maxlength="80" placeholder="标题" value="{{title}}" data-field="title" bindfocus="focus" bindblur="blur" bindinput="field" disabled="{{busy}}"/>
-   <view class="nt-meta"><text>{{date}} · {{count}} 字</text><button bindtap="classify" disabled="{{busy}}">{{category||'未分类'}}⌄</button><text wx:if="dirty" class="nt-unsaved">未保存</text></view>
+   <view class="nt-meta"><text>{{date}} · {{count}} 字</text><button bindtap="classify" disabled="{{busy}}">{{category||'未分类'}}⌄</button><text wx:if="{{dirty}}" class="nt-unsaved">未保存</text></view>
    <block wx:for="{{views}}" wx:key="id">
     <textarea wx:if="{{item.type==='text'}}" class="nt-paragraph" auto-height maxlength="20000" placeholder="{{index===0?'记点什么…':''}}" value="{{item.text}}" data-id="{{item.id}}" bindfocus="focus" bindblur="blur" bindinput="field" disabled="{{busy}}" adjust-position="{{false}}" cursor-spacing="80" style="font-size:{{fontSize}}px"/>
     <view wx:else class="nt-inline">
@@ -34,7 +34,7 @@
   <view class="nt-paper"><canvas canvas-id="note-sketch" class="nt-sketch" style="width:{{sketchWidth}}px;height:{{sketchHeight}}px" disable-scroll catchtouchstart="drawStart" catchtouchmove="drawMove" catchtouchend="drawEnd" catchtouchcancel="drawEnd"/></view>
   <view class="nt-pen-tools"><view class="nt-colors"><button wx:for="{{colors}}" wx:key="*this" data-color="{{item}}" bindtap="color" style="background:{{item}}" class="{{penColor===item&&!eraser?'nt-color-active':''}}" aria-label="画笔颜色"/></view><view class="nt-pens"><button data-width="3" bindtap="pen" class="{{penWidth===3&&!eraser?'selected':''}}">细笔</button><button data-width="7" bindtap="pen" class="{{penWidth===7&&!eraser?'selected':''}}">粗笔</button><button bindtap="erase" class="{{eraser?'selected':''}}">橡皮</button></view></view>
  </block>
- <view wx:if="error" class="nt-error">{{error}}</view>
- <view wx:if="picking" class="nt-picker"><view class="nt-picker-head"><text>选择素材</text><button bindtap="closePicker">完成</button></view><scroll-view scroll-y class="nt-picker-list"><button wx:for="{{picker}}" wx:key="id" data-id="{{item.id}}" bindtap="attach"><image wx:if="{{item.cover}}" src="{{item.cover}}" mode="aspectFill"/><text>{{item.name}}</text></button></scroll-view></view>
+ <view wx:if="{{error}}" class="nt-error">{{error}}</view>
+ <view wx:if="{{picking}}" class="nt-picker"><view class="nt-picker-head"><text>选择素材</text><button bindtap="closePicker">完成</button></view><scroll-view scroll-y class="nt-picker-list"><button wx:for="{{picker}}" wx:key="id" data-id="{{item.id}}" bindtap="attach"><image wx:if="{{item.cover}}" src="{{item.cover}}" mode="aspectFill"/><text>{{item.name}}</text></button></scroll-view></view>
 </view>
 <privacy-dialog/>
