@@ -13,6 +13,7 @@ export interface Shot {
 }
 
 export interface MediaItem {
+  sizeBytes?: number;
   folderId?: string;
   creativeAsset?: {role:'character'|'scene';identity:string};
   document?: {text:string;truncated:boolean};
@@ -303,6 +304,7 @@ export interface MusicSearch {
 }
 
 export interface Artifact {
+  sizeBytes?: number;
   sticker?: import('./stickerPacks').StickerDelivery;
   creative?: {engine:'defold';sourceHash:string;artifactHash?:string;technicalPassed:boolean;modelSelfChecked:boolean;userAccepted:false};
   template?: import('./videoTemplates').TemplateSelection & { panels: number; technicalPassed: boolean; userAccepted: false; boundary: string; basis: string[]; animationMode?:'code'|'declarative'; sourceHash?:string; motion?:{meanChangedAreaPct:number;activeFramePct:number} };

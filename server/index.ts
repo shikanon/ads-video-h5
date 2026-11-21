@@ -9,6 +9,7 @@ import type {MvRecreation} from '../shared/mvRecreation';
 import {mountMvRecreation} from './mvRecreationRoutes';
 import {planMv,renderMv} from './mvRecreation';
 import {recognizeMvLyrics} from './mvLyrics';
+import {createMediaPlayback} from './mediaPlayback';
 import {mountMediaFolders} from './mediaFolders';
 import type {MediaFolder} from '../shared/mediaFolders';
 import {createChatSubmissions} from './chatSubmission';
@@ -34,7 +35,7 @@ import { createJobQueue } from './jobQueue';
 import multer from 'multer';
 import { randomUUID, createHash } from 'node:crypto';
 import {createJsonStateWriter} from './jsonStateWriter';
-import { cp, copyFile, link, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, copyFile, link, mkdir, readFile, rename, rm, writeFile,stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -240,9 +241,10 @@ async function addArtifact(session: Session, job: Job, kind: Exclude<Artifact['k
   }
   const version = state.artifacts.filter((item) => item.sessionId === session.id && item.kind === kind).length + 1;
   const artifact: Artifact = { id, ownerId: session.ownerId, sessionId: session.id, messageId: job.messageId, kind, name, url: `/api/artifacts/${id}`, downloadUrl: `/api/download/${id}`, createdAt: now(), version, ...(text ? { text } : {}), ...(duration ? { duration } : {}) };
+  artifact.sizeBytes=typeof bytes==='string'?(await stat(bytes)).size:bytes.length;
   state.artifacts.push(artifact); state.artifactFiles[id] = filename;
   artifact.mediaId = mediaId;
-  state.media.push({ id: mediaId, ownerId: session.ownerId, name, mimeType, kind, ...(duration ? { duration } : {}), url: `/api/media/${mediaId}`, createdAt: now(), origin: 'generated' });
+  state.media.push({ id: mediaId, ownerId: session.ownerId, name, mimeType, kind, sizeBytes:artifact.sizeBytes,...(duration ? { duration } : {}), url: `/api/media/${mediaId}`, createdAt: now(), origin: 'generated' });
   return artifact;
 }
 async function performJob(job: Job): Promise<void> {
@@ -1085,6 +1087,10 @@ catch (error) { console.error(JSON.stringify({ event: 'release-evaluation.init-f
 
 const app = express();
 const creativePreviews=createCreativePreviews(publicBase);creativePreviews.mount(app);
+const mediaPlayback=createMediaPlayback({base:publicBase,lookup:(ownerId,kind,id)=>{
+ if(kind==='media'){const m=state.media.find(m=>m.id===id&&m.ownerId===ownerId&&m.kind==='video');if(!m)return;return {mimeType:m.mimeType,filename:m.name,prepare:async()=>{const file=path.join(mediaDir,m.id);await oss?.ensure(ownerId,'media',m.id,file);return file;}};}
+ const a=state.artifacts.find(a=>a.id===id&&a.ownerId===ownerId&&a.kind==='video'),file=a&&artifactFile(a);if(!a||!file)return;return {mimeType:'video/mp4',filename:a.name.endsWith('.mp4')?a.name:a.name+'.mp4',prepare:async()=>{await oss?.ensure(ownerId,'exports',a.id,file);return file;}};
+}});mediaPlayback.mountPublic(app);
 app.set('trust proxy', 'loopback');
 app.use(express.json({ limit: '1mb' }));
 const auth = createAuth(dataDir, publicBase);
@@ -1139,6 +1145,7 @@ mountStickerSamples(app);
 const stickerShares=createStickerShares(dataDir,stickerStudio,publicBase);stickerShares.mountPublic(app);
 app.get('/api/sticker-styles/:id',(_q,r)=>{const file=stickerStyleFile(_q.params.id);if(!file)return r.status(404).end();r.sendFile(file,{maxAge:'1h'});});
 auth.mount(app, credits.readiness, user => credits.snapshot(user.id));
+mediaPlayback.mountOwned(app);
 stickerShares.mountPrivate(app);
 const startingStickerSessions=new Set<string>();
 mountStickerRoutes(app,{base:publicBase,
