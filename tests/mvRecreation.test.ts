@@ -14,10 +14,12 @@ test('MV plans enforce ownership, original ranges, exact audio duration and excl
  for(const changed of [{...plan,shots:[{...plan.shots[0],sourceId:'ref'},plan.shots[1]]},{...plan,shots:[{...plan.shots[0],duration:3},plan.shots[1]]},{...plan,shots:[{...plan.shots[0],start:-1},plan.shots[1]]},{...plan,captions:[{start:0,end:8,text:'超时'}]}])assert.throws(()=>validateMvPlan(changed,project,media));
  assert.throws(()=>validateMvPlan(plan,project,media.map(m=>({...m,ownerId:'b'}))));
  assert.throws(()=>validateMvPlan({...plan,shots:[{...plan.shots[0],duration:.2},{...plan.shots[1],duration:2}]},project,media),/叠化/);
+ assert.throws(()=>validateMvPlan({...plan,shots:[plan.shots[0],{...plan.shots[1],sourceId:'red',reason:'另取前次未覆盖的不重叠区间'}]},project,media),/实际重叠/);
 });
 test('pre-approval timing fitting uses source headroom and frame boundaries, never loops or changes an approved plan',()=>{
  const {media,project,plan}=fixture();const unchanged=structuredClone(plan),p={...project,duration:2.1};
  const fitted=fitMvTiming(plan,p,media);assert.equal(Math.round(fitted.shots.reduce((sum,s,i)=>sum+s.duration-(i&&s.transition==='fade'?.2:0),0)*30),63);assert.deepEqual(plan,unchanged);assert.ok(fitted.limitations.some(s=>s.includes('没有变速或循环')));assert.equal(validateMvPlan(fitted,p,media).shots.length,2);
+ const captioned=fitMvTiming({...plan,captions:[{text:'重逢',start:.1,end:.5}]},p,media);assert.ok(Math.abs(captioned.captions[0].start-captioned.shots[0].duration)<.001);
  assert.throws(()=>fitMvTiming(plan,{...p,duration:3},media),/时长/);
  assert.throws(()=>fitMvTiming(plan,p,media.map(m=>m.id==='red'?{...m,duration:.5}:m)),/超出/);
 });

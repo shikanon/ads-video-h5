@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,copyFile,access} from 'node:fs/promises';
 import path from 'node:path';
 import {startCreditServer} from './fixtures/creditServer';
 import {runFFmpeg,probeVideo} from '../server/core';
@@ -26,6 +26,7 @@ test('real service executes the MV queue, persists a plan and publishes a render
  const bytes=await f.request(cookie,'/api/artifacts/'+artifact.id);assert.equal(bytes.status,200);const video=path.join(f.directory,'downloaded.mp4');await writeFile(video,Buffer.from(await bytes.arrayBuffer()));assert.equal((await probeVideo(video)).hasAudio,true);
  assert.equal((await f.request(other,'/api/mv-recreations/'+p.id+'/preview',{requestId:'mv_foreign_http01',planHash:planned.planHash})).status,404);
  const disk=JSON.parse(await readFile(path.join(f.directory,'app-state.json'),'utf8'));assert.equal(disk.mvRecreations[0].previewArtifactId,artifact.id);
+ const cache=path.join(f.directory,'mv-recreations',p.id);await access(cache);assert.equal((await f.request(cookie,'/api/mv-recreations/'+p.id,undefined,'DELETE')).status,200);await assert.rejects(()=>access(cache));assert.equal((await f.request(cookie,'/api/artifacts/'+artifact.id)).status,200);
 });
 
 test('native MV page restores the plan, lists ordered nodes, renames projects and clears account drafts',async()=>{
