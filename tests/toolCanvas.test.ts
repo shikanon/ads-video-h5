@@ -8,6 +8,7 @@ import {capturePage,waitFor} from './fixtures/nativeClient';
 import {startCreditServer} from './fixtures/creditServer';
 import {mountToolBatchRoutes,batchViews} from '../server/toolBatchRoutes';
 import {validateWorkspace} from '../server/lifecycleRoutes';
+import {accountCanvases,saveAccountCanvas} from '../server/workCanvases';
 const require=createRequire(import.meta.url);
 const {worldPoint,screenPoint,visibleNodes}=require('../apps/miniprogram/miniprogram/utils/infinite-canvas.js');
 const {nodeViews,projectRows}=require('../apps/miniprogram/miniprogram/utils/tool-workbench.js');
@@ -40,12 +41,35 @@ test('virtualization keeps a bounded render set while all distant objects remain
  const w:any={version:1,category:'video',templateId:null,draft:'',attachmentIds:[],nodes:[{id:'a',sourceKind:'artifact',sourceId:'old',x:-900000,y:800000,width:128,height:168,scale:.25,z:99}],camera:{x:-999999,y:800000,zoom:.1},nextPosition:{x:-900000,y:800000}};
  assert.equal(validateWorkspace(w).camera?.x,-999999);assert.throws(()=>validateWorkspace({...w,camera:{x:0,y:0,zoom:0}}));assert.throws(()=>validateWorkspace({...w,nextPosition:{x:Infinity,y:0}}));
 });
+
+test('account canvas restores every project, preserves offscreen coordinates across viewport moves, and shows all sticker actions',async()=>{
+ const {page,state}=await canvas();state.artifacts=[{id:'first',name:'第一部',kind:'video',url:'/first',sessionId:'one'},{id:'second',name:'第二部',kind:'video',url:'/second',sessionId:'two'}];state.sessions=[{id:'one',messages:[]},{id:'two',messages:[]}];
+ const nodes=state.artifacts.map((a:any,i:number)=>({id:'artifact-'+a.id,sourceId:a.id,sourceKind:'artifact',x:i*800,y:0,width:128,height:168}));state.toolCanvases={video:{version:1,nodes,camera:{x:0,y:0,zoom:1},updatedAt:'2026-11-21'}};page._dirty=false;page.setData({category:'video'});page.render(state);
+ assert.equal(page.data.nodeCount,2);assert.ok(!page.data.nodes.some(n=>n.sourceId==='second'),'outside viewport is still in world');const positions=page._worldNodes.map(n=>({id:n.id,x:n.x,y:n.y}));
+ for(let i=0;i<3;i++){page.boardStart(touches([[351,175]]));page.boardMove(touches([[51,175]]));page.boardEnd(touches([]));}
+ assert.ok(page.data.nodes.some(n=>n.sourceId==='second'),'panning reveals the same retained object');assert.deepEqual(page._worldNodes.map(n=>({id:n.id,x:n.x,y:n.y})),positions);
+ page.fit();assert.ok(page.data.nodes.some(n=>n.sourceId==='first'));assert.ok(page.data.nodes.some(n=>n.sourceId==='second'));page.onHide();
+ const projects=Array.from({length:2},(_,i)=>({id:'p'+i,sessionId:'project'+i,completed:Array.from({length:24},(_,n)=>({id:String(n+1).padStart(2,'0'),thumbnailUrl:'/thumb'}))}));assert.equal(nodeViews({id:'another',toolWorkspace:{includeHistory:false,nodes:[]}},state,projects,{previewUrl:()=>''},'stickers').length,48);
+});
+
+test('legacy project layouts merge into account spaces and saving one category preserves the other',()=>{
+ const node=(id:string,x:number)=>({id,sourceId:id,sourceKind:'artifact' as const,x,y:-90000,width:128,height:168});
+ const workspace=(nodes:any[],updatedAt:string)=>({version:1 as const,category:'video' as const,templateId:null,draft:'',attachmentIds:[],nodes,updatedAt});
+ const sessions:any=[{toolWorkspace:workspace([node('old',-500000)],'2026-01-01')},{toolWorkspace:workspace([node('new',900000),node('old',-600000)],'2026-02-01')}],profile:any={};
+ const migrated=accountCanvases(profile,sessions);assert.equal(migrated.video?.nodes.length,2);assert.equal(migrated.video?.nodes.find(n=>n.id==='old')?.x,-600000);saveAccountCanvas(profile,{...workspace(migrated.video!.nodes,'2026-03-01'),category:'video'});saveAccountCanvas(profile,{...workspace([],'2026-03-02'),category:'stickers'});assert.equal(accountCanvases(profile,[]).video?.nodes.length,2);assert.equal(accountCanvases(profile,[]).stickers?.nodes.length,0);
+});
 test('legacy artifacts, generated images and sticker samples show without a workspace; frozen job placement overrides grid defaults',()=>{
  const client={previewUrl:()=>''},state:any={sessions:[{id:'old',title:'历史视频'},{id:'sticker',title:'历史表情'}],media:[{id:'m',name:'生成图',origin:'generated',kind:'image',url:'/m'}],artifacts:[{id:'a',sessionId:'old',messageId:'message',name:'成片',kind:'video',url:'/a'}],jobs:[{id:'j',sessionId:'old',messageId:'message',artifactId:'a',toolPlacement:{x:-12000,y:50000}}]};
  const projects=[{id:'p',sessionId:'sticker',styleCandidates:[],completed:[{id:'01',thumbnailUrl:'/thumb',previewUrl:'/preview'}]}];
  const video=nodeViews(null,state,projects,client,'video');assert.equal(video.length,2);assert.equal(video.find(n=>n.sourceId==='a').x,-12000);
  assert.equal(nodeViews(null,state,projects,client,'stickers').length,1);assert.equal(projectRows(state,projects).length,2);
- const blank={id:'blank',toolWorkspace:{category:'video',includeHistory:false,nodes:[],attachmentIds:[]}};assert.equal(nodeViews(blank,state,projects,client,'video').length,0);
+ const blank={id:'blank',toolWorkspace:{category:'video',includeHistory:false,nodes:[],attachmentIds:[]}};assert.equal(nodeViews(blank,state,projects,client,'video').length,2,'all completed work remains in the account canvas when creating another project');
+});
+
+test('a delivered sticker archive expands its actual pack items into independently movable canvas outputs',()=>{
+ const items=Array.from({length:24},(_,i)=>({id:String(i+1).padStart(2,'0'),name:'动作'+i,thumbnailUrl:'/thumb/'+i,previewUrl:'/preview/'+i})),pack={id:'curated-pack',items},artifact={id:'delivery',sessionId:'legacy',kind:'sticker-pack',name:'完整套装',url:'/zip',sticker:{packId:pack.id,count:24,sceneIds:['01','03','20']}};
+ const nodes=nodeViews(null,{media:[],artifacts:[artifact],jobs:[]},[],{previewUrl:()=>''},'stickers',[pack]);assert.equal(nodes.length,25);const children=nodes.filter(n=>n.packItem);assert.equal(children.length,24,'archive contents are not limited to the three sample IDs');assert.equal(new Set(children.map(n=>n.id)).size,24);assert.ok(children.every(n=>n.sourceId==='delivery'&&n.sourceKind==='artifact'&&n.kind==='image'));assert.equal(children[23].previewUrl,'/preview/23');
+ const layout=validateWorkspace({version:1,category:'stickers',templateId:null,draft:'',attachmentIds:[],nodes:[{id:children[23].id,sourceId:'delivery',sourceKind:'artifact',itemId:'24',x:-5000,y:9000,width:128,height:168}]});assert.equal(layout.nodes[0].itemId,'24');
 });
 test('switching accounts clears private batch drafts and cached work drawers',async()=>{
  const {page,app}=await canvas();page.setData({batchText:'private topics',batchName:'private name',works:[{id:'private'}],batches:[{id:'private'}],positionChosen:true});page._batchSubmission={requestId:'old'};app._generation++;page.onShow();assert.equal(page.data.batchText,'');assert.equal(page.data.batchName,'');assert.equal(page.data.works.length,0);assert.equal(page.data.batches.length,0);assert.equal(page._batchSubmission,null);assert.equal(page.data.positionChosen,false);page.onHide();

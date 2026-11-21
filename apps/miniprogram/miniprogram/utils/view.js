@@ -2,7 +2,7 @@ const { brandText } = require('./brand');
 const {projectLinks}=require('./project-links');
 const active = job => ['queued', 'running', 'stopping'].includes(job.status);
 const labels = { queued: '等待处理', running: '制作中', stopping: '正在停止', cancelled: '已停止', succeeded: '已完成', failed: '未完成' };
-const creditKinds = { service_refund:'服务故障退回',signup_grant: '注册赠送', daily_checkin: '每日签到', daily_grant: '每日赠送', special_grant: '特殊账户额度', model_usage: '模型调用', usage_pending: '用量待核对' };
+const creditKinds = { share_reward:'作品分享奖励', service_refund:'服务故障退回',signup_grant: '注册赠送', daily_checkin: '每日签到', daily_grant: '每日赠送', special_grant: '特殊账户额度', model_usage: '模型调用', usage_pending: '用量待核对' };
 function beijingTime(value) {
   const at = new Date(Date.parse(value) + 8 * 3600000);
   if (!Number.isFinite(at.getTime())) return '';

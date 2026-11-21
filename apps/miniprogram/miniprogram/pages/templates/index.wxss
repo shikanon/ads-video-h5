@@ -118,3 +118,7 @@
 .workbench .tw-status{float:right;color:var(--tw-accent);font-size:11px}
 
 .workbench .tw-confirm[disabled]{background:var(--tw-soft);color:var(--tw-muted)}
+
+.tw-mv-controls{font-size:22rpx;margin:8rpx 0;color:var(--tw-ink)}.tw-mv-row{display:flex;align-items:center;gap:12rpx;margin:8rpx 0}.tw-mv-row picker{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.tw-mv-row input{width:72rpx;background:var(--tw-paper);border:1rpx solid var(--tw-line);border-radius:10rpx;padding:6rpx}.tw-mv-row button{font-size:20rpx;padding:2rpx 10rpx;flex:none}.tw-mv-estimate{font-size:20rpx;opacity:.8}
+
+.tw-fit-all{width:auto;min-width:108rpx;font-size:20rpx;white-space:nowrap}

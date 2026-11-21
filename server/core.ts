@@ -27,9 +27,9 @@ import { currentAgentRuntime, limitParallelTools, runtimeParallelLimit } from '.
 
 const ffmpeg = ffmpegPath || 'ffmpeg';
 
-export function runFFmpeg(args: string[], timeoutMs = 180_000, maxLogBytes = 12000): Promise<string> {
+export function runFFmpeg(args: string[], timeoutMs = 180_000, maxLogBytes = 12000, cwd?:string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'],...(cwd?{cwd}:{}) });
     let stderr = '';
     let finished = false;
     const finish = (error?: Error) => {

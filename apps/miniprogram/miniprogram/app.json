@@ -19,7 +19,9 @@
     "pages/film/index",
     "pages/sticker-share/index",
     "pages/creative-studio/index",
-    "pages/mv-recreate/index"
+    "pages/notes/index",
+    "pages/mv-recreate/index",
+    "pages/video-share/index"
   ],
   "window": {
     "navigationBarTitleText": "轻喵LightMao",

@@ -242,6 +242,19 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
     const tasks=new Set(store.entries.filter(e=>e.userId===userId&&e.imageCount&&e.points<0&&e.requestId?.startsWith(projectId+'_')&&phaseOf(e.requestId.slice(projectId.length+1))===phase).map(e=>e.taskId).filter((id):id is string=>Boolean(id)));
     let points=0;for(const id of tasks)if(!store.seen['service-refund:'+id])points+=await refundImageTask(userId,id,reason);return points;
   }
+  function netSpend(draft:Store,userId:string,taskIds:string[]){
+    const ids=new Set(taskIds);
+    return Math.max(0,-draft.entries.filter(e=>e.userId===userId&&e.taskId&&ids.has(e.taskId)&&['model_usage','service_refund'].includes(e.kind)).reduce((sum,e)=>sum+Math.round(e.points*POINT_MICROS),0));
+  }
+  const workSpend=(userId:string,taskIds:string[])=>transaction(draft=>netSpend(draft,userId,taskIds));
+  // Only server-resolved work IDs and task IDs reach this operation. The ledger
+  // transaction makes retries and concurrent settlement safe across restarts.
+  const rewardWork=(userId:string,workId:string,taskIds:string[],ceilingMicros:number)=>transaction(draft=>{
+    if(!workId||workId.length>200||!Number.isSafeInteger(ceilingMicros)||ceilingMicros<0)throw Error('作品奖励记录无效。');
+    const key='share-reward:'+hash(JSON.stringify([userId,workId]));if(draft.seen[key])return 0;
+    const amount=Math.min(ceilingMicros,netSpend(draft,userId,taskIds));if(!amount)return 0;
+    wallet(draft,userId);entry(draft,userId,'share_reward',amount,{detail:'作品分享使用奖励',requestId:key});draft.seen[key]=true;return amount/POINT_MICROS;
+  });
   const history = (userId: string, offset = 0, limit = 20) => transaction(draft => {
     const w = publicWallet(wallet(draft, userId)), all = draft.entries.filter(e => e.userId === userId).reverse();
     return { wallet: w, entries: all.slice(offset, offset + limit), total: all.length };
@@ -253,7 +266,7 @@ export function createCredits(dataDir: string, options: { now?: () => number; in
     // A deployment receipt without identifiers, balances or account lists.
     return { ready: store.initialized, initialSpecialAccountApplied: Boolean(initial?.special && initial.specialGranted) };
   }
-  return { load, snapshot, checkIn, admit, voiceTicket, recordUsage, price, setSpecial, setPrice, history, adminState, readiness,imagePricing,imageQuote,admitImages,assertImageBudget,recordImageUsage,releaseImages,releaseInactiveImages,releaseTerminalImages,setImagePrice,refundImageTask,refundImageProject };
+  return { load, snapshot, checkIn, admit, voiceTicket, recordUsage, price, setSpecial, setPrice, history, adminState, readiness,imagePricing,imageQuote,admitImages,assertImageBudget,recordImageUsage,releaseImages,releaseInactiveImages,releaseTerminalImages,setImagePrice,refundImageTask,refundImageProject,workSpend,rewardWork };
 }
 
 export type Credits = ReturnType<typeof createCredits>;

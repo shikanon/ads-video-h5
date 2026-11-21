@@ -43,7 +43,7 @@ export interface TokenUsage {
 export interface CreditEntry {
   id: string;
   userId: string;
-  kind: 'signup_grant' | 'daily_checkin' | 'daily_grant' | 'special_grant' | 'model_usage' | 'usage_pending' | 'service_refund';
+  kind: 'signup_grant' | 'daily_checkin' | 'daily_grant' | 'special_grant' | 'model_usage' | 'usage_pending' | 'service_refund' | 'share_reward';
   at: string;
   points: number;
   balance: number;

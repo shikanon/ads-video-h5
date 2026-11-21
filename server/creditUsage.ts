@@ -6,9 +6,9 @@ import type { Credits } from './credits';
 import type { TokenUsage } from '../shared/creditTypes';
 import { tokenUsage } from './tokenPricing';
 
-interface Context { credits: Credits; userId: string; taskId: string; }
+interface Context { credits: Credits; userId: string; taskId: string; checkBalance?:boolean }
 const context = new AsyncLocalStorage<Context>();
-export const withCreditUsage = <T>(credits: Credits, userId: string, taskId: string, action: () => Promise<T>) => context.run({ credits, userId, taskId }, action);
+export const withCreditUsage = <T>(credits: Credits, userId: string, taskId: string, action: () => Promise<T>,options:{checkBalance?:boolean}={}) => context.run({ credits, userId, taskId,...options }, action);
 /** Quality checks are included in the quoted image price. Keep the scope
  * local to that service request; ordinary author/model calls remain billed. */
 export const withoutCreditUsage = <T>(action:()=>Promise<T>) => context.exit(action);
@@ -36,7 +36,7 @@ export const creditFetch: typeof fetch = async (input, init) => {
   if (typeof payload.model !== 'string') throw new Error('模型计费缺少模型 ID。');
   const modelId = payload.model, price = await owner.credits.price(modelId);
   const hasAudio = payload.messages?.some(m => Array.isArray(m.content) && m.content.some(v => v?.type === 'input_audio')) ?? false;
-  const task=currentTaskExecution();await task?.assertModelBudget();
+  const task=currentTaskExecution();await task?.assertModelBudget();if(owner.checkBalance)await owner.credits.admit(owner.userId);
   const response = await fetch(input, init);
   if (!response.body) return response;
   const sse = response.headers.get('content-type')?.includes('text/event-stream') ?? false;

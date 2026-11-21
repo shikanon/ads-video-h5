@@ -22,6 +22,7 @@ function withoutTemplateMentions(text, templates) {
 }
 
 const skillStarters = [
+  {id:'narrative-montage',name:'叙事蒙太奇',category:'mv',icon:'films',mv:true,description:'选音源和素材文件夹，按情绪与镜头叙事制作MV。',prompt:'@叙事蒙太奇 用所选文件夹素材和我的音源制作音乐MV。要求：',coverTitle:'镜头连成故事',coverNote:'音源 · 素材 · 剪辑'},
   { id: 'sticker-studio-dynamic', name: '新角色动态表情', category: 'stickers', icon: 'create', description: '上传你的角色，先生成两种候选画风，点选后制作3个样张，确认后生成24个动态表情。', studioMode: 'dynamic', coverTitle: '让你的角色\n动起来', coverNote: '角色 · 动作 · 分享' },
   { id: 'sticker-studio-static', name: '新角色静态表情', category: 'static-stickers', icon: 'library', description: '上传你的角色，先生成两种候选画风，点选后制作3个样张，确认后生成24张透明PNG。', studioMode: 'static', coverTitle: '一种心情\n一张表情', coverNote: '角色 · 画风 · 心情' },
   { id: 'qingjian-hot-video', name: '热点新闻', category: 'news', icon: 'films', description: '查证热点、整理来源，制作新闻图解短片。', prompt: '制作一个新闻资讯视频，主题：', coverTitle: '把新鲜事\n讲清楚', coverNote: '查证 · 图解 · 播报' },
@@ -29,7 +30,7 @@ const skillStarters = [
   { id: 'qingjian-talking-head-edit', name: '口播精剪', category: 'editing', icon: 'films', description: '用上传的口播素材整理节奏，保留原声，剪出流畅成片。', prompt: '请精剪我上传的口播素材，保留原声。要求：', coverTitle: '好好说的话\n值得被听见', coverNote: '原声 · 节奏 · 精剪' },
   { id: 'qingjian-narrative-rebuild', name: '叙事重构', category: 'editing', icon: 'create', description: '重新组织叙事与镜头，把零散素材剪成故事。', prompt: '请用我上传的素材重新组织叙事并制作视频。故事主题：', coverTitle: '零散片段\n连成一个故事', coverNote: '素材 · 镜头 · 叙事' },
 ];
-const categoryLabels = { all: '全部', game: '游戏', stickers: '动态表情', 'static-stickers': '静态表情', knowledge: '知识', news: '新闻', product: '产品动效', editing: '素材剪辑' };
+const categoryLabels = { mv:'音乐MV',all: '全部', game: '游戏', stickers: '动态表情', 'static-stickers': '静态表情', knowledge: '知识', news: '新闻', product: '产品动效', editing: '素材剪辑' };
 function skillStarter(id) { return skillStarters.find(item => item.id === id); }
 function isSkillPrompt(prompt) { return skillStarters.some(item => item.prompt && prompt.startsWith(item.prompt)); }
 function templateCategory(template) {

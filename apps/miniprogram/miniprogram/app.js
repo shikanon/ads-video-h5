@@ -71,10 +71,10 @@ App({
     const busy = this.state && this.state.jobs.some(j => active(j) || Date.now() - Date.parse(j.updatedAt) < 6000);
     this._timer = setTimeout(() => this.refresh().catch(() => {}), this._refreshFailed ? 8000 : this._restored ? 800 : busy ? 1800 : 30000);
   },
-  reset() { this.pendingCreativeDraft = null; this.pendingToolWorkspace = null; this.pendingTemplate = null; this.templateOrigin = null; this.pendingResourceSection = null; this.pendingLibraryCollection = null; this._readingNotices = new Set(); this._openingNotice = false; this._presenceForeground = undefined; this._presenceAt = 0; if (wx.removeTabBarBadge) wx.removeTabBarBadge({ index:0, fail(){} }); clearTimeout(this._cacheTimer); this._restored = false; this._lastRefreshAt = 0; this._refreshFailed = false; this._activationSync = null; this._activationDesired = null; this._selectionRevision = 0; this._pendingMessageSessions = new Set(); this._generation++; this._revision++; this._refreshing = null; this._selectedSessionId = null; this.state = null; this.user = null; this.voiceConsent = null; this.pendingAttachments = null; clearTimeout(this._timer); this.client.clear(); },
+  reset() { this.pendingMvFolder=null;this.pendingVideoTemplate=false;this.pendingCreativeDraft = null; this.pendingToolWorkspace = null; this.pendingTemplate = null; this.templateOrigin = null; this.pendingResourceSection = null; this.pendingLibraryCollection = null; this._readingNotices = new Set(); this._openingNotice = false; this._presenceForeground = undefined; this._presenceAt = 0; if (wx.removeTabBarBadge) wx.removeTabBarBadge({ index:0, fail(){} }); clearTimeout(this._cacheTimer); this._restored = false; this._lastRefreshAt = 0; this._refreshFailed = false; this._activationSync = null; this._activationDesired = null; this._selectionRevision = 0; this._pendingMessageSessions = new Set(); this._generation++; this._revision++; this._refreshing = null; this._selectedSessionId = null; this.state = null; this.user = null; this.voiceConsent = null; this.pendingAttachments = null; clearTimeout(this._timer); this.client.clear(); },
   expired() {
     const pages=typeof getCurrentPages==='function'?getCurrentPages():[],current=pages[pages.length-1];
-    const publicWork=(current?current.route:this._entryPath)==='pages/sticker-share/index';
+    const publicWork=['pages/sticker-share/index','pages/video-share/index'].includes(current?current.route:this._entryPath);
     this.reset();
     if(publicWork)return;
     if (this._redirecting) return;

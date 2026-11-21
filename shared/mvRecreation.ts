@@ -5,6 +5,7 @@ export interface MvShot {sourceId:string;start:number;duration:number;chapter:st
 export interface MvCaption {start:number;end:number;text:string;kind?:'story'|'lyric';words?:Array<{start:number;end:number;text:string}>}
 export interface MvPlan {story:string;shots:MvShot[];captions:MvCaption[];limitations:string[];subtitleStyle?:'standard'|'cinematic';referenceEdit?:MvReferenceEdit}
 export interface MvRecreation {
+ editSkill?:'narrative-montage';resolution?:480|720|1080;templateRequestHash?:string;canvasPosition?:{x:number;y:number};
  sourceFolderId?:string;createdFromRequestId?:string;
  id:string;ownerId:string;sessionId:string;name:string;referenceId:string;audioId:string;sourceIds:string[];
  duration:number;instructions:string;createdAt:string;updatedAt:string;plan?:MvPlan;planHash?:string;

@@ -6,6 +6,7 @@ import { claimCheckIn, fetchCredits, type CreditHistory } from './creditApi';
 import './credits.css';
 
 const names: Record<CreditEntry['kind'], [string, string]> = {
+  share_reward:['作品分享奖励','Work sharing reward'],
   service_refund: ['服务故障退回','Service refund'],
   signup_grant: ['注册赠送', 'Welcome gift'], daily_checkin: ['每日签到', 'Daily check-in'], daily_grant: ['每日赠送', 'Daily grant'],
   special_grant: ['特殊账户额度', 'Special allowance'], model_usage: ['模型调用', 'Model usage'], usage_pending: ['用量待核对', 'Usage pending'],

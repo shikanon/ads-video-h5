@@ -9,6 +9,7 @@ export function privateEvaluationStorage(storage: ReturnType<typeof createOssSto
   return {
     ...storage,
     publicUrl: (...args) => isEvaluationOwner(args[0]) ? null : storage.publicUrl(...args),
+    signedReadUrl:async(...args)=>isEvaluationOwner(args[0])?undefined:storage.signedReadUrl(...args),
     put: async (...args) => { if (!isEvaluationOwner(args[0])) await storage.put(...args); },
     ensure: async (...args) => { if (isEvaluationOwner(args[0])) await access(args[3]); else await storage.ensure(...args); },
     remove: async (...args) => { if (!isEvaluationOwner(args[0])) await storage.remove(...args); },

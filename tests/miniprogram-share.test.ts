@@ -45,6 +45,14 @@ test('a guest tab exposes both share menus before login without requesting netwo
   assert.equal(page.data.guest, true); page.onHide();
 });
 
+test('a video work preview remains public when an expired cached login is cleared',async t=>{
+ const actual=miniRequire('./miniprogram/config.js'),storage=new Map(),requests:any[]=[],redirects:string[]=[],pages:any[]=[];
+ storage.set('qingjian:wechat-session:v1:'+actual.apiBase,'qingjian_session='+'a'.repeat(43));
+ const wx:any={getStorageSync:(k:string)=>storage.get(k),setStorageSync:(k:string,v:any)=>storage.set(k,v),removeStorageSync:(k:string)=>storage.delete(k),request:(o:any)=>requests.push(o),reLaunch:(o:any)=>{redirects.push(o.url);o.complete?.();}};
+ const app=await loadNativeApp(wx,()=>pages);t.after(()=>app.onHide());const token='c'.repeat(48);app.onShow({path:'pages/video-share/index',query:{token}});const refreshing=app._refreshing,page=await capturePage('video-share',app,wx);page.route='pages/video-share/index';pages.push(page);page.onLoad({token});page.onShow();
+ requests[0].success({statusCode:401,data:{error:'登录过期'},header:{}});await refreshing.catch(()=>{});const data={share:{name:'好友视频',videoUrl:'/api/video-shares/'+token+'/video',coverUrl:'/api/video-shares/'+token+'/cover'}};requests[1].success({statusCode:200,data,header:{}});await waitFor(()=>requests.length===3);assert.equal(requests[2].header.Cookie,undefined);requests[2].success({statusCode:200,data,header:{}});await waitFor(()=>page.data.share?.name==='好友视频');assert.equal(redirects.length,0);assert.equal(app.client.hasSession(),false);page.onHide();
+});
+
 
 test('explicit sticker template sharing passes only a public mode; recipients create with their own account',async()=>{
   for(const name of ['sticker-studio','stickers']){

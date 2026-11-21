@@ -38,10 +38,10 @@ test('a selection from the template tab waits for initial state and never applie
   chat.onUnload();
 });
 
-test('tool catalog preserves a usable selection on fetch failure and ignores stale account responses',async()=>{
+test('tool catalog preserves a usable selection on fetch failure and ignores stale account responses',{timeout:5000},async()=>{
  const f=fixture(),gallery=await capturePage('templates',f.app,f.wx);gallery.onLoad();gallery.onShow();await tick();await gallery.category(event({id:'video'}));const count=gallery.data.cards.length;
  f.app.client.request=async()=>{throw Error('离线');};await gallery.load();assert.equal(gallery.data.cards.length,count);assert.equal(gallery.data.error,'离线');
- let finish:any;f.app.client.request=route=>route.includes('/config')?Promise.resolve({}):new Promise(r=>{finish=r;});const pending=gallery.load();f.app._generation++;f.app.client.hasSession=()=>false;gallery.onHide();gallery.onShow();finish({templates:[template('old-account')]});await pending;assert.equal(gallery.data.cards.some(c=>c.id==='old-account'),false);assert.ok(gallery.data.cards.length>0);assert.equal(gallery.data.guest,true);gallery.onHide();
+ let finish:any;f.app.client.request=route=>route.includes('/config')?Promise.resolve({}):route.endsWith('/sticker-packs')?Promise.resolve({packs:[]}):new Promise(r=>{finish=r;});const pending=gallery.load();f.app._generation++;f.app.client.hasSession=()=>false;gallery.onHide();gallery.onShow();finish({templates:[template('old-account')]});await pending;assert.equal(gallery.data.cards.some(c=>c.id==='old-account'),false);assert.ok(gallery.data.cards.length>0);assert.equal(gallery.data.guest,true);gallery.onHide();
 });
 
 test('unified resources keep independent filters and pagination and open the correct player kind', async () => {

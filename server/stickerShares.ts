@@ -1,24 +1,26 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, writeFile, readdir, rename } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, readdir, rename,access,rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { Express } from 'express';
 import { userOf } from './auth';
 import type { StickerStudio } from './stickerStudio';
 import { fileDigest } from './artifactIntegrity';
+import {runFFmpeg} from './core';
 interface Share {token:string;ownerId:string;projectId:string;name:string;mode:'static'|'dynamic';styleId:string;items:Array<{id:string;files:Record<string,string>}>;revoked:boolean;createdAt:string;}
 export function createStickerShares(dataDir:string,studio:StickerStudio,base=''){
  const root=path.join(dataDir,'sticker-shares'),valid=(token:string)=>/^[a-f0-9]{48}$/.test(token);
  async function load(token:string):Promise<Share>{if(!valid(token))throw Error('分享不存在。');const s=JSON.parse(await readFile(path.join(root,token+'.json'),'utf8'));if(s.token!==token||s.revoked)throw Error('分享已关闭。');return s;}
- const save=async(s:Share)=>{await mkdir(root,{recursive:true,mode:0o700});const file=path.join(root,s.token+'.json'),tmp=file+'.tmp';await writeFile(tmp,JSON.stringify(s),{mode:0o600});await rename(tmp,file);};
+ const save=async(s:Share)=>{await mkdir(root,{recursive:true,mode:0o700});const file=path.join(root,s.token+'.json'),tmp=file+'.'+randomBytes(8).toString('hex')+'.tmp';await writeFile(tmp,JSON.stringify(s),{mode:0o600});await rename(tmp,file);};
  async function current(s:Share){try{await studio.load(s.ownerId,s.projectId);for(const item of s.items)for(const [file,hash]of Object.entries(item.files))if(await fileDigest(path.join(studio.folder(s.ownerId,s.projectId),'assets','pack',item.id,file))!==hash)return false;return true;}catch{return false;}}
  async function list(ownerId:string,id:string){await studio.load(ownerId,id);const shares=[];for(const name of await readdir(root).catch(()=>[])){if(!/^[a-f0-9]{48}\.json$/.test(name))continue;try{const s=await load(name.slice(0,-5));if(s.ownerId===ownerId&&s.projectId===id&&await current(s))shares.push({token:s.token,createdAt:s.createdAt});}catch{}}return shares;}
  async function create(ownerId:string,id:string){
   const project=await studio.load(ownerId,id),view=await studio.view(ownerId,id);if(!view.previewHash)throw Error('先完成样张，再分享作品预览。');
   const items=[];for(const item of view.completed){const files:Record<string,string>={};for(const file of ['thumb.png',project.recipe.mode==='static'?'still.png':'animation.gif'])files[file]=await fileDigest(path.join(studio.folder(ownerId,id),'assets','pack',item.id,file));items.push({id:item.id,files});}
-  const share:Share={token:randomBytes(24).toString('hex'),ownerId,projectId:id,name:project.displayName||project.recipe.name,mode:project.recipe.mode,styleId:project.recipe.styleId||'custom',items,revoked:false,createdAt:new Date().toISOString()};await save(share);return {token:share.token};
+  const share:Share={token:randomBytes(24).toString('hex'),ownerId,projectId:id,name:project.displayName||project.recipe.name,mode:project.recipe.mode,styleId:project.recipe.styleId||'custom',items,revoked:false,createdAt:new Date().toISOString()};await save(share);return {token:share.token,coverUrl:base+'/api/sticker-shares/'+share.token+'/cover'};
  }
  async function revoke(ownerId:string,id:string,token:string){const s=await load(token);if(s.ownerId!==ownerId||s.projectId!==id)throw Error('分享不存在。');s.revoked=true;await save(s);}
  function mountPublic(app:Express){
+  app.get('/api/sticker-shares/:token/cover',async(q,r)=>{r.set('Cache-Control','no-store');let temp='';try{const s=await load(q.params.token);if(!await current(s))throw Error('作品已更新。');const file=path.join(root,s.token+'-cover.png');try{await access(file);}catch{const thumbs=s.items.slice(0,6).map(i=>path.join(studio.folder(s.ownerId,s.projectId),'assets','pack',i.id,'thumb.png'));if(!thumbs.length)throw Error('没有完成的表情。');temp=file+'.'+randomBytes(8).toString('hex')+'.working.png';let filters='[0:v]format=rgba[bg0];';for(let i=0;i<thumbs.length;i++){filters+=`[${i+1}:v]scale=180:180:force_original_aspect_ratio=decrease,pad=180:180:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba[t${i}];[bg${i}][t${i}]overlay=${15+i%3*195}:${thumbs.length<=3?140:35+Math.floor(i/3)*205}[bg${i+1}];`;}filters+=`[bg${thumbs.length}]format=rgba[out]`;await runFFmpeg(['-v','error','-y','-f','lavfi','-i','color=c=0xfff9ee:s=600x480',...thumbs.flatMap(t=>['-i',t]),'-filter_complex_threads','1','-filter_complex',filters,'-map','[out]','-frames:v','1',temp]);await rename(temp,file);}r.type('png').sendFile(file);}catch{r.status(404).end();}finally{if(temp)await rm(temp,{force:true});}});
   app.get('/api/sticker-shares/:token',async(q,r)=>{r.set('Cache-Control','no-store');try{const s=await load(q.params.token);if(!await current(s))throw Error('作品已更新。');r.json({share:{token:s.token,name:s.name,mode:s.mode,styleId:s.styleId,count:s.items.length,items:s.items.map(item=>({id:item.id,thumbnailUrl:base+`/api/sticker-shares/${s.token}/items/${item.id}/thumb`,previewUrl:base+`/api/sticker-shares/${s.token}/items/${item.id}/preview`}))}});}catch{r.status(404).json({error:'作品分享已关闭、更新或不存在，请向好友获取新的分享。'});}});
   app.get('/api/sticker-shares/:token/items/:id/:kind',async(q,r)=>{r.set('Cache-Control','no-store');try{const s=await load(q.params.token);await studio.load(s.ownerId,s.projectId);const item=s.items.find(i=>i.id===q.params.id),file=q.params.kind==='thumb'?'thumb.png':q.params.kind==='preview'?(s.mode==='static'?'still.png':'animation.gif'):'';if(!item||!file||!item.files[file])throw Error();const source=path.join(studio.folder(s.ownerId,s.projectId),'assets','pack',item.id,file);if(await fileDigest(source)!==item.files[file])throw Error();r.sendFile(source);}catch{r.status(404).end();}});
  }
@@ -27,5 +29,5 @@ export function createStickerShares(dataDir:string,studio:StickerStudio,base='')
   app.post('/api/sticker-projects/:id/shares',async(q,r)=>{try{r.json(await create(userOf(q).id,q.params.id));}catch(error){r.status(400).json({error:error instanceof Error?error.message:'分享创建失败。'});}});
   app.delete('/api/sticker-projects/:id/shares/:token',async(q,r)=>{try{await revoke(userOf(q).id,q.params.id,q.params.token);r.json({ok:true});}catch{r.status(404).json({error:'分享不存在。'});}});
  }
- return {create,revoke,load,list,mountPublic,mountPrivate};
+ return {create,revoke,load,list,current,mountPublic,mountPrivate};
 }

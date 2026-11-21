@@ -25,6 +25,11 @@ test('new empty projects do not reopen the old project and pending return links 
  const f=fixture(),page=await capturePage('templates',f.app,f.wx);page.onLoad();page.onShow();await page.load();await page.ensureWorkspace();await page.newProject();page.render(f.state);assert.equal(page.data.sessionId,'');assert.equal(page.data.nodes.length,0);
  page.onHide();f.app.pendingToolWorkspace={sessionId:'canvas',category:'stickers'};page.onShow();assert.equal(page.data.sessionId,'canvas');page.onHide();
 });
+
+test('a folder opens the video MV technique on the shared canvas and still requires explicit user audio',async()=>{
+ const f=fixture();f.state.mediaFolders=[{id:'folder',name:'我的素材',mv:{audioId:'previous-song'}}];f.state.media.push({id:'previous-song',kind:'audio',name:'旧配乐',duration:60});f.state.artifacts.push({id:'old-film',sessionId:'old',name:'已有视频',kind:'video',url:'/old'});const n={id:'artifact-old-film',sourceId:'old-film',sourceKind:'artifact',x:-500000,y:600000,width:128,height:168};f.state.toolCanvases={video:{version:1,nodes:[n],camera:{x:-500020,y:599980,zoom:1},updatedAt:'2026-11-21'}};f.app.pendingMvFolder='folder';
+ const page=await capturePage('templates',f.app,f.wx);page.onLoad();page.onShow();await page.load();assert.equal(page.data.category,'video');assert.equal(page.data.templateId,'narrative-montage');assert.equal(page.data.mvSettings.folderId,'folder');assert.equal(page.data.mvSettings.audioId,'','folder defaults are not permission to choose audio');assert.equal(page.data.nodeCount,1);assert.equal(page.data.nodes[0].x,-500000);assert.equal(page.data.mvActive,true);assert.ok(page.data.cards.some(c=>c.id==='narrative-montage'));page.onHide();
+});
 test('editing while a save is in flight keeps the newest draft instead of clearing its dirty flag',async()=>{
  const f=fixture(),page=await capturePage('templates',f.app,f.wx);page.onLoad();page.onShow();await page.load();await page.ensureWorkspace();let finish:any;const original=f.app.mutate;let first=true;
  f.app.mutate=async(...args:any[])=>{if(first){first=false;await new Promise(r=>{finish=r;});}return original(...args);};
