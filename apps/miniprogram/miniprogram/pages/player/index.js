@@ -9,7 +9,7 @@ Page({
   prepareShare(){return prepareVideoShare(this);},closeShare(){return closeVideoShare(this);},
   data: Object.assign(appearanceData(), { item: null, isMedia: false, src: '', loading: false, saving: false, error: '', playing: false, elapsed: 0, duration: 0, analysis: '', analyzing: false }),
   onLoad(query) { this._id = query.id; this._type = query.type === 'artifact' ? 'artifact' : 'media'; this.setData({ isMedia: this._type === 'media' }); },
-  onShow() { const g=getApp()._generation;if(this._shareGeneration!==g){this._shareGeneration=g;this.setData({shareToken:'',shareCover:'',src:''});}withSession(this, this.render); },
+  onShow() { const g=getApp()._generation;if(this._shareGeneration!==g){this._shareGeneration=g;this.setData({shareToken:'',shareCover:'',src:'',poster:''});}withSession(this, this.render); },
   onHide() { hide(this); if (this._audio) this._audio.pause(); },
   onUnload() { hide(this); if (this._audio) this._audio.destroy(); },
   render(state) {
@@ -21,6 +21,8 @@ Page({
       return;
     }
     this._item = item;
+    if(item.kind==='video'&&item.coverUrl&&!this.data.poster&&!this._posterLoading&&getApp().client.download){const app=getApp(),g=app._generation,id=item.id;this._posterLoading=true;app.client.download(item.coverUrl,{persistent:true}).then(poster=>{if(this._visible&&g===app._generation&&this._id===id)this.setData({poster});}).catch(()=>{}).finally(()=>{this._posterLoading=false;});}
+
     this.setData({documentText:item.document?.text||'',documentTruncated:Boolean(item.document?.truncated),isWord:/\.docx$/i.test(item.name)});
     this.setData({ item: { id: item.id, name: this._type === 'artifact' ? brandText(item.name) : item.name, kind: item.kind, project: Boolean(item.projectUrl), largeVideo:item.kind==='video'&&item.sizeBytes>200*1024*1024, date: beijingTime(item.createdAt), duration: item.duration ? Math.round(item.duration) + ' 秒' : '' }, analysis: item.analysis && item.analysis.transcript || '' });
     if (item.kind!=='document' && !this.data.src && !this.data.loading) this.load();
