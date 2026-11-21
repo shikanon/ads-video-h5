@@ -96,11 +96,14 @@ jobs:
           staging="$RUNNER_TEMP/qingjian-release"
           mkdir -p "$staging"
           git archive "$GITHUB_SHA" | tar -x -C "$staging"
+          cp -a dist "$staging/dist"
+          mkdir -p release-source-artifacts
+          tar -czf "release-source-artifacts/qingjian-cn-$GITHUB_SHA.tar.gz" -C "$staging" .
+          (cd release-source-artifacts && sha256sum "qingjian-cn-$GITHUB_SHA.tar.gz" > "qingjian-cn-$GITHUB_SHA.sha256")
           cp -a node_modules "$staging/node_modules"
           cp -a apps/admin/node_modules "$staging/apps/admin/node_modules"
           cp -a apps/desktop/node_modules "$staging/apps/desktop/node_modules"
           cp -a apps/miniprogram/node_modules "$staging/apps/miniprogram/node_modules"
-          cp -a dist "$staging/dist"
           test ! -e "$staging/data/auth.json"
           test ! -e "$staging/data/provider-models.json"
           test ! -e "$staging/.git"
@@ -112,6 +115,14 @@ jobs:
         with:
           name: qingjian-cn-${{ github.sha }}
           path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+      - name: Upload verified source and client builds for existing runtimes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qingjian-cn-source-${{ github.sha }}
+          path: release-source-artifacts/*
           if-no-files-found: error
           retention-days: 3
           compression-level: 0
