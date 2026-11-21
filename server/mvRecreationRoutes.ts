@@ -4,12 +4,24 @@ import type {MvRecreation} from '../shared/mvRecreation';
 import type {MediaItem,Job} from '../shared/types';
 import {userOf,type PublicUser} from './auth';
 import {validateMvPlan,mvPlanHash} from './mvRecreation';
-export function mountMvRecreation(app:Express,o:{state:()=>{mvRecreations?:MvRecreation[];media:MediaItem[];jobs:Job[]};save:()=>Promise<void>;snapshot:(u:PublicUser)=>Promise<unknown>;start:(u:PublicUser,p:MvRecreation,phase:'plan'|'lyrics'|'preview'|'render')=>Promise<void>;session:(u:PublicUser)=>Promise<string>;kick:()=>void;removeCache?:(p:MvRecreation)=>Promise<void>}){
+import type {MediaFolder} from '../shared/mediaFolders';
+import {mvFolderSelection} from './mediaFolders';
+export function mountMvRecreation(app:Express,o:{state:()=>{mediaFolders?:MediaFolder[];mvRecreations?:MvRecreation[];media:MediaItem[];jobs:Job[]};save:()=>Promise<void>;snapshot:(u:PublicUser)=>Promise<unknown>;start:(u:PublicUser,p:MvRecreation,phase:'plan'|'lyrics'|'preview'|'render')=>Promise<void>;session:(u:PublicUser)=>Promise<string>;kick:()=>void;removeCache?:(p:MvRecreation)=>Promise<void>}){
  const rows=()=>o.state().mvRecreations||(o.state().mvRecreations=[]),busy=(p:MvRecreation)=>o.state().jobs.some(j=>j.ownerId===p.ownerId&&j.mvTask?.projectId===p.id&&['queued','running','stopping'].includes(j.status));
  const find=(u:PublicUser,id:string)=>{const p=rows().find(p=>p.ownerId===u.id&&p.id===id);if(!p)throw Object.assign(Error('复刻项目不存在。'),{status:404});return p;};
  const locks=new Map<string,Promise<void>>();
  const wrap=(fn:(q:any,r:any)=>Promise<void>)=>async(q:any,r:any)=>{const key=userOf(q).id,previous=locks.get(key)||Promise.resolve();const next=previous.catch(()=>{}).then(()=>fn(q,r));if(q.method!=='GET')locks.set(key,next);try{await next;}catch(e){r.status((e as any).status||400).json({error:e instanceof Error?e.message:'MV操作失败。'});}finally{if(locks.get(key)===next)locks.delete(key);}};
  app.get('/api/mv-recreations',wrap(async(q,r)=>{const u=userOf(q);r.set('Cache-Control','no-store').json({projects:rows().filter(p=>p.ownerId===u.id)});}));
+ app.post('/api/mv-recreations/from-folder',wrap(async(q,r)=>{
+  const u=userOf(q),b=q.body||{};if(typeof b.prompt!=='string'||!b.prompt.trim()||b.prompt.length>12000||b.folderId!==undefined&&typeof b.folderId!=='string'||typeof b.requestId!=='string'||!/^[-\w]{16,80}$/.test(b.requestId))throw Error('请写下MV要求并提供有效提交标识。');
+  const previous=rows().find(p=>p.ownerId===u.id&&p.createdFromRequestId===b.requestId);if(previous){if(previous.instructions!==b.prompt.trim()||b.folderId&&b.folderId!==previous.sourceFolderId)throw Object.assign(Error('提交内容已改变。'),{status:409});r.json({project:previous,state:await o.snapshot(u)});return;}
+  const selection=mvFolderSelection(o.state(),u.id,b.folderId,b.prompt),{folder,ref,song,sourceIds,recipe}=selection;
+  if(!ref.duration||ref.duration>600||!song.duration||song.duration<ref.duration-.1)throw Error('参考片最长10分钟，配乐需覆盖完整时长。');
+  if(rows().filter(p=>p.ownerId===u.id).length>=100)throw Error('请先整理已有复刻项目。');
+  const at=new Date().toISOString(),p:MvRecreation={id:randomUUID(),ownerId:u.id,sessionId:await o.session(u),name:folder.name+' MV',referenceId:ref.id,audioId:song.id,sourceIds:sourceIds.slice(),duration:ref.duration,instructions:b.prompt.trim(),sourceFolderId:folder.id,createdFromRequestId:b.requestId,createdAt:at,updatedAt:at};
+  if(recipe?.plan){p.plan=validateMvPlan(recipe.plan,p,o.state().media);p.planHash=mvPlanHash(p.plan);p.evidence=structuredClone(recipe.evidence||{});}
+  rows().push(p);await o.save();r.status(201).json({project:p,state:await o.snapshot(u)});
+ }));
  app.post('/api/mv-recreations',wrap(async(q,r)=>{
   const u=userOf(q),b=q.body||{},media=o.state().media.filter(m=>m.ownerId===u.id);if(Object.keys(b).some(k=>!['name','referenceId','audioId','sourceIds','instructions'].includes(k))||typeof b.name!=='string'||!b.name.trim()||b.name.length>80||typeof b.instructions!=='string'||b.instructions.length>12000||!Array.isArray(b.sourceIds)||!b.sourceIds.length||b.sourceIds.length>100||new Set(b.sourceIds).size!==b.sourceIds.length||b.sourceIds.includes(b.referenceId)||[b.referenceId,b.audioId,...b.sourceIds].some(id=>typeof id!=='string'||!/^[\w-]{1,128}$/.test(id)))throw Error('请分别选择参考片、配乐和1–100个原素材，参考片不能充当原素材。');
   const ref=media.find(m=>m.id===b.referenceId&&m.kind==='video'),song=media.find(m=>m.id===b.audioId&&['audio','video'].includes(m.kind));if(!ref?.duration||ref.duration>600||!song?.duration||song.duration<ref.duration-.1||song.hasAudio===false||b.sourceIds.some((id:string)=>!media.some(m=>m.id===id&&['image','video'].includes(m.kind))))throw Error('参考片、配乐或原素材不存在、类型不符或配乐时长不足。');

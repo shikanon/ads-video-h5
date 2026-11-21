@@ -10,9 +10,11 @@ import {loadEditingSkill} from './skills';
 import {fileDigest} from './artifactIntegrity';
 import {createMvAss,validateMvCaption} from './mvSubtitles';
 import type {ModelConfig} from './modelRegistry';
+import {validateReferenceEdit,validateTreatment,referenceUsedIds,renderReferenceMv} from './mvReferenceEdit';
 export const mvPlanHash=(p:MvPlan)=>createHash('sha256').update(JSON.stringify(p)).digest('hex');
 export function validateMvPlan(raw:any,project:MvRecreation,media:MediaItem[]):MvPlan {
  if(!raw||typeof raw.story!=='string'||!raw.story.trim()||raw.story.length>2000||!Array.isArray(raw.shots)||!raw.shots.length||raw.shots.length>240||!Array.isArray(raw.captions)||raw.captions.length>300||!Array.isArray(raw.limitations)||raw.limitations.some((v:any)=>typeof v!=='string'||v.length>1000))throw Error('MV分镜格式不完整。');
+ const referenceEdit=validateReferenceEdit(raw.referenceEdit,project,media);
  let length=0;const reuseErrors:string[]=[];
  for(const [index,s] of raw.shots.entries()){
   if(!s||typeof s!=='object')throw Error('镜头'+(index+1)+'不是有效对象。');
@@ -23,25 +25,30 @@ export function validateMvPlan(raw:any,project:MvRecreation,media:MediaItem[]):M
   if(!Number.isFinite(s.duration)||s.duration<.2||s.duration>30||Math.abs(s.duration*30-Math.round(s.duration*30))>.001)throw Error(label+'duration必须为0.2–30秒并对齐30fps；可使用0.1秒的倍数。当前='+String(s.duration));
   if(!['cut','fade'].includes(s.transition))throw Error(label+'transition只能是cut或fade，当前='+String(s.transition));
   if(typeof s.chapter!=='string'||!s.chapter.trim()||s.chapter.length>80||typeof s.reason!=='string'||!s.reason.trim()||s.reason.length>600)throw Error(label+'chapter需为1–80字，reason需为1–600字。');
-  if(source.kind==='video'&&(!source.duration||s.start+s.duration>source.duration+.03)||source.kind==='image'&&s.start!==0)throw Error('分镜超出原素材时长。');
+  const treatment=referenceEdit?validateTreatment(s.treatment,source,project,media):undefined;
+  if(!referenceEdit&&s.treatment!==undefined)throw Error('镜头处理参数需要原工程模式。');
+  const handles=referenceEdit?((index&&s.transition==='fade'?referenceEdit.dissolveFrames/2:0)+(raw.shots[index+1]?.transition==='fade'?referenceEdit.dissolveFrames/2:0))/30:0;
+  if(referenceEdit&&s.duration<=handles)throw Error('叠化两侧镜头帧数不足。');
+  if(source.kind==='video'&&(!source.duration||s.start+(s.duration+handles)*(treatment?.speed||1)>source.duration+.03)||source.kind==='image'&&s.start!==0)throw Error('分镜超出原素材时长。');
   if(index&&s.transition==='fade'&&(s.duration<.5||raw.shots[index-1].duration<.5))throw Error('叠化两侧镜头至少需要0.5秒。');
   if(source.kind==='video'&&/(?:不重叠|未覆盖)/.test(s.reason)&&!/(?:无法|不能|尚未|未能).{0,10}(?:确认|证明|核验)/.test(s.reason)){
    const repeated=raw.shots.slice(0,index).findIndex((v:any)=>v.sourceId===s.sourceId&&Math.min(v.start+v.duration,s.start+s.duration)-Math.max(v.start,s.start)>1/30);
    if(repeated>=0)reuseErrors.push(label+'与镜头'+(repeated+1)+'实际重叠，不能声称不重叠或未覆盖');
   }
-  length+=s.duration-(index&&s.transition==='fade'?.2:0);
+  length+=s.duration-(!referenceEdit&&index&&s.transition==='fade'?.2:0);
  }
- if(Math.abs(length-project.duration)>1/30+.001)throw Error('分镜净时长必须与目标时长一致，当前 '+length.toFixed(3)+' 秒，目标 '+project.duration+' 秒。叠化每次扣除0.2秒。');
+ if(Math.abs(length-project.duration)>1/30+.001)throw Error('分镜净时长必须与目标时长一致，当前 '+length.toFixed(3)+' 秒，目标 '+project.duration+' 秒。'+(referenceEdit?'原工程叠化以原切点为中心，不扣减名义时长。':'叠化每次扣除0.2秒。'));
  const overlaps=raw.shots.some((s:any,i:number)=>raw.shots.slice(0,i).some((v:any)=>v.sourceId===s.sourceId&&media.some(m=>m.id===s.sourceId&&m.kind==='video')&&Math.min(v.start+v.duration,s.start+s.duration)-Math.max(v.start,s.start)>1/30));
  if(overlaps&&raw.limitations.some((t:string)=>/(?:均为|全部为|均是|全部是|所有)[^。；]{0,35}(?:不重叠|未覆盖)/.test(t)&&!/(?:不能|无法|尚未|未能).{0,10}(?:证明|保证|确认|核验)/.test(t)))reuseErrors.push('限制说明中声称全部不重叠，但实际存在重复区间');
  if(reuseErrors.length)throw Error(reuseErrors.slice(0,10).join('；')+'。一次修正全部问题：换用真实不同区间，或明确说明有意重复及用途。');
  if(raw.subtitleStyle!==undefined&&!['standard','cinematic'].includes(raw.subtitleStyle))throw Error('MV字幕样式无效。');
  for(const c of raw.captions)validateMvCaption(c,length);
- return structuredClone({story:raw.story,shots:raw.shots.map((s:any)=>({sourceId:s.sourceId,start:s.start,duration:s.duration,chapter:s.chapter,reason:s.reason,transition:s.transition})),captions:raw.captions.map((c:any)=>({start:c.start,end:c.end,text:c.text,...(c.kind?{kind:c.kind}:{}),...(c.words?{words:c.words.map((w:any)=>({start:w.start,end:w.end,text:w.text}))}:{})})),limitations:raw.limitations,...(raw.subtitleStyle?{subtitleStyle:raw.subtitleStyle}:{})});
+ return structuredClone({story:raw.story,shots:raw.shots.map((s:any)=>({sourceId:s.sourceId,start:s.start,duration:s.duration,chapter:s.chapter,reason:s.reason,transition:s.transition,...(referenceEdit?{treatment:validateTreatment(s.treatment,media.find(m=>m.id===s.sourceId)!,project,media)}:{})})),captions:raw.captions.map((c:any)=>({start:c.start,end:c.end,text:c.text,...(c.kind?{kind:c.kind}:{}),...(c.words?{words:c.words.map((w:any)=>({start:w.start,end:w.end,text:w.text}))}:{})})),limitations:raw.limitations,...(raw.subtitleStyle?{subtitleStyle:raw.subtitleStyle}:{}),...(referenceEdit?{referenceEdit}:{})});
 }
 // Model arithmetic is advisory. Fit only a small discrepancy before the user
 // approves this plan; never change approved plans or slow/loop source footage.
 export function fitMvTiming(raw:any,p:MvRecreation,media:MediaItem[]):MvPlan {
+ if(raw?.referenceEdit)return validateMvPlan(raw,p,media); // Never retime a recovered original edit.
  const candidate=structuredClone(raw);
  if(!Array.isArray(candidate?.shots)||!candidate.shots.length)return validateMvPlan(candidate,p,media);
  for(const s of candidate.shots)if(s&&Number.isFinite(s.duration)&&s.duration>=.2)s.duration=Math.floor(s.duration*30+.001)/30;
@@ -72,6 +79,7 @@ async function modelJson(config:ModelConfig,system:string,content:any[],maxToken
  if(!response.ok){await response.body?.cancel();throw Error('MV模型服务 HTTP '+response.status);}const body=await response.json();return JSON.parse(body.choices?.[0]?.message?.content||'');
 }
 export async function planMv(o:{project:MvRecreation;media:MediaItem[];file:(id:string)=>Promise<string>;directory:string;vision:ModelConfig;text:ModelConfig;save:()=>Promise<void>;progress:(s:string)=>Promise<void>}){
+ if(o.project.plan?.referenceEdit)throw Error('此项目已有原工程参数。请直接编辑原分镜并制作样片；重新自由编排会改变原片剪辑。');
  const p=o.project;await mkdir(o.directory,{recursive:true});p.evidence||={};
  for(const id of [p.referenceId,...p.sourceIds]){
   throwIfJobCancelled();const source=o.media.find(m=>m.id===id&&m.ownerId===p.ownerId);if(!source)throw Error('素材已删除。');const file=await o.file(id),hash=await fileDigest(file);if(p.evidence[id]?.sha256===hash)continue;
@@ -101,8 +109,9 @@ export const mvPictureHash=(p:MvRecreation)=>createHash('sha256').update(JSON.st
 async function requireMvSpace(directory:string,additional:number){const disk=await statfs(directory);if(disk.bavail*disk.bsize<512*1024*1024+additional)throw Error('服务器制作空间不足，已停止新增文件；成功节点仍保留。请管理员释放制作缓存或扩容后续做。');}
 export async function renderMv(o:{project:MvRecreation;media:MediaItem[];file:(id:string)=>Promise<string>;directory:string;preview:boolean;progress:(s:string)=>Promise<void>;dimensions?:[number,number];onNode?:(index:number,file:string,duration:number)=>Promise<void>}){
  const p=o.project,plan=validateMvPlan(p.plan,p,o.media);if(!p.planHash||mvPlanHash(plan)!==p.planHash||p.approvedHash!==p.planHash)throw Error('请先确认当前分镜，修改后需重新确认。');
- const used=new Set([p.audioId,p.referenceId,...plan.shots.map(s=>s.sourceId)]);for(const id of used){const file=await o.file(id);if(!p.evidence?.[id]||await fileDigest(file)!==p.evidence[id].sha256)throw Error('原素材发生变化，不能继续使用旧分镜。');}
+ const used=new Set(plan.referenceEdit?referenceUsedIds(p,plan):[p.audioId,p.referenceId,...plan.shots.map(s=>s.sourceId)]);for(const id of used){const file=await o.file(id);if(!p.evidence?.[id]||await fileDigest(file)!==p.evidence[id].sha256)throw Error('原素材发生变化，不能继续使用旧分镜。');}
  if(await probeAudio(await o.file(p.audioId))<p.duration-.1)throw Error('实际配乐时长不足，不能通过循环或变速填满。');
+ if(plan.referenceEdit)return renderReferenceMv({...o,plan});
  const [w,h]=o.dimensions||(o.preview?[960,540]:[1920,1080]),dir=path.join(o.directory,'render-v3-'+mvPictureHash(p)+'-'+(o.preview?'preview':'full')+'-'+w+'x'+h);await mkdir(dir,{recursive:true});
  const total=o.preview?Math.min(20,p.duration):p.duration;const segments:string[]=[],clips:Array<{duration:number;fade:boolean}>=[];let elapsed=0;
  for(const [i,shot]of plan.shots.entries()){
@@ -126,8 +135,7 @@ export async function renderMv(o:{project:MvRecreation;media:MediaItem[];file:(i
  if(plan.captions.length){subtitles=path.join(dir,'captions-'+p.planHash+'.ass');await writeFile(subtitles,createMvAss(plan,w,h,total));}
  const filterPath=(v:string)=>v.replace(/\\/g,'/').replace(/:/g,'\\:').replace(/'/g,"'\\''"),fonts=fileURLToPath(new URL('../assets/fonts/mashanzheng/',import.meta.url));
  const filters:string[]=[];
- // Fit the entire picture into a letterbox; subtitles never crop heads or feet.
- if(plan.subtitleStyle==='cinematic')filters.push(`scale=${w}:${Math.floor(h*.76/2)*2}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black`);
+ // Subtitle styling must never resize an already composed picture.
  if(subtitles)filters.push(`ass=filename='${filterPath(subtitles)}':fontsdir='${filterPath(fonts)}'`);
  await requireMvSpace(dir,(await stat(merged)).size*1.2);await o.progress('合成连续配乐与字幕并检查实际成片');await runFFmpeg(['-v','error','-y','-i',merged,'-i',audio,'-map','0:v:0','-map','1:a:0','-t',String(total),...(filters.length?['-vf',filters.join(','),'-c:v','libx264','-threads','2','-preset','veryfast','-crf','20']:['-c:v','copy']),'-c:a','aac','-b:a','192k','-movflags','+faststart',output],600000);
  const checked=await probeVideo(output);if(!checked.hasAudio||Math.abs(checked.duration-total)>.12)throw Error('MV时长或音轨检查未通过。');await runFFmpeg(['-v','error','-i',output,'-f','null','-'],600000);

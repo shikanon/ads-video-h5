@@ -13,6 +13,7 @@ export interface Shot {
 }
 
 export interface MediaItem {
+  folderId?: string;
   creativeAsset?: {role:'character'|'scene';identity:string};
   document?: {text:string;truncated:boolean};
   visualText?: {sourceHash:string;text:string;modelId:string};
@@ -446,6 +447,7 @@ export interface AppSettings {
 }
 
 export interface AppState {
+  mediaFolders?: import('./mediaFolders').MediaFolder[];
   creativeNoteLinks?: Array<{id:string;sessionId?:string;title:string}>;
   toolBatches?: import('./toolBatches').ToolBatchView[];
   notifications?: import('./notifications').NoticeInbox;

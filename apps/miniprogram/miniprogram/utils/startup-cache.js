@@ -10,11 +10,12 @@ function valid(state) {
 }
 function project(state, count, textLimit) {
   const result = pick(state, ['account', 'activeSessionId', 'features', 'limits', 'models', 'settings', 'credits', 'mode', 'templates']);
+  result.mediaFolders=(state.mediaFolders||[]).slice(0,100).map(f=>pick(f,['id','name','createdAt','updatedAt','mv']));
   result.sessions = state.sessions.map(s => ({ ...pick(s, ['id', 'title', 'mode', 'modelId', 'createdAt', 'updatedAt', 'archivedAt']),
     // Keep at least one message for nonempty sessions: they must never be reused as blank drafts.
     messages: s.messages.slice(-(s.id === state.activeSessionId ? count : 1)).map(m => ({ ...pick(m, ['id', 'role', 'createdAt', 'jobId', 'attachmentIds', 'artifactIds']), text: String(m.text || '').slice(0, textLimit) })),
     plan: s.plan ? { summary: String(s.plan.summary || '').slice(0, 300) } : null }));
-  result.media = state.media.map(m => ({ ...pick(m, ['id', 'name', 'kind', 'url', 'thumbnailUrl', 'createdAt', 'duration', 'mimeType', 'origin', 'archive', 'libraryCollection', 'filmAnalysis']),
+  result.media = state.media.map(m => ({ ...pick(m, ['id', 'name', 'kind', 'url', 'thumbnailUrl', 'createdAt', 'duration', 'mimeType', 'origin', 'archive', 'folderId', 'libraryCollection', 'filmAnalysis']),
     ...(m.generation ? { generation: { workflowId: m.generation.workflowId, mode: m.generation.mode } } : {}),
     ...(m.character ? { character: { role: m.character.role } } : {}),
     ...(m.analysis ? { analysis: { transcript: String(m.analysis.transcript || '').slice(0, 1000) } } : {}),
