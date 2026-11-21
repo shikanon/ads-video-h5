@@ -1,4 +1,5 @@
 const {appearanceData}=require('../../utils/appearance');
+const {shareAppMessage}=require('../../utils/share');
 const {withSession,hide,requireLogin,notify}=require('../../utils/page');
 const {chooseFiles,uploadMedia}=require('../../utils/upload');
 const {mediaView}=require('../../utils/view');
@@ -7,6 +8,7 @@ const {activateSession}=require('../../utils/sessions');
 const {deleteMedia,editName}=require('../../utils/manage');
 const modes=['note','character','scene','mv','template'];
 Page({
+ onShareAppMessage:shareAppMessage,
  data:Object.assign(appearanceData(),{mode:'note',notes:[],assets:[],picker:[],title:'',text:'',noteId:'',revision:0,attachmentIds:[],attached:[],strokes:[],busy:false,error:'',sessionId:'',drawing:false,editing:false,search:'',shownNotes:[]}),
  onLoad(query){this._openNoteId=query.noteId||'';this._sourceArtifactId=query.artifactId||'';this._generation=getApp()._generation;this.setData({mode:modes.includes(query.mode)?query.mode:'note'});},
  onShow(){if(this._generation!==getApp()._generation){this._generation=getApp()._generation;this._edited=false;this.setData({editing:false});this._agentSession='';this._request=null;this._openNoteId='';this._sourceArtifactId='';this._allNotes=[];this.setData({search:'',shownNotes:[]});this.setData({picking:false,picker:[],notes:[],assets:[],title:'',text:'',noteId:'',revision:0,attachmentIds:[],strokes:[],sessionId:'',drawing:false});}withSession(this,this.render);if(getApp().client.hasSession()){if(this._sourceArtifactId)this.importSource();else this.loadNotes();}},

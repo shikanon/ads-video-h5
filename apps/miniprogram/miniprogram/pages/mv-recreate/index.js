@@ -1,8 +1,10 @@
 const {appearanceData}=require('../../utils/appearance');
+const {shareAppMessage}=require('../../utils/share');
 const {withSession,hide,requireLogin,notify}=require('../../utils/page');
 const {activateSession}=require('../../utils/sessions');
 const brief='复刻《无情画·画中归人》，参考片约250秒，1080p横屏。古风影视预告片叙事：旧约—离散—寻归—重逢。只用已上传的游戏录屏与截图，不生成暖暖人物。视频优先，素材以故事适配为准，服装和人物跨镜头身份不能凭空断言。参考片仅分析，禁止直接复制当输出。照片缓慢运镜、无细抖；保留人物头部，不拉伸。配乐连续且不变速、不循环，剪口参考实际音乐，未经分析不编造BPM或歌词。分镜先确认，20秒样片验收后分节点制作，再合成整片；失败复用已成功节点。';
 Page({
+ onShareAppMessage:shareAppMessage,
  data:Object.assign(appearanceData(),{projects:[],project:null,name:'无情画 · 画中归人',instructions:brief,referenceId:'',audioId:'',sourceIds:[],sourceCount:0,picking:'',media:[],busy:false,error:'',planText:'',nodes:[],shots:[],editingPlan:false,showDetails:false,showNodes:false,query:''}),
  onLoad(q){this._generation=getApp()._generation;this._projectId=q.projectId||'';},
  onShow(){if(this._generation!==getApp()._generation){this._generation=getApp()._generation;this._projectId='';this._requestIds={};this.setData({projects:[],project:null,media:[],referenceId:'',audioId:'',sourceIds:[],sourceCount:0,planText:'',nodes:[],shots:[],editingPlan:false,picking:'',error:''});}withSession(this,this.render);if(getApp().client.hasSession())this.load();},
