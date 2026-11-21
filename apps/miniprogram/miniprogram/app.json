@@ -19,6 +19,7 @@
     "pages/film/index",
     "pages/sticker-share/index",
     "pages/creative-studio/index",
+    "pages/notes/index",
     "pages/mv-recreate/index",
     "pages/video-share/index"
   ],

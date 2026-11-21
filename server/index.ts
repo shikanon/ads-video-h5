@@ -4,7 +4,7 @@ import {mountToolBatchRoutes,batchViews} from './toolBatchRoutes';
 import {toolPrompt} from './toolPrompts';
 import type {ToolBatch} from '../shared/toolBatches';
 import type {CreativeNote} from '../shared/creativeNotes';
-import {mountCreativeNotes} from './creativeNoteRoutes';
+import {mountCreativeNotes,detachNoteMedia} from './creativeNoteRoutes';
 import type {MvRecreation} from '../shared/mvRecreation';
 import {estimateMvCredits,mvTemplatePriceHash} from './mvTemplate';
 import {mountMvRecreation} from './mvRecreationRoutes';
@@ -1532,7 +1532,7 @@ app.delete('/api/media/:id', async (request, response) => {
   if (!item) return response.status(404).json({ error: '素材不存在。' });
   if(state.jobs.some(j=>j.ownerId===user.id&&isActiveJob(j)&&((j.mvTask&&(state.mvRecreations||[]).some(p=>p.id===j.mvTask!.projectId&&[p.referenceId,p.audioId,...p.sourceIds].includes(item.id)))||j.authorAvatarId===item.id||j.filmTask?.sourceId===item.id||state.bgmBySession[j.sessionId]===item.id||state.sessions.some(s=>s.ownerId===user.id&&s.id===j.sessionId&&(s.messages.some(m=>m.attachmentIds?.includes(item.id))||s.plan?.clips.some(c=>c.sourceId===item.id)||s.plan?.coverMediaId===item.id)))))return response.status(409).json({error:'素材正在任务中使用，请先停止或等待任务完成。'});
   state.media = state.media.filter((media) => media.id !== item.id);
-  for(const note of state.creativeNotes||[])if(note.ownerId===user.id)note.attachmentIds=note.attachmentIds.filter(id=>id!==item.id);
+  detachNoteMedia(state.creativeNotes||[],user.id,item.id);
   for(const session of state.sessions.filter(s=>owned(s,user.id))){for(const m of session.messages)m.attachmentIds=(m.attachmentIds||[]).filter(id=>id!==item.id);if(session.toolWorkspace){session.toolWorkspace.attachmentIds=session.toolWorkspace.attachmentIds.filter(id=>id!==item.id);session.toolWorkspace.nodes=session.toolWorkspace.nodes.filter(n=>n.sourceKind!=='media'||n.sourceId!==item.id);}}
   const profile=await profileOf(user);
   if(profile.settings.authorAvatarId===item.id)profile.settings.authorAvatarId=null;

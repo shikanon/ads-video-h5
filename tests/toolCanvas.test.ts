@@ -65,6 +65,12 @@ test('legacy artifacts, generated images and sticker samples show without a work
  assert.equal(nodeViews(null,state,projects,client,'stickers').length,1);assert.equal(projectRows(state,projects).length,2);
  const blank={id:'blank',toolWorkspace:{category:'video',includeHistory:false,nodes:[],attachmentIds:[]}};assert.equal(nodeViews(blank,state,projects,client,'video').length,2,'all completed work remains in the account canvas when creating another project');
 });
+
+test('a delivered sticker archive expands its actual pack items into independently movable canvas outputs',()=>{
+ const items=Array.from({length:24},(_,i)=>({id:String(i+1).padStart(2,'0'),name:'动作'+i,thumbnailUrl:'/thumb/'+i,previewUrl:'/preview/'+i})),pack={id:'curated-pack',items},artifact={id:'delivery',sessionId:'legacy',kind:'sticker-pack',name:'完整套装',url:'/zip',sticker:{packId:pack.id,count:24,sceneIds:['01','03','20']}};
+ const nodes=nodeViews(null,{media:[],artifacts:[artifact],jobs:[]},[],{previewUrl:()=>''},'stickers',[pack]);assert.equal(nodes.length,25);const children=nodes.filter(n=>n.packItem);assert.equal(children.length,24,'archive contents are not limited to the three sample IDs');assert.equal(new Set(children.map(n=>n.id)).size,24);assert.ok(children.every(n=>n.sourceId==='delivery'&&n.sourceKind==='artifact'&&n.kind==='image'));assert.equal(children[23].previewUrl,'/preview/23');
+ const layout=validateWorkspace({version:1,category:'stickers',templateId:null,draft:'',attachmentIds:[],nodes:[{id:children[23].id,sourceId:'delivery',sourceKind:'artifact',itemId:'24',x:-5000,y:9000,width:128,height:168}]});assert.equal(layout.nodes[0].itemId,'24');
+});
 test('switching accounts clears private batch drafts and cached work drawers',async()=>{
  const {page,app}=await canvas();page.setData({batchText:'private topics',batchName:'private name',works:[{id:'private'}],batches:[{id:'private'}],positionChosen:true});page._batchSubmission={requestId:'old'};app._generation++;page.onShow();assert.equal(page.data.batchText,'');assert.equal(page.data.batchName,'');assert.equal(page.data.works.length,0);assert.equal(page.data.batches.length,0);assert.equal(page._batchSubmission,null);assert.equal(page.data.positionChosen,false);page.onHide();
 });
