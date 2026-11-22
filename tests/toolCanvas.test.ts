@@ -42,6 +42,31 @@ test('virtualization keeps a bounded render set while all distant objects remain
  assert.equal(validateWorkspace(w).camera?.x,-999999);assert.throws(()=>validateWorkspace({...w,camera:{x:0,y:0,zoom:0}}));assert.throws(()=>validateWorkspace({...w,nextPosition:{x:Infinity,y:0}}));
 });
 
+test('card controls keep the camera steady, give a maximum-scale response, and undo in the same canvas', async () => {
+  const {page,state,wx,calls}=await canvas();
+  wx.showToast=(options:any)=>calls.push(options);
+  state.artifacts=[{id:'one',name:'作品',kind:'video',url:'/one',sessionId:'legacy'}];
+  page.setData({category:'video'});
+  page.render(state);
+  page.setData({camera:{x:0,y:0,zoom:.2}});
+  const id='artifact-one';
+  for(let i=0;i<8;i++)page.enlargeNode(e(id));
+  assert.equal(page._worldNodes[0].scale,4);
+  assert.equal(page.data.camera.zoom,.2);
+  assert.ok(calls.some(call=>call.title==='已放大到最大'));
+  page.removeNode(e(id));
+  assert.equal(page.data.nodeCount,0);
+  page.setData({category:'stickers'});
+  page.undo();
+  assert.equal(page.data.nodeCount,0);
+  page.setData({category:'video'});
+  page.undo();
+  assert.equal(page._worldNodes[0].scale,4);
+  assert.equal(page.data.camera.zoom,.2);
+  assert.equal(state.artifacts.length,1);
+  page.onHide();
+});
+
 test('account canvas restores every project, preserves offscreen coordinates across viewport moves, and shows all sticker actions',async()=>{
  const {page,state}=await canvas();state.artifacts=[{id:'first',name:'第一部',kind:'video',url:'/first',sessionId:'one'},{id:'second',name:'第二部',kind:'video',url:'/second',sessionId:'two'}];state.sessions=[{id:'one',messages:[]},{id:'two',messages:[]}];
  const nodes=state.artifacts.map((a:any,i:number)=>({id:'artifact-'+a.id,sourceId:a.id,sourceKind:'artifact',x:i*800,y:0,width:128,height:168}));state.toolCanvases={video:{version:1,nodes,camera:{x:0,y:0,zoom:1},updatedAt:'2026-11-21'}};page._dirty=false;page.setData({category:'video'});page.render(state);

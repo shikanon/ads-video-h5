@@ -37,3 +37,16 @@
 .running-card { margin:22rpx 0; }.running-card progress { margin:18rpx 0; }.load-more { margin:30rpx auto; }.empty .secondary { width:auto; margin:24rpx auto 0; }
 .theme-surface .tile-menu { width:72rpx; flex-basis:72rpx; height:88rpx; line-height:88rpx; }
 .folder-scroll { margin:14rpx 0;white-space:nowrap; }.folder-row { display:flex;gap:12rpx; }.folder-row button { flex:none;margin:0;padding:8rpx 16rpx;font-size:24rpx;background:var(--lm-paper);color:var(--lm-muted); }.folder-row .selected { background:var(--lm-soft);color:var(--lm-accent); }.folder-picker { position:fixed;z-index:50;inset:0;background:#0006;display:flex;align-items:flex-end; }.folder-sheet { width:100%;padding:30rpx 24rpx 65rpx;background:var(--lm-paper);border-radius:24rpx 24rpx 0 0; }.folder-sheet button { margin:16rpx 0;width:100%;font-size:26rpx; }
+.resource-selecting { padding-bottom:200rpx; }
+.result-summary { align-items:center; }
+.theme-surface .resource-select-entry { width:auto; margin:0; padding:12rpx 20rpx; font-size:23rpx; color:var(--lm-accent); background:var(--lm-soft); }
+.tile-selected { outline:3rpx solid var(--lm-accent); outline-offset:-3rpx; }
+.tile-check { position:absolute; top:10rpx; right:10rpx; width:44rpx; height:44rpx; display:flex; justify-content:center; align-items:center; border:3rpx solid #fff; border-radius:50%; background:#23181465; color:#fff; font-weight:600; font-size:27rpx; pointer-events:none; }
+.tile-check.checked { background:var(--lm-accent); }
+.resource-selection { position:fixed; z-index:40; bottom:0; left:0; right:0; padding:12rpx 24rpx; background:var(--lm-paper); border-top:1rpx solid var(--lm-line); }
+.resource-selection-actions { display:flex; align-items:center; gap:16rpx; }
+.theme-surface .resource-selection-actions button { width:auto; min-height:76rpx; margin:0; padding:12rpx 20rpx; font-size:25rpx; color:var(--lm-ink); }
+.resource-selection-count { flex:1; font-size:24rpx; color:var(--lm-muted); }
+.theme-surface .resource-selection-actions .resource-delete { background:#a83e32; color:#fff; }
+.theme-surface .resource-selection-actions button[disabled] { opacity:.45; }
+.resource-delete-error { display:block; margin:6rpx 0; color:var(--lm-accent); font-size:22rpx; }

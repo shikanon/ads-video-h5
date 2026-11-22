@@ -106,3 +106,66 @@ test('resource menu keeps operations available and drops a choice after switchin
   assert.deepEqual(Array.from(f.app.pendingAttachments), ['m']);
   const folders=page.itemMenu(event({id:'m'}));sheet.success({tapIndex:5});await tick();assert.ok(sheet.itemList.includes('移入文件夹'));sheet.success({tapIndex:0});await folders;assert.equal(page.data.pickingFolder,true);assert.deepEqual(Array.from(page.data.selectedIds),['m']);page.onHide();
 });
+
+test('holding a resource selects it, confirms the batch once, and leaves a blocked item selected for retry', async () => {
+  const f = fixture();
+  f.state.media = ['one', 'busy', 'three'].map(id => ({ id, name: id, kind: 'image', url: '' }));
+  let confirm: any, dialogs = 0;
+  f.wx.showModal = (options: any) => { confirm = options; dialogs++; };
+  const routes: string[] = [];
+  f.app.mutate = async (route: string, _body: unknown, method: string) => {
+    assert.equal(method, 'DELETE');
+    routes.push(route);
+    if (route.endsWith('/busy')) throw Object.assign(new Error('素材正在任务中使用。'), { status: 409 });
+    f.state.media = f.state.media.filter((item: any) => !route.endsWith('/' + item.id));
+    page.render(f.state);
+  };
+  const page = await capturePage('library', f.app, f.wx);
+  page.onLoad();
+  page.onShow();
+  page.selectOnHold(event({ id: 'one' }));
+  page.play(event({ id: 'busy' }));
+  page.play(event({ id: 'three' }));
+  assert.deepEqual(Array.from(page.data.selectedIds), ['one', 'busy', 'three']);
+  assert.equal(f.calls.some(call => call.url), false);
+
+  const cancelled = page.removeSelected();
+  confirm.success({ confirm: false });
+  await cancelled;
+  assert.equal(routes.length, 0);
+  assert.equal(page.data.selectedIds.length, 3);
+
+  const deleting = page.removeSelected();
+  await page.removeSelected();
+  assert.equal(dialogs, 2);
+  confirm.success({ confirm: true });
+  await deleting;
+  assert.deepEqual(routes, ['/api/media/one', '/api/media/busy', '/api/media/three']);
+  assert.deepEqual(Array.from(page.data.selectedIds), ['busy']);
+  assert.equal(page.data.items[0].selected, true);
+  assert.match(page.data.deleteError, /1 项未删除.*正在任务中/);
+  page.onHide();
+});
+
+test('works use their own selection and delete endpoint, and changing accounts stops the remaining requests', async () => {
+  const f = fixture();
+  f.state.media = [{ id: 'same', name: '素材', kind: 'image', url: '' }];
+  f.state.artifacts = ['same', 'other'].map(id => ({ id, name: id, kind: 'video', url: '', createdAt: '2026-11-22' }));
+  f.wx.showModal = (options: any) => options.success({ confirm: true });
+  const routes: string[] = [];
+  f.app.mutate = async (route: string) => { routes.push(route); f.app._generation++; };
+  const page = await capturePage('library', f.app, f.wx);
+  page.onLoad();
+  page.onShow();
+  page.selectOnHold(event({ id: 'same' }));
+  page.section(event({ section: 'films' }));
+  assert.equal(page.data.selectedIds.length, 0);
+  page.selectOnHold(event({ id: 'same' }));
+  page.play(event({ id: 'other' }));
+  await page.removeSelected();
+  assert.deepEqual(routes, ['/api/artifacts/same']);
+  page.onShow();
+  assert.equal(page.data.selecting, false);
+  assert.equal(page.data.deleting, false);
+  page.onHide();
+});
