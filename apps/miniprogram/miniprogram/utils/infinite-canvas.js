@@ -40,8 +40,24 @@ const methods={
   resizeMove(event){const g=this._resizeGesture,t=event.touches&&event.touches[0];if(!g||!t)return;const p=touch(t),n=g.node,ratio=clamp((n.width+(p.x-g.a.x)/(this.data.camera.zoom*(n.scale||1)))/n.width,Math.max(48/n.width,48/n.height),Math.min(2000/n.width,2000/n.height));this.layout(Object.assign({},n,{width:n.width*ratio,height:n.height*ratio}));},
   resizeEnd(){this._resizeGesture=null;this.nodeEnd();},
   layout(node){this.captureLayout();this._dirty=true;const value=nodeLayout(node),i=this._layouts.findIndex(n=>n.id===node.id);if(i<0)this._layouts.push(value);else this._layouts[i]=value;this._worldNodes=(this._worldNodes||[]).map(n=>n.id===node.id?Object.assign({},n,value):n).filter(n=>!n.hidden);this.drawBoard();this.scheduleSave();},
-  enlargeNode(event){const n=(this._worldNodes||[]).find(n=>n.id===event.currentTarget.dataset.id);if(n){this.layout(Object.assign({},n,{scale:clamp((n.scale||1)*1.25,.25,4)}));this.nodeEnd();}},
-  removeNode(event){const n=(this._worldNodes||[]).find(n=>n.id===event.currentTarget.dataset.id);if(!n)return;this._undo=nodeLayout(n);this.layout(Object.assign({},n,{hidden:true}));this.setData({undoNode:n.id,selectedId:'',selectedLabel:''});this.nodeEnd();},
+  enlargeNode(event){
+    const node=(this._worldNodes||[]).find(item=>item.id===event.currentTarget.dataset.id);
+    if(!node)return;
+    if(node.scale>=4){wx.showToast({title:'已放大到最大',icon:'none'});return;}
+    this._cameraAuto=false;
+    this.layout({...node,scale:Math.min((node.scale||1)*1.25,4)});
+    this.nodeEnd();
+  },
+  removeNode(event){
+    const node=(this._worldNodes||[]).find(item=>item.id===event.currentTarget.dataset.id);
+    if(!node)return;
+    this._undo=nodeLayout(node);
+    this._cameraAuto=false;
+    this.setData({undoNode:node.id,undoCategory:this.data.category,...(node.id===this.data.selectedId?{selectedId:'',selectedLabel:''}:{})});
+    this.layout({...node,hidden:true});
+    this.render(getApp().state);
+    this.nodeEnd();
+  },
   focusNode(event){const n=(this._worldNodes||[]).find(n=>n.id===event.currentTarget.dataset.id);if(!n)return;this._cameraReady=true;this._cameraAuto=false;this.setData({camera:{x:n.x-20,y:n.y-20,zoom:1},selectedId:n.id,selectedLabel:n.label,sheet:''});this.drawBoard();this.rememberCamera();},
   zoom(event){const camera=this.data.camera||{x:0,y:0,zoom:1},r=this._boardRect||{width:339,height:300},c={x:r.width/2,y:r.height/2},anchor=worldPoint(camera,c),zoom=clamp(Math.round((camera.zoom+Number(event.currentTarget.dataset.delta))*1e8)/1e8,1e-7,4);this.setData({camera:{x:anchor.x-c.x/zoom,y:anchor.y-c.y/zoom,zoom}});this.rememberCamera();this.drawBoard();},
   fit(){const all=this._worldNodes||[],r=this._boardRect||{width:339,height:300};let camera={x:0,y:0,zoom:1};if(all.length){const x=Math.min(...all.map(n=>n.x)),y=Math.min(...all.map(n=>n.y)),right=Math.max(...all.map(n=>n.x+n.width*(n.scale||1))),bottom=Math.max(...all.map(n=>n.y+n.height*(n.scale||1))),zoom=clamp(Math.min((r.width-32)/Math.max(1,right-x),(r.height-32)/Math.max(1,bottom-y),1),1e-7,1);camera={x:x-16/zoom,y:y-16/zoom,zoom};}this.setData({camera});this.rememberCamera();this.drawBoard();},
