@@ -27,7 +27,10 @@ test('owned material folders close CRUD, preserve media on delete and resolve on
 
 test('native resource folders filter the same project, allow bulk moving and clear folder selection on account change',async()=>{
  const state:any={mediaFolders:[{id:'f',name:'画中归人'}],media:[{id:'one',folderId:'f',name:'镜头',kind:'video',createdAt:'2026-11-21',origin:'upload'},{id:'two',name:'根素材',kind:'image',createdAt:'2026-11-21',origin:'upload'}],jobs:[],artifacts:[],features:{}},calls:any[]=[],app:any={_generation:1,state,client:{hasSession:()=>true,previewUrl:()=>'',download:async()=>'',assetURL:(u:string)=>u},subscribe:()=>()=>{},refresh:async()=>{},mutate:async(...args:any[])=>calls.push(args)};
- const page=await capturePage('library',app,{});page.onLoad();page.onShow();page.folder({currentTarget:{dataset:{id:'f'}}});assert.deepEqual(Array.from(page.data.items,(m:any)=>m.id),['one']);page.organize();page.play({currentTarget:{dataset:{id:'one'}}});assert.equal(page.data.items[0].folderSelected,true);await page.assignFolder({currentTarget:{dataset:{id:''}}});assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),['/api/media-folders/assign',{folderId:null,mediaIds:['one']}]);
+ const page=await capturePage('library',app,{});page.onLoad();page.onShow();page.folder({currentTarget:{dataset:{id:'f'}}});assert.deepEqual(Array.from(page.data.items,(m:any)=>m.id),['one']);
+ page.organize();page.play({currentTarget:{dataset:{id:'one'}}});assert.equal(page.data.items[0].selected,true);
+ await page.assignFolder({currentTarget:{dataset:{id:''}}});assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),['/api/media-folders/assign',{folderId:null,mediaIds:['one']}]);
+ assert.equal(page.data.items[0].selected,false);
  app._generation++;state.media=[];state.mediaFolders=[];page.onShow();assert.equal(page.data.folderId,'all');assert.equal(page.data.selectedIds.length,0);page.onHide();
 });
 
