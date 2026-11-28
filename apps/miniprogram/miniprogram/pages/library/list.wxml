@@ -1,0 +1,33 @@
+<view wx:if="{{restoring || loadingState}}" class="startup-status">{{stateSyncError ? '暂未同步，显示上次内容' : '正在同步资源…'}}</view>
+<view class="screen resource-screen {{selecting?'resource-selecting':''}}">
+  <view wx:if="{{section === 'materials'}}" class="resource-upload">
+    <button size="mini" class="add-resource" bindtap="upload" loading="{{uploading}}" disabled="{{uploading || selecting}}">＋ 添加素材</button>
+  </view>
+  <input class="input media-search" placeholder="{{section === 'materials' ? '搜索素材名称或镜头标签' : '搜索作品名称'}}" value="{{query}}" bindinput="search" maxlength="80"/>
+  <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="resource-filter-scroll"><view class="resource-kinds"><button wx:for="{{kindFilters}}" wx:key="id" class="resource-kind {{filter === item.id ? 'selected' : ''}}" data-kind="{{item.id}}" bindtap="filter">{{item.name}}<text>{{kindCounts[item.id] || 0}}</text></button></view></scroll-view>
+  <block wx:if="{{section === 'materials'}}">
+    <scroll-view scroll-x class="folder-scroll"><view class="folder-row"><button size="mini" class="{{folderId==='all'?'selected':''}}" data-id="all" bindtap="folder">全部</button><button size="mini" class="{{folderId==='none'?'selected':''}}" data-id="none" bindtap="folder">未分类</button><button size="mini" wx:for="{{folders}}" wx:key="id" class="{{folderId===item.id?'selected':''}}" data-id="{{item.id}}" bindtap="folder" bindlongpress="folderMenu">▱ {{item.name}}</button><button size="mini" bindtap="addFolder">＋ 文件夹</button></view></scroll-view>
+    <view class="resource-tools" wx:if="{{folderName && !selecting}}"><button class="small-button" bindtap="mvFolder">用「{{folderName}}」做MV ↗</button></view>
+    <view class="collection-tabs"><button class="{{collection === 'library' ? 'selected' : ''}}" bindtap="collection" data-collection="library">可用素材</button><button class="{{collection === 'clips' ? 'selected' : ''}}" bindtap="collection" data-collection="clips">镜头归档</button><button class="{{collection === 'production' ? 'selected' : ''}}" bindtap="collection" data-collection="production">制作归档</button></view>
+    <view class="resource-tools"><button class="small-button" bindtap="film">拉片工作台 ↗</button><button class="small-button" bindtap="livePhotoHelp">导入实况照片 ›</button></view>
+    <view wx:if="{{collection === 'production'}}" class="quiet collection-note">制作过程文件保留在这里，可从卡片菜单恢复。</view>
+  </block>
+  <view wx:if="{{uploading}}" class="notice">{{uploadText}}</view>
+  <view wx:for="{{jobs}}" wx:key="id" class="panel running-card" bindtap="session" data-id="{{item.id}}"><view class="row spread"><text class="title">{{item.label}}</text><text class="tag">{{item.progress}}%</text></view><view class="muted">{{item.stage}}</view><progress percent="{{item.progress}}" stroke-width="3" activeColor="{{progressColor}}" backgroundColor="{{progressTrack}}"/><text class="quiet">查看制作过程 →</text></view>
+  <view class="result-summary"><text>{{query ? '搜索结果' : section === 'films' ? '已完成的创作' : '收好的创作素材'}} · {{count}} 个</text><button wx:if="{{items.length && !selecting}}" class="resource-select-entry" bindtap="organize">多选</button></view>
+  <view wx:if="{{!items.length && !loadingState}}" class="empty"><image class="empty-icon" src="{{icons.library}}" mode="aspectFit"/><text class="title">{{query || filter !== 'all' ? '没有找到匹配的内容' : section === 'films' ? '第一支作品，等你开启' : collection === 'production' ? '还没有制作归档' : collection === 'clips' ? '还没有归档镜头' : '把素材带进来'}}</text><view class="muted">{{section === 'films' ? '制作完成后，作品会自动同步到这里。' : '添加图片、视频或音频，收好每一份创作灵感。'}}</view><button wx:if="{{section === 'films'}}" class="secondary" bindtap="create">去创作 ↗</button><button wx:else class="secondary" bindtap="upload">添加素材 ＋</button></view>
+  <view class="card-grid resource-grid"><view wx:for="{{items}}" wx:key="id" class="media-tile" data-id="{{item.id}}" bindtap="play" bindlongpress="selectOnHold">
+    <view class="tile-preview {{selecting && item.selected?'tile-selected':''}}"><image wx:if="{{item.cover}}" class="media-cover" src="{{item.cover}}" mode="aspectFill" lazy-load data-id="{{item.id}}" binderror="coverError"/><view wx:else class="media-cover media-placeholder"><image class="placeholder-icon" src="{{item.kind === 'audio' ? placeholderIcons.voice : item.kind === 'image' ? placeholderIcons.library : placeholderIcons.films}}" mode="aspectFit"/><text>{{item.kind === 'video' ? '视频' : item.kind === 'audio' ? '音频' : item.kind === 'game' ? '游戏' : item.kind === 'sticker-pack' ? '表情套装' : item.kind === 'document' ? '文档' : '图片'}}</text></view><text wx:if="{{item.duration}}" class="tile-duration">{{item.duration}}</text><text wx:if="{{item.production || item.archivedClip}}" class="tile-marker">{{item.production ? '过程' : '镜头'}}</text><button wx:if="{{item.coverError && !selecting}}" class="retry-thumb" catchtap="retryCover">重试</button><view wx:if="{{selecting}}" class="tile-check {{item.selected?'checked':''}}" aria-label="{{item.selected?'已选':'未选'}}">{{item.selected?'✓':''}}</view></view>
+    <view class="tile-caption"><text class="media-name">{{item.name}}</text><button wx:if="{{!selecting}}" class="tile-menu" catchtap="itemMenu" data-id="{{item.id}}" aria-label="{{item.name}}的更多操作">···</button></view>
+  </view></view>
+  <button wx:if="{{more}}" class="secondary load-more" bindtap="more">加载更多</button>
+</view><view class="folder-picker" wx:if="{{pickingFolder}}"><view class="folder-sheet"><text>移入文件夹</text><scroll-view scroll-y style="max-height:55vh"><button size="mini" data-id="" bindtap="assignFolder">未分类</button><button size="mini" wx:for="{{folders}}" wx:key="id" data-id="{{item.id}}" bindtap="assignFolder">▱ {{item.name}}</button></scroll-view><button size="mini" bindtap="closeFolder">取消</button></view></view><privacy-dialog id="privacy"/>
+<view wx:if="{{selecting}}" class="resource-selection">
+  <text wx:if="{{deleteError}}" class="resource-delete-error">{{deleteError}}</text>
+  <view class="resource-selection-actions">
+    <button bindtap="organize" disabled="{{deleting}}">取消</button>
+    <text class="resource-selection-count">{{deleteProgress || '已选 ' + selectedIds.length + ' 项'}}</text>
+    <button wx:if="{{section==='materials'}}" bindtap="pickFolder" disabled="{{!selectedIds.length || deleting}}">移入</button>
+    <button class="resource-delete" bindtap="removeSelected" disabled="{{!selectedIds.length || deleting}}">删除</button>
+  </view>
+</view>

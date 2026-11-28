@@ -1,0 +1,97 @@
+<view wx:if="{{!hasNewer && workPanel}}" class="work-card">
+  <view class="work-card-heading">
+    <text>{{workPanel.type === 'sticker' ? '表情包动画视频' : workPanel.type === 'mv' ? '音乐 MV' : workPanel.type === 'note' ? '制作笔记' : workPanel.type === 'notes' ? '我的笔记' : workPanel.type === 'batch' ? '批量制作' : '批量项目'}}</text>
+    <button size="mini" class="small-button" bindtap="closeWorkPanel" disabled="{{workBusy}}">关闭</button>
+  </view>
+  <block wx:if="{{workPanel.type === 'sticker'}}">
+    <text class="quiet">选一张角色图，先比较两种候选画风。</text>
+    <input class="work-field" value="{{workPanel.name}}" bindinput="workField" data-field="name" maxlength="16" placeholder="套装名称" aria-label="套装名称" disabled="{{workBusy}}"/>
+    <textarea class="work-field" value="{{workPanel.style}}" bindinput="workField" data-field="style" maxlength="240" auto-height placeholder="画风或角色要求" aria-label="画风或角色要求" disabled="{{workBusy}}"/>
+    <view class="work-buttons">
+      <button size="mini" class="small-button {{workPanel.mode === 'static' ? 'work-selected' : ''}}" bindtap="workStickerMode" data-mode="static" disabled="{{workBusy}}">静态表情</button>
+      <button size="mini" class="small-button {{workPanel.mode === 'dynamic' ? 'work-selected' : ''}}" bindtap="workStickerMode" data-mode="dynamic" disabled="{{workBusy}}">动态表情＋视频</button>
+      <button size="mini" class="small-button" bindtap="pick" disabled="{{workBusy || uploading}}">选角色图</button>
+    </view>
+    <button size="mini" class="secondary" bindtap="startWorkSticker" loading="{{workBusy}}" disabled="{{workBusy || uploading}}">制作候选画风</button>
+  </block>
+  <block wx:elif="{{workPanel.type === 'mv'}}">
+    <picker class="work-field" value="{{workPanel.folderIndex}}" range="{{folderOptions}}" range-key="name" bindchange="workField" data-field="folderIndex" disabled="{{workBusy}}">
+      <view>{{folderOptions[workPanel.folderIndex].name || '选择素材文件夹'}} ⌄</view>
+    </picker>
+    <picker class="work-field" value="{{workPanel.audioIndex}}" range="{{audioOptions}}" range-key="name" bindchange="workField" data-field="audioIndex" disabled="{{workBusy}}">
+      <view>{{audioOptions[workPanel.audioIndex].name || '选择音源'}} ⌄</view>
+    </picker>
+    <view class="work-buttons">
+      <input class="work-field work-duration" type="number" value="{{workPanel.duration}}" bindinput="workField" data-field="duration" aria-label="时长（秒）" disabled="{{workBusy}}"/><text>秒</text>
+      <picker class="work-field" value="{{workPanel.resolutionIndex}}" range="{{resolutions}}" bindchange="workField" data-field="resolutionIndex" disabled="{{workBusy}}"><view>{{resolutions[workPanel.resolutionIndex]}}p ⌄</view></picker>
+    </view>
+    <textarea class="work-field" value="{{workPanel.text}}" bindinput="workField" data-field="text" maxlength="12000" auto-height placeholder="剪辑要求（选填）" aria-label="剪辑要求" disabled="{{workBusy}}"/>
+    <view wx:if="{{workPanel.quote}}" class="quiet">预计 {{workPanel.quote.points}} 积分 · 可用 {{workPanel.quote.balance}} 积分</view>
+    <view class="work-buttons">
+      <button size="mini" class="small-button" bindtap="submitWorkMv" disabled="{{workBusy || uploading}}">预计积分</button>
+      <button size="mini" class="secondary" bindtap="submitWorkMv" data-start="yes" loading="{{workBusy}}" disabled="{{workBusy || uploading}}">制作 MV</button>
+    </view>
+  </block>
+  <block wx:elif="{{workPanel.type === 'batch'}}">
+    <picker class="work-field" value="{{workPanel.templateIndex}}" range="{{batchTemplates}}" range-key="name" bindchange="workField" data-field="templateIndex" disabled="{{workBusy}}"><view>{{batchTemplates[workPanel.templateIndex].name || '选择视频模板'}} ⌄</view></picker>
+    <textarea class="work-field" value="{{workPanel.topics}}" bindinput="workField" data-field="topics" maxlength="40000" auto-height placeholder="每行一个主题，最多 20 条" aria-label="视频主题" disabled="{{workBusy}}"/>
+    <button size="mini" class="secondary" bindtap="startWorkBatch" loading="{{workBusy}}" disabled="{{workBusy || uploading}}">确认批量制作</button>
+  </block>
+  <block wx:elif="{{workPanel.type === 'batches'}}">
+    <button wx:for="{{batchList}}" wx:key="id" size="mini" class="work-list-button" bindtap="openWorkBatch" data-id="{{item.id}}">{{item.name}} · {{item.done}}/{{item.count}} 完成 ›</button>
+    <text wx:if="{{!batchList.length}}" class="quiet">还没有批量项目。</text>
+  </block>
+  <block wx:elif="{{workPanel.type === 'note'}}">
+    <input class="work-field" value="{{workPanel.name}}" bindinput="workField" data-field="name" maxlength="80" placeholder="笔记标题" aria-label="笔记标题" disabled="{{workBusy}}"/>
+    <textarea class="work-field" value="{{workPanel.text}}" bindinput="workField" data-field="text" maxlength="20000" auto-height placeholder="笔记正文" aria-label="笔记正文" disabled="{{workBusy}}"/>
+    <button size="mini" class="secondary" bindtap="saveWorkNote" loading="{{workBusy}}" disabled="{{workBusy || uploading}}">保存笔记</button>
+  </block>
+  <block wx:elif="{{workPanel.type === 'notes'}}">
+    <button wx:for="{{workPanel.notes}}" wx:key="id" size="mini" class="work-list-button" bindtap="editWorkNote" data-id="{{item.id}}">{{item.title}} ›</button>
+    <text wx:if="{{!workPanel.notes.length}}" class="quiet">还没有笔记。发送「写笔记」可以新建。</text>
+  </block>
+</view>
+
+<view wx:if="{{!hasNewer && stickerProject}}" class="work-card">
+  <view class="work-card-heading"><text>{{stickerProject.recipe.name}}</text><text class="quiet">{{stickerProject.completedCount}} / {{stickerProject.totalCount}} 个动作</text></view>
+  <view wx:if="{{stickerCandidates.length && !stickerProject.styleSelection}}" class="work-styles">
+    <view wx:for="{{stickerCandidates}}" wx:key="id" class="work-style">
+      <button size="mini" class="work-image-button" bindtap="previewWorkImage" data-id="{{item.id}}" data-category="style" disabled="{{workBusy}}">
+        <image wx:if="{{item.cover}}" src="{{item.cover}}" mode="aspectFit"/><text>{{item.name}}</text>
+      </button>
+      <button size="mini" class="small-button" bindtap="workStickerStage" data-action="style" data-id="{{item.id}}" disabled="{{workBusy || stickerJob.active || stickerCandidates.length !== 2 || stickerProject.compatible === false}}">选这版</button>
+    </view>
+  </view>
+  <block wx:if="{{stickerItems.length}}">
+    <text class="quiet">{{stickerProject.ready ? '表情包' : '动作样张'}} · {{stickerProject.recipe.mode === 'dynamic' ? 'GIF' : 'PNG'}}</text>
+    <scroll-view scroll-x class="work-artifact-strip">
+      <button wx:for="{{stickerItems}}" wx:key="id" size="mini" class="work-image-button" bindtap="previewWorkImage" data-id="{{item.id}}" data-category="item" disabled="{{workBusy}}"><image wx:if="{{item.cover}}" src="{{item.cover}}" mode="aspectFit"/><text>{{item.name}}</text></button>
+    </scroll-view>
+  </block>
+  <view wx:if="{{stickerJob.active}}" class="quiet">制作进度会更新在这条对话里。</view>
+  <view wx:elif="{{stickerProject.compatible === false}}" class="quiet">制作模板已更新，已有产物仍可查看。</view>
+  <view wx:else class="work-buttons">
+    <button wx:if="{{stickerJob.retryable}}" size="mini" class="secondary" bindtap="workStickerStage" data-action="retry" disabled="{{workBusy}}">继续未完成阶段</button>
+    <button wx:elif="{{stickerProject.previewHash && !stickerProject.ready}}" size="mini" class="secondary" bindtap="workStickerStage" data-action="approve" disabled="{{workBusy}}">{{stickerProject.recipe.mode === 'dynamic' ? '确认生成整套及成片' : '确认生成整套'}}</button>
+  </view>
+</view>
+
+<view wx:if="{{!hasNewer && mvItems.length}}" class="work-card">
+  <view class="work-card-heading"><text>MV 中间产物</text></view>
+  <view wx:for="{{mvItems}}" wx:key="id" class="work-deliverable">
+    <button size="mini" class="work-list-button" bindtap="previewWorkArtifact" data-id="{{item.id}}" disabled="{{workBusy}}">▷ {{item.name}}</button>
+    <button size="mini" class="small-button" bindtap="saveWorkFile" data-id="{{item.id}}" disabled="{{workBusy}}">下载</button>
+  </view>
+</view>
+
+<view wx:if="{{!hasNewer && workBatch}}" class="work-card">
+  <view class="work-card-heading"><text>{{workBatch.name}}</text><button size="mini" class="small-button" bindtap="closeWorkBatch" disabled="{{workBusy}}">关闭</button></view>
+  <text class="quiet">{{workBatch.done}} / {{workBatch.count}} 完成</text>
+  <button wx:for="{{workBatch.items}}" wx:key="index" size="mini" class="work-list-button" bindtap="openWorkBatchItem" data-id="{{item.sessionId}}" disabled="{{!item.sessionId || item.unavailable || workBusy}}">{{item.topic}} · {{item.statusLabel}} ›</button>
+  <view class="work-buttons">
+    <button wx:if="{{workBatch.active}}" size="mini" class="small-button" bindtap="workBatchAction" data-action="stop" disabled="{{workBusy}}">停止批量制作</button>
+    <button wx:elif="{{workBatch.done < workBatch.count}}" size="mini" class="small-button" bindtap="workBatchAction" data-action="resume" disabled="{{workBusy}}">继续未完成项目</button>
+  </view>
+</view>
+
+<view wx:if="{{!hasNewer && workNotice}}" class="work-card">{{workNotice}}</view>

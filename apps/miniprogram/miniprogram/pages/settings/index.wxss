@@ -1,1 +1,2 @@
 .panel .section-title { margin-top: 0; }.setting-value { max-width: 390rpx; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--lm-muted); font-size: 24rpx; text-align: right; }.settings-note { margin: 18rpx 0; }
+.theme-surface .settings-logout { display:block; width:100%; min-height:44px; margin:32rpx auto 0; padding:16rpx; color:var(--lm-accent); background:var(--lm-paper); border:1rpx solid var(--lm-line); border-radius:20rpx; }

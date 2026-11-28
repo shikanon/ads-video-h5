@@ -5,7 +5,7 @@ const themes = {
   rich: { name: '橘焰琥珀', background: '#44291f', tab: '#4d3025', color: '#c5a684', selected: '#f7c38b' },
 };
 const names = ['create', 'library', 'films', 'profile', 'history', 'new-chat', 'settings', 'credits', 'check-in', 'upload', 'voice', 'download', 'share', 'delete', 'send', 'stop', 'news', 'idea', 'back', 'close', 'add', 'newline', 'retry', 'privacy'];
-const tabs = ['create', 'idea', 'library', 'profile'];
+const tabs = ['idea', 'create', 'library'];
 function icon(theme, mode, name) { return '/assets/ui/' + theme + '/' + mode + '/' + name + '.png'; }
 function appearanceData(value) {
   const theme = Object.prototype.hasOwnProperty.call(themes, value) ? value : defaultTheme;

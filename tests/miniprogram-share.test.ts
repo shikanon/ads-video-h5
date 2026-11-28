@@ -40,7 +40,7 @@ test('a guest tab exposes both share menus before login without requesting netwo
   const menus: any[] = [];
   const app = { client: { hasSession: () => false }, state: null };
   const page = await capturePage('library', app, { showShareMenu: (options: any) => menus.push(options), request: assert.fail, login: assert.fail, authorize: assert.fail });
-  page.onLoad(); page.onShow();
+  page.onShow();
   assert.deepEqual(Array.from(menus[0].menus), ['shareAppMessage', 'shareTimeline']);
   assert.equal(page.data.guest, true); page.onHide();
 });

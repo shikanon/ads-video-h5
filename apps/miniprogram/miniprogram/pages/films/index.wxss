@@ -1,1 +1,1 @@
-.empty .secondary { width:auto; margin:28rpx auto; }
+@import "../library/list.wxss";

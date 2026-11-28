@@ -52,25 +52,89 @@ test('a drawer covering the current conversation does not silently read a new re
   p.closeSidebar();await flush();assert.equal(f.calls.filter(c=>c[0]==='read').length,1);assert.equal(f.app.state.notifications.unread,0);
 });
 
-test('profile edits open from the top identity, preserve an active nickname draft through polls and close only after saving',async t=>{
-  const f=await fixture(t,'profile'),p=f.page;
+test('sidebar totals cover all sessions in the current archive scope despite filtering and pagination', async t => {
+  const { app, page } = await fixture(t, 'chat');
+  const extra = Array.from({ length: 40 }, (_, index) => ({ id: 'extra-' + index, mode: 'chat', title: '聊天 ' + index, messages: [] }));
+  const archived = { id: 'archived', mode: 'work', title: 'B', archivedAt: '2026-11-08T00:00:00Z', messages: [] };
+  app.apply({ ...app.state, sessions: [...app.state.sessions, ...extra, archived] });
+  page.openSidebar();
+  assert.equal(page.data.sidebarTotal, 42);
+  assert.equal(page.data.sidebarMore, true);
+  page.sidebarFilter({ currentTarget: { dataset: { filter: 'work' } } });
+  page.sidebarSearch({ detail: { value: '无匹配' } });
+  assert.equal(page.data.sidebarGroups.length, 0);
+  assert.equal(page.data.sidebarTotal, 42);
+  page.sidebarArchiveFilter();
+  assert.equal(page.data.sidebarTotal, 1);
+});
+
+test('the sidebar action menu highlights the tapped row and clears the highlight on cancel', async t => {
+  const f = await fixture(t, 'chat'), page = f.page;
+  f.app.state.features.sessionManagement = true;
+  let cancel!: () => void;
+  let menus = 0;
+  f.wx.showActionSheet = (options: any) => { menus++; cancel = options.fail; };
+  page.openSidebar();
+  const action = page.sidebarActions({ currentTarget: { dataset: { id: 'b' } } });
+  assert.equal(page.data.sidebarMenuId, 'b');
+  assert.equal(page.data.sidebarBusy, true);
+  assert.equal(page.data.sidebarGroups.flatMap((group: any) => group.items).find((row: any) => row.selected).id, 'a');
+  await page.sidebarActions({ currentTarget: { dataset: { id: 'a' } } });
+  assert.equal(menus, 1);
+  assert.equal(page.data.sidebarMenuId, 'b');
+  cancel();
+  await action;
+  assert.equal(page.data.sidebarMenuId, '');
+  assert.equal(page.data.sidebarBusy, false);
+});
+
+test('sidebar account edits preserve an active nickname draft through polls and close only after saving',async t=>{
+  const f=await fixture(t,'chat'),p=f.page;
+  p.openSidebar();
   p.editAvatar();assert.equal(p.data.avatarEditor,true);p.closeEditors();assert.equal(p.data.avatarEditor,false);
   p.editName();p.nickname({detail:{value:'新昵称'}});p.render({...f.app.state,account:{...f.app.state.account,displayName:'服务器旧值'}});assert.equal(p.data.nickname,'新昵称');
   let finish!:(value:any)=>void;const request=f.app.client.request;
   f.app.client.request=(route:string,body:any,method:string)=>{if(route==='/api/auth/wechat/profile'){assert.equal(body.displayName,'新昵称');assert.equal(method,'PATCH');return new Promise(resolve=>{finish=resolve;});}return request(route,body,method);};
   const saving=p.saveName();p.closeEditors();assert.equal(p.data.nameEditor,true);finish({user:{...f.app.state.account,displayName:'新昵称'}});await saving;
-  assert.equal(p.data.nameEditor,false);assert.equal(p.data.user.displayName,'新昵称');assert.equal(p.data.savingName,false);
+  assert.equal(p.data.nameEditor,false);assert.equal(p.data.userDisplayName,'新昵称');assert.equal(p.data.savingName,false);assert.equal(p.data.sidebarOpen,true);
 });
 
 test('an old account nickname response is ignored after the login changes',async t=>{
-  const f=await fixture(t,'profile'),p=f.page;let finish!:(value:any)=>void;
+  const f=await fixture(t,'chat'),p=f.page;let finish!:(value:any)=>void;
   p.editName();p.nickname({detail:{value:'旧账号草稿'}});f.app.client.request=()=>new Promise(resolve=>{finish=resolve;});
   const saving=p.saveName();f.app._generation++;f.app.user={id:'new-owner',displayName:'新账号'};finish({user:{id:'owner',displayName:'旧账号草稿'}});await saving;
-  assert.equal(f.app.user.id,'new-owner');assert.notEqual(p.data.user.displayName,'旧账号草稿');
+  assert.equal(f.app.user.id,'new-owner');assert.notEqual(p.data.userDisplayName,'旧账号草稿');
+});
+
+test('sidebar avatar saves and removes the current avatar using the existing account API', async t => {
+  const f = await fixture(t, 'chat'), p = f.page;
+  p.openSidebar();
+  p.editAvatar();
+  f.app.client.upload = async (route: string, file: string, field: string) => {
+    assert.deepEqual([route, file, field], ['/api/account/avatar', '/picked.png', 'avatar']);
+    return { user: { ...f.app.state.account, avatarUrl: '/api/account/avatar/new' } };
+  };
+  await p.chooseAvatar({ detail: { avatarUrl: '/picked.png' } });
+  await flush();
+  assert.equal(p.data.avatarEditor, false);
+  assert.equal(p.data.hasAvatar, true);
+  assert.equal(p.data.userAvatar, '/local-cover');
+  p.editAvatar();
+  f.wx.showModal = (options: any) => options.success({ confirm: true });
+  const request = f.app.client.request;
+  f.app.client.request = async (route: string, body: any, method: string) => {
+    if (route !== '/api/account/avatar') return request(route, body, method);
+    assert.equal(method, 'DELETE');
+    return { user: { ...f.app.state.account, avatarUrl: undefined } };
+  };
+  await p.removeAvatar();
+  assert.equal(p.data.hasAvatar, false);
+  assert.equal(p.data.userAvatar, '');
+  assert.equal(p.data.sidebarOpen, true);
 });
 
 test('generated teaching intermediates are retained in production archive; real archived source clips stay reusable and searchable',async t=>{
-  const f=await fixture(t,'library'),p=f.page;
+  const f=await fixture(t,'materials'),p=f.page;
   f.app.apply({...f.app.state,media:[{id:'raw',name:'原片',kind:'video',origin:'upload'},{id:'generated',name:'教学分镜-泛泛的示例.mp4',kind:'video',origin:'generated'},{id:'clip',name:'教学分镜-用户选中的真实镜头',kind:'video',origin:'imported',archive:{tags:['对照'],sourceId:'raw'}}]});
   assert.deepEqual(Array.from(p.data.items,(m:any)=>m.id).sort(),['clip','raw']);assert.equal(p.data.productionCount,1);assert.equal(f.app.state.media.length,3);
   p.collection({currentTarget:{dataset:{collection:'production'}}});assert.equal(p.data.items[0].id,'generated');

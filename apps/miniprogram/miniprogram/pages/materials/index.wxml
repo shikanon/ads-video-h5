@@ -1,0 +1,3 @@
+<view class="theme-surface theme-{{theme}}">
+  <include src="../library/list.wxml"/>
+</view>

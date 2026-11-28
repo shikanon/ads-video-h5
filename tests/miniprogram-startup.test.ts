@@ -36,17 +36,22 @@ test('cold launch displays account and assets synchronously while one shared sta
   const f = platform(), previous = createClient(f.wx, config); assert.equal(previous.rememberState(state()), true);
   const app = await loadNativeApp(f.wx); t.after(() => app.onHide());
   assert.equal(app.state.media[0].name, '我的图片'); assert.equal(app._restored, true);
-  app.onShow(); const page = await capturePage('library', app, f.wx); page.onLoad(); page.onShow();
+  app.onShow(); const home = await capturePage('library', app, f.wx); home.onShow();
+  assert.equal(home.data.balance, '1,000.00'); assert.equal(home.data.materialCount, 1);
+  const page = await capturePage('materials', app, f.wx); page.onLoad(); page.onShow();
   assert.equal(page.data.items[0].name, '我的图片'); assert.equal(page.data.restoring, true);
-  const profile = await capturePage('profile', app, f.wx); profile.onShow();
-  assert.equal(profile.data.user.displayName, '我的账号'); assert.equal(profile.data.media, 1);
-  assert.equal(f.requests.length, 1); assert.ok(f.requests[0].url.endsWith('/api/state'), 'profile shares state instead of requesting auth/me');
+  const chat = await capturePage('chat', app, f.wx); chat.onLoad(); chat.onShow(); chat.openSidebar();
+  assert.equal(chat.data.userDisplayName, '我的账号');
+  assert.equal(chat.data.sidebarTotal, 1);
+  assert.equal(f.requests.length, 1); assert.ok(f.requests[0].url.endsWith('/api/state'), 'the account row and content share the same state request');
   const fresh = state(); fresh.media.push({ ...fresh.media[0], id: 'new', name: '新图片' });
   fresh.sessions.push({ id: 'server-selected', title: '另一设备选择', mode: 'chat', messages: [] }); fresh.activeSessionId = 'server-selected';
   answer(f.requests[0], fresh); await app._refreshing;
   assert.equal(page.data.items.length, 2); assert.equal(page.data.restoring, false); assert.equal(app._restored, false);
+  assert.equal(chat.data.sidebarTotal, 2);
   assert.equal(app.state.activeSessionId, 'current', 'a refresh preserves the locally restored window when it still exists');
-  page.onHide(); profile.onHide();
+  assert.equal(home.data.materialCount, 2);
+  home.onHide(); page.onHide(); chat.onUnload();
 });
 
 test('snapshot does not replace authentication and a pending full refresh precedes any mutation', async t => {

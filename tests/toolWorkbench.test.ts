@@ -44,8 +44,11 @@ test('all 24 results remain reachable on the virtual canvas, and hidden nodes ca
  f.state.artifacts=Array.from({length:24},(_,i)=>({id:'a'+i,sessionId:'canvas',kind:'image',name:'动作'+i,url:'/private/'+i,createdAt:'2026-11-18'}));page.render(f.state);assert.equal(page.data.nodeCount,24);assert.ok(page._worldNodes[23].y>2000);assert.ok(page.data.nodes.length<24);page.focusNode(e('artifact-a0'));assert.ok(page.data.nodes.some(n=>n.id==='artifact-a0'));page.focusNode(e('artifact-a23'));assert.ok(page.data.nodes.some(n=>n.id==='artifact-a23'));
  const n=page.data.nodes[0];page.layout({...n,hidden:true});page.render(f.state);assert.equal(page.data.nodeCount,23);page._undo=null;page.showAll();assert.equal(page.data.nodeCount,24);await page.persist();page.onHide();
 });
-test('only the tools tab layout changes; static original examples replace public video playback',async()=>{
- const app=JSON.parse(await readFile('apps/miniprogram/miniprogram/app.json','utf8'));assert.deepEqual(app.tabBar.list.map(t=>t.pagePath),['pages/chat/index','pages/templates/index','pages/library/index','pages/profile/index']);
+test('tools and resources flank the default chat tab, and tools use static original examples',async()=>{
+ const app=JSON.parse(await readFile('apps/miniprogram/miniprogram/app.json','utf8'));
+ assert.equal(app.pages[0], 'pages/chat/index');
+ assert.ok(!app.pages.includes('pages/profile/index'));
+ assert.deepEqual(app.tabBar.list.map(t=>[t.pagePath,t.text]),[['pages/templates/index','工作台'],['pages/chat/index','轻喵对话'],['pages/library/index','资源']]);
  const wxml=await readFile('apps/miniprogram/miniprogram/pages/templates/index.wxml','utf8');assert.doesNotMatch(wxml,/<video\b|暂无例图|先选模板，再添加素材/);assert.match(wxml,/catchtouchstart="boardStart"/);assert.match(wxml,/catchtouchmove="nodeMove"/);assert.doesNotMatch(wxml,/<movable-area/);assert.match(wxml,/catchtap="nodeMenu"/);
 });
 

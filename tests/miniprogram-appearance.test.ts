@@ -25,7 +25,8 @@ test('first launch and invalid stored themes use enamel; explicit choice persist
   assert.equal(a.data.theme, 'rich'); assert.equal(b.data.theme, 'rich'); assert.equal(f.storage.get(storageKey), 'rich');
   assert.equal(fixture(f.storage.get(storageKey)).app.appearance, 'rich');
   assert.equal(f.app.setAppearance('invalid'), false); assert.equal(f.storage.get(storageKey), 'rich');
-  const active = f.chrome.filter(row => row[0] === 'item'); assert.equal(active.length, 4);
+  const active = f.chrome.filter(row => row[0] === 'item');
+  assert.deepEqual(active.map(([, item]) => [item.index, path.basename(item.iconPath)]), [[0, 'idea.png'], [1, 'create.png'], [2, 'library.png']]);
   assert.ok(active.every(row => row[1].iconPath.includes('/rich/idle/') && row[1].selectedIconPath.includes('/rich/active/')));
   f.platform.setStorageSync = () => { throw new Error('storage full'); };
   assert.equal(f.app.setAppearance('fresh'), false); assert.equal(f.app.appearance, 'rich');
@@ -77,11 +78,59 @@ test('settings exposes feedback and version history, and permanent legal links a
   assert.ok(releases.some((release: any) => release.features.some((value: string) => value.includes('意见反馈'))), 'feedback remains documented in its original release');
   const about = await capturePage('about', f.app, f.platform); about.onLoad({ version }); assert.equal(about.data.selected.version, version);
   about.onLoad({ version: '<untrusted>' }); assert.equal(about.data.selected, null);
-  const profile = await readFile(path.join(miniRoot, 'pages/profile/index.wxml'), 'utf8'); assert.equal(profile.includes('bindtap="legal"'), false);
-  const profilePage = await capturePage('profile', f.app, f.platform);
-  profilePage.render({ credits: { balance: 991935.2, dailyGrant: 500, canCheckIn: true }, sessions: [{ id: 'own' }], artifacts: [], media: [] });
-  assert.equal(profilePage.data.balance, '991,935.20'); assert.equal(profilePage.data.dailyReward, '500');
-  assert.ok(profile.includes('为灵感，添一点能量')); assert.ok(profile.includes('我的创作积分'));
   const wxml = await readFile(path.join(miniRoot, 'pages/settings/index.wxml'), 'utf8');
   for (const type of ['privacy', 'voice', 'terms']) assert.ok(wxml.includes('data-type="' + type + '"'));
+});
+
+test('the resources wallet displays current points and opens the appropriate entry for guests and members', async () => {
+  const f = fixture(), routes: string[] = [];
+  f.platform.navigateTo = (options: any) => routes.push(options.url);
+  const page = await capturePage('library', f.app, f.platform);
+  page.onShow();
+  assert.equal(page.data.guest, true);
+  page.credits();
+  assert.deepEqual(routes, ['/pages/auth/index']);
+  f.app.client.hasSession = () => true;
+  page.render({ credits: { balance: 991935.2, dailyGrant: 500, canCheckIn: true }, media: [], artifacts: [], jobs: [] });
+  assert.equal(page.data.balance, '991,935.20');
+  assert.equal(page.data.dailyReward, '500');
+  assert.equal(page.data.canCheckIn, true);
+  page.credits();
+  assert.deepEqual(routes, ['/pages/auth/index', '/pages/credits/index']);
+  const wxml = await readFile(path.join(miniRoot, 'pages/library/index.wxml'), 'utf8');
+  assert.match(wxml, /class="wallet-card" bindtap="credits"/);
+  assert.match(wxml, /我的创作积分/);
+  assert.doesNotMatch(wxml, /bindtap="(?:legal|logout|editAvatar|editName)"/);
+});
+
+test('settings logout submits once and does not clear a newer account', async () => {
+  const f = fixture();
+  let loggedIn = false, requests = 0, expired = 0;
+  let finish!: () => void;
+  f.app._generation = 1;
+  f.app.client.hasSession = () => loggedIn;
+  f.app.client.request = (route: string) => {
+    assert.equal(route, '/api/auth/logout');
+    requests++;
+    return new Promise<void>(resolve => { finish = resolve; });
+  };
+  f.app.expired = () => { expired++; };
+  const settings = await capturePage('settings', f.app, f.platform);
+  settings._visible = true;
+  await settings.logout();
+  assert.equal(requests, 0);
+  loggedIn = true;
+  const pending = settings.logout();
+  assert.equal(settings.data.loggingOut, true);
+  await settings.logout();
+  assert.equal(requests, 1);
+  f.app._generation++;
+  finish();
+  await pending;
+  assert.equal(expired, 0);
+  assert.equal(settings.data.loggingOut, false);
+  const current = settings.logout();
+  finish();
+  await current;
+  assert.equal(expired, 1);
 });
