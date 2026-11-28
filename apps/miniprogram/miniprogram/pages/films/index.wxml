@@ -1,1 +1,3 @@
-<view class="screen theme-surface theme-{{theme}}"><view class="empty"><text class="title">成片已收进「资源」</text><button class="secondary" bindtap="openResources">查看我的成片</button></view></view>
+<view class="theme-surface theme-{{theme}}">
+  <include src="../library/list.wxml"/>
+</view>

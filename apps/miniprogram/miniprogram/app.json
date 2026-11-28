@@ -2,8 +2,8 @@
   "pages": [
     "pages/chat/index",
     "pages/library/index",
+    "pages/materials/index",
     "pages/films/index",
-    "pages/profile/index",
     "pages/auth/index",
     "pages/history/index",
     "pages/credits/index",
@@ -36,28 +36,22 @@
     "borderStyle": "white",
     "list": [
       {
-        "pagePath": "pages/chat/index",
-        "text": "创作",
-        "iconPath": "assets/ui/fresh/idle/create.png",
-        "selectedIconPath": "assets/ui/fresh/active/create.png"
-      },
-      {
         "pagePath": "pages/templates/index",
-        "text": "工具",
+        "text": "工作台",
         "iconPath": "assets/ui/fresh/idle/idea.png",
         "selectedIconPath": "assets/ui/fresh/active/idea.png"
+      },
+      {
+        "pagePath": "pages/chat/index",
+        "text": "轻喵对话",
+        "iconPath": "assets/ui/fresh/idle/create.png",
+        "selectedIconPath": "assets/ui/fresh/active/create.png"
       },
       {
         "pagePath": "pages/library/index",
         "text": "资源",
         "iconPath": "assets/ui/fresh/idle/library.png",
         "selectedIconPath": "assets/ui/fresh/active/library.png"
-      },
-      {
-        "pagePath": "pages/profile/index",
-        "text": "我的",
-        "iconPath": "assets/ui/fresh/idle/profile.png",
-        "selectedIconPath": "assets/ui/fresh/active/profile.png"
       }
     ]
   },

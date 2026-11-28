@@ -81,6 +81,6 @@ Page({
     try { const src = app.client.previewUrl(source.url) || await app.client.download(source.url); if (!this._visible || generation !== app._generation || source.id !== this._sourceId) return; this.setData({ previewSrc: src, previewStart: shot.start }, () => { if (wx.createVideoContext) { const video = wx.createVideoContext('film-preview', this); video.seek(shot.start); } }); }
     catch (error) { if (generation === app._generation) notify(error); }
   },
-  library() { wx.switchTab({ url: '/pages/library/index' }); },
-  clips() { getApp().pendingLibraryCollection = 'clips'; wx.switchTab({ url: '/pages/library/index' }); },
+  library() { wx.navigateTo({ url: '/pages/materials/index' }); },
+  clips() { wx.navigateTo({ url: '/pages/materials/index?collection=clips' }); },
 });

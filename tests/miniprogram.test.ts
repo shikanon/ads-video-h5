@@ -225,9 +225,22 @@ test('every native WXML page renders with the official component compiler and ha
   for (const pagePath of config.pages) {
     const id = simulate.load(path.join(miniRoot, pagePath), { compiler: 'official', rootPath: miniRoot, usingComponents: config.usingComponents });
     const component = simulate.render(id), parent = document.createElement('div'); component.attach(parent);
-    const wxml = await readFile(path.join(miniRoot, pagePath + '.wxml'), 'utf8');
+    const listPage = pagePath === 'pages/materials/index' || pagePath === 'pages/films/index';
+    const wxml = await readFile(path.join(miniRoot, listPage ? 'pages/library/list.wxml' : pagePath + '.wxml'), 'utf8');
     for (const match of wxml.matchAll(/(?:bind|catch)(?:\w+|:\w+)="([a-zA-Z]\w*)"/g)) assert.equal(typeof component.instance[match[1]], 'function', pagePath + ': ' + match[1]);
-    assert.ok(component.dom); assert.ok(parent.querySelector('wx-view'), pagePath); component.detach();
+    assert.ok(component.dom); assert.ok(parent.querySelector('wx-view'), pagePath);
+    if (pagePath === 'pages/library/index') {
+      assert.equal(component.querySelectorAll('.resource-entry').length, 2);
+      assert.match(wxml, /url="\/pages\/materials\/index"/);
+      assert.match(wxml, /url="\/pages\/films\/index"/);
+      assert.ok(!component.querySelector('.media-search'));
+    }
+    if (listPage) {
+      assert.ok(component.querySelector('.media-search'), pagePath);
+      assert.equal(Boolean(component.querySelector('.add-resource')), pagePath === 'pages/materials/index');
+      assert.ok(!component.querySelector('.wallet-card'));
+    }
+    component.detach();
   }
   const chatId = simulate.load(path.join(miniRoot, 'pages/chat/index'), { compiler: 'official', rootPath: miniRoot, usingComponents: config.usingComponents });
   const chat = simulate.render(chatId); chat.attach(document.createElement('div')); chat.instance.onLoad(); chat.instance._visible = true;
@@ -242,7 +255,7 @@ test('every native WXML page renders with the official component compiler and ha
   assert.equal(await accepted, true); assert.ok(app.voiceConsent.agreedAt);
   await simulate.sleep(0); assert.equal(chat.querySelector('.voice-consent-mask'), undefined, 'agreement closes the actual rendered overlay');
   assert.equal(platform.recorder.starts.length, 0, 'agreement never starts recording by itself');
-  // Exercise the actual compiled gallery controls and native page handoff.
+  // Exercise the inline template picker and the independent tools gallery.
   const samplePath = '/api/templates/video-style-interface/sample/';
   const galleryTemplate = { id: 'video-style-interface', name: '界面动效', description: '产品演示',
     defaults: { seconds: 12 }, sample: { title: '灵感整理器', source: { author: '@creator' },
@@ -268,10 +281,43 @@ test('every native WXML page renders with the official component compiler and ha
   });
   chat.instance.render(app.state);
   assert.equal(chat.instance.interaction(), 'chat');
-  chat.setData({ prompt: '@像素游戏 保留我已有的文字' });
-  chat.querySelector('.gallery-entry').dispatchEvent('tap');
+  chat.instance.rotateWorkHint();
   await simulate.sleep(0);
-  assert.deepEqual(tabRoutes, ['/pages/templates/index']);
+  const completion = chat.data.workHint.hint;
+  assert.ok(chat.querySelector('.work-suggestions'));
+  assert.equal(chat.querySelector('.work-suggestions').dom.querySelectorAll('wx-button').length, 3);
+  assert.equal(new Set(chat.data.visibleSuggestions.map((item: any) => item.id)).size, 3);
+  assert.equal(chat.querySelector('.composer-textarea'), undefined);
+  chat.querySelector('.work-inline-hint').dispatchEvent('tap');
+  await simulate.sleep(0);
+  assert.equal(chat.data.prompt, completion);
+  assert.ok(chat.querySelector('.composer-textarea'));
+  assert.equal(chat.querySelector('.work-inline-hint'), undefined);
+  assert.equal(catalogCalls.length, 0);
+  chat.setData({ mode: 'work', prompt: '', sidebarOpen: true });
+  await simulate.sleep(0);
+  assert.equal(chat.querySelector('.work-suggestions'), undefined);
+  assert.match(chat.querySelector('.sidebar-menu .sidebar-skills').dom.textContent, /^技能$/);
+  assert.ok(chat.querySelector('.composer-textarea'));
+  chat.querySelector('.sidebar-skills').dispatchEvent('tap');
+  await simulate.sleep(0);
+  assert.match(chat.querySelector('.skills-destination').dom.textContent, /填入「对话」草稿/);
+  assert.equal(chat.data.mode, 'work');
+  chat.instance.closeWorkTemplates();
+  chat.setData({ mode: 'chat', prompt: '@像素游戏 保留我已有的文字', sidebarOpen: true });
+  assert.doesNotMatch(chat.querySelector('.chat-brandbar').dom.textContent, /创作工具/);
+  assert.match(chat.querySelector('.sidebar-menu .sidebar-skills').dom.textContent, /^技能$/);
+  chat.querySelector('.sidebar-skills').dispatchEvent('tap');
+  await simulate.sleep(0);
+  assert.equal(chat.data.workCatalogOpen, true);
+  assert.equal(chat.data.sidebarOpen, false);
+  assert.match(chat.querySelector('.skills-heading .ui-title').dom.textContent, /选择技能/);
+  assert.ok(chat.data.workCatalog.some((item: any) => item.id === galleryTemplate.id));
+  assert.deepEqual(tabRoutes, []);
+  chat.querySelector('.skills-list .skill-row').dispatchEvent('tap');
+  await simulate.sleep(0);
+  assert.equal(chat.data.workCatalogOpen, false);
+  assert.match(chat.data.prompt, /^@表情包动画视频 保留我已有的文字/);
   chat.instance.onHide();
   const galleryId = simulate.load(path.join(miniRoot, 'pages/templates/index'), { compiler: 'official', rootPath: miniRoot });
   const gallery = simulate.render(galleryId);
@@ -283,11 +329,41 @@ test('every native WXML page renders with the official component compiler and ha
   gallery.instance.chooseTemplate({currentTarget:{dataset:{id:'video-style-interface'}}});await simulate.sleep(0);
   assert.match(gallery.data.prompt,/@界面动效/);
   assert.equal(gallery.querySelector('video'),undefined,'tool discovery has no public video playback');
-  assert.equal(chat.data.prompt,'@像素游戏 保留我已有的文字');
-  assert.deepEqual(tabRoutes,['/pages/templates/index'],'choosing a tool does not navigate or submit');
+  assert.match(chat.data.prompt, /^@表情包动画视频 保留我已有的文字/);
+  assert.deepEqual(tabRoutes, [], 'choosing a tool does not navigate or submit');
   assert.ok(catalogCalls.includes('/api/templates?surface=tools'));
   gallery.instance.onUnload();
   gallery.detach();
+  const settingsRoutes: string[] = [];
+  (globalThis as any).wx.navigateTo = (options: any) => settingsRoutes.push(options.url);
+  chat.setData({ sidebarOpen: true, guest: true });
+  await simulate.sleep(0);
+  chat.querySelector('.sidebar-settings').dispatchEvent('tap');
+  await simulate.sleep(0);
+  assert.deepEqual(settingsRoutes, ['/pages/settings/index']);
+  assert.equal(chat.data.sidebarOpen, false);
+  chat.setData({ sidebarOpen: true, guest: false, canAvatar: true });
+  await simulate.sleep(0);
+  chat.querySelector('.sidebar-avatar-button').dispatchEvent('tap');
+  await simulate.sleep(0);
+  assert.equal(chat.data.avatarEditor, true);
+  assert.ok(chat.querySelector('.account-editor-sheet'));
+  chat.instance.closeEditors();
+  await simulate.sleep(0);
+  chat.querySelector('.sidebar-name-button').dispatchEvent('tap');
+  await simulate.sleep(0);
+  assert.equal(chat.data.nameEditor, true);
+  assert.equal(chat.data.sidebarOpen, true);
+  assert.deepEqual(tabRoutes, []);
+  chat.instance.closeEditors();
+  const settingsId = simulate.load(path.join(miniRoot, 'pages/settings/index'), { compiler: 'official', rootPath: miniRoot });
+  const settings = simulate.render(settingsId);
+  settings.attach(document.createElement('div'));
+  assert.equal(settings.querySelector('.settings-logout'), undefined);
+  settings.setData({ guest: false });
+  await simulate.sleep(0);
+  assert.ok(settings.querySelector('.settings-logout'));
+  settings.detach();
   chat.instance.onUnload(); chat.detach();
   const privacyId = simulate.load(path.join(miniRoot, 'components/privacy/index'), { compiler: 'official', rootPath: miniRoot });
   const privacy = simulate.render(privacyId); privacy.attach(document.createElement('div')); const receipts: any[] = [];

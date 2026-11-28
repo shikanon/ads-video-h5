@@ -29,6 +29,26 @@ button, input, textarea { font-family: inherit; }
 .theme-surface .input { background: var(--lm-paper); border-color: var(--lm-line); color: var(--lm-ink); }
 .theme-surface .tag { color: var(--lm-accent); background: var(--lm-soft); }
 .theme-surface button[disabled] { color: var(--lm-muted); background: var(--lm-soft); }
+.theme-surface .ui-title { color: var(--lm-ink); font-size: 44rpx; font-weight: 600; line-height: 1.3; }
+.theme-surface .ui-description { color: var(--lm-muted); font-size: 25rpx; line-height: 1.65; }
+.theme-surface .ui-primary,
+.theme-surface .ui-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 68rpx;
+  margin: 0;
+  padding: 12rpx 22rpx;
+  border-radius: 22rpx;
+  font-family: inherit;
+  font-size: 25rpx;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.theme-surface .ui-primary { width: 100%; min-height: 82rpx; background: var(--lm-accent); color: var(--lm-on-accent); font-size: 30rpx; }
+.theme-surface .ui-secondary { width: auto; flex: 0 0 auto; border: 1rpx solid var(--lm-line); background: var(--lm-paper); color: var(--lm-ink); }
+.theme-surface .ui-primary[disabled],
+.theme-surface .ui-secondary[disabled] { background: var(--lm-soft); color: var(--lm-muted); }
 .theme-surface .filters { display: flex; gap: 14rpx; flex-wrap: wrap; }
 .theme-surface .filters button { margin: 0; padding: 10rpx 26rpx; border: 1rpx solid var(--lm-line); color: var(--lm-muted); border-radius: 40rpx; font-size: 24rpx; }
 .theme-surface .filters button.selected { background: var(--lm-accent); color: var(--lm-on-accent); border-color: var(--lm-accent); }
@@ -92,13 +112,11 @@ button, input, textarea { font-family: inherit; }
 .theme-surface .profile-avatar { width: 128rpx; height: 150rpx; padding: 6rpx; border: 5rpx double var(--lm-gold); border-radius: 48%; background: var(--lm-soft); }
 .theme-surface .profile-top .profile-avatar { background: var(--lm-soft); border-radius: 48%; }
 .theme-surface .profile-name { font-size: 42rpx; font-weight: 600; }
-.theme-surface .stats text:first-child { font-size: 46rpx; font-weight: 500; color: var(--lm-accent); }
-.theme-surface .wallet-card { padding: 50rpx 40rpx; border: 5rpx double var(--lm-line); border-radius: 30rpx 128rpx 30rpx 30rpx; background: var(--lm-soft); display: flex; flex-direction: column; gap: 24rpx; align-items: center; justify-content: center; text-align: center; }
-.theme-rich .wallet-card { border-radius: 48% 48% 20rpx 20rpx; background: linear-gradient(135deg, var(--lm-card-strong), var(--lm-hero-to)); }
+.theme-surface .wallet-card { padding: 50rpx 40rpx; border: 1rpx solid var(--lm-line); border-radius: 30rpx 128rpx 30rpx 30rpx; background: var(--lm-paper); display: flex; flex-direction: column; gap: 24rpx; align-items: center; justify-content: center; text-align: center; }
 .theme-surface .wallet-balance { color: var(--lm-accent); font-size: 64rpx; font-weight: 600; }
 .theme-surface .wallet-label { color: var(--lm-ink); font-size: 25rpx; }
 .theme-surface .wallet-action { border-radius: 40rpx; background: var(--lm-accent); color: var(--lm-on-accent); padding: 13rpx 26rpx; font-size: 24rpx; }
-.theme-surface .balance-card, .theme-surface .welcome-card { background: linear-gradient(135deg, var(--lm-card-strong), var(--lm-soft)); border-color: var(--lm-line); }
+.theme-surface .balance-card { background: linear-gradient(135deg, var(--lm-card-strong), var(--lm-soft)); border-color: var(--lm-line); }
 .theme-surface .reward-card { background: linear-gradient(140deg, var(--lm-soft), var(--lm-paper)); color: var(--lm-ink); border-color: var(--lm-gold); }
 .theme-surface .reward-title, .theme-surface .reward-value { color: var(--lm-accent); }
 .theme-surface .reward-button { background: var(--lm-accent); color: var(--lm-on-accent); }
@@ -109,12 +127,6 @@ button, input, textarea { font-family: inherit; }
 .theme-surface .swatch-fresh { background: linear-gradient(#c9612f 30%, #fff9ee 30%); }
 .theme-surface .swatch-rich { background: linear-gradient(#c9612f 30%, #44291f 30%); }
 .theme-surface .theme-check { display: block; font-size: 21rpx; color: var(--lm-accent); margin-top: 8rpx; }
-.theme-surface .auth-brand { display: flex; flex-direction: column; align-items: center; gap: 24rpx; color: var(--lm-ink); }
-.theme-surface .auth-logo { width: 152rpx; height: 180rpx; padding: 8rpx; border: 6rpx double var(--lm-gold); border-radius: 48%; background: var(--lm-paper); }
-.theme-surface .auth-brand > text { font-size: 42rpx; font-weight: 600; }
-.theme-surface .auth-title { font-size: 38rpx; font-weight: 600; }
-.theme-surface .welcome-points { color: var(--lm-accent); font-weight: 600; }
-.theme-surface .auth-screen .secondary { margin: 24rpx 0; }
 .theme-surface .voice-consent-dialog, .theme-surface .picker-sheet { background: var(--lm-bg); color: var(--lm-ink); }
 .theme-surface .voice-consent-heading, .theme-surface .voice-consent-title { color: var(--lm-ink); }
 .theme-surface .voice-consent-copy, .theme-surface .voice-consent-intro, .theme-surface .voice-consent-hint { color: var(--lm-muted); }
@@ -153,8 +165,6 @@ button, input, textarea { font-family: inherit; }
 .theme-surface .profile-avatar { width: 126.9rpx; height: 146.2rpx; flex: 0 0 126.9rpx; }
 .theme-surface .profile-top > view { flex: 1; min-width: 0; }
 .theme-surface .profile-name { font-size: 42.3rpx; line-height: 1.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.theme-surface .stats { margin-bottom: 34.6rpx; }
-.theme-surface .stats text:first-child { font-size: 46.2rpx; line-height: 1.5; }
 .theme-surface .wallet-card { width: 100%; max-width: none; min-width: 0; min-height: 350rpx; margin: 23.1rpx 0 42.3rpx; padding: 46.2rpx 38.5rpx; border-radius: 30.8rpx 126.9rpx 30.8rpx 30.8rpx; }
 .theme-surface .wallet-card > view { width: 100%; min-width: 0; }
 .theme-surface .wallet-card .wallet-action { width: auto; flex: 0 0 auto; white-space: nowrap; }
@@ -163,8 +173,7 @@ button, input, textarea { font-family: inherit; }
 .theme-surface .nickname-panel .row { gap: 15.4rpx; }
 .theme-surface .nickname-panel .input { width: 0; min-width: 0; flex: 1; height: 76.9rpx; margin: 15.4rpx 0 0; font-size: 25rpx; }
 .theme-surface .nickname-panel .small-button { width: auto; flex: 0 0 auto; padding: 15.4rpx; white-space: nowrap; }
-.theme-surface .auth-screen { padding-top: 50rpx; }
-.theme-surface .wallet-eyebrow { color: var(--lm-gold); font-size: 21.2rpx; line-height: 1.8; margin-bottom: 12rpx; letter-spacing: 2rpx; }
+.theme-surface .wallet-eyebrow { color: var(--lm-muted); font-size: 21.2rpx; line-height: 1.8; margin-bottom: 12rpx; letter-spacing: 2rpx; }
 .theme-surface .wallet-caption { color: var(--lm-muted); font-size: 21.2rpx; line-height: 1.8; margin-top: 4rpx; }
 .theme-surface .wallet-action { display: flex; align-items: center; justify-content: center; gap: 10rpx; }
 .theme-surface .wallet-action .ui-icon { width: 27rpx; height: 27rpx; flex-basis: 27rpx; }

@@ -178,10 +178,11 @@ test('native retry gets a fresh code, clear cancels pending login, and non-WeCha
   platform.request = (options: any) => options.success({ statusCode: 200, cookies: ['qingjian_session=' + 'c'.repeat(43)], data: { user: { authProvider: 'email' } } });
   const wrongProvider = client.wechatLogin(); finishLogin.success({ code: 'fresh' }); await assert.rejects(wrongProvider, /验证未完成/); assert.equal(client.hasSession(), false);
   const saved: any[] = [], profileApp = { user: { id: 'verified', displayName: '微信创作者', email: '', authProvider: 'wechat' }, client: { hasSession: () => true, async request(route: string, body: any, method: string) { saved.push({ route, body, method }); return { user: { ...profileApp.user, displayName: body.displayName } }; } } };
-  const profile = await capturePage('profile', profileApp, { showToast() {} });
-  profile.nickname({ detail: { value: '选中的微信昵称' } });
-  profile.render({ sessions: [], artifacts: [], media: [], credits: { balance: 2000 } });
-  assert.equal(profile.data.nickname, '选中的微信昵称', 'background polls cannot overwrite the nickname draft');
-  await profile.saveName(); assert.equal(profileApp.user.displayName, '选中的微信昵称');
+  const chat = await capturePage('chat', profileApp, { showToast() {} });
+  chat.editName();
+  chat.nickname({ detail: { value: '选中的微信昵称' } });
+  chat.render({ sessions: [], artifacts: [], media: [], jobs: [], credits: { balance: 2000 } });
+  assert.equal(chat.data.nickname, '选中的微信昵称', 'background polls cannot overwrite the nickname draft');
+  await chat.saveName(); assert.equal(profileApp.user.displayName, '选中的微信昵称');
   assert.equal(saved[0].route, '/api/auth/wechat/profile'); assert.equal(saved[0].method, 'PATCH'); assert.deepEqual(JSON.parse(JSON.stringify(saved[0].body)), { displayName: '选中的微信昵称' });
 });

@@ -18,5 +18,6 @@
   </view>
   <view class="panel"><view class="section-title">协议与隐私</view><button size="mini" class="link-row" bindtap="legal" data-type="privacy"><image class="ui-icon" src="{{icons.privacy}}" mode="aspectFit"/><text>隐私说明</text><text class="arrow">›</text></button><button size="mini" class="link-row" bindtap="legal" data-type="voice"><image class="ui-icon" src="{{icons.voice}}" mode="aspectFit"/><text>声纹授权说明</text><text class="arrow">›</text></button><button size="mini" class="link-row" bindtap="legal" data-type="terms"><image class="ui-icon" src="{{icons.privacy}}" mode="aspectFit"/><text>用户协议</text><text class="arrow">›</text></button></view>
   <view class="quiet">轻喵LightMao · {{version}}<view>精细时间线编辑与作者形象配置可在 H5 中完成。</view></view>
+  <button wx:if="{{!guest}}" size="mini" class="settings-logout" loading="{{loggingOut}}" disabled="{{loggingOut}}" bindtap="logout">退出登录</button>
 </view><privacy-dialog id="privacy" />
 </view>

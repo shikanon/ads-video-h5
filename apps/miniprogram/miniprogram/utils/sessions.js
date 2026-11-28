@@ -25,7 +25,7 @@ function activateSession(app, id, onSyncError) {
   }
   return state;
 }
-async function openDraft(app, mode) {
+async function openDraft(app, mode, { reuseOtherMode = true } = {}) {
   const generation = app._generation;
   if (app._restored) await app.refresh();
   if (generation !== app._generation) throw new Error('登录状态已改变，请重新操作。');
@@ -34,12 +34,12 @@ async function openDraft(app, mode) {
   const before = app.state && app.state.sessions || [];
   const pending = app._pendingMessageSessions || new Set();
   const drafts = before.filter(s => !pending.has(s.id) && !s.archivedAt && !s.messages.length && !s.plan);
-  const draft = drafts.find(s => modeOf(s) === mode) || drafts[0];
+  const draft = drafts.find(s => modeOf(s) === mode) || (reuseOtherMode ? drafts[0] : undefined);
   if (draft && modeOf(draft) === mode) {
     return Object.assign({}, activateSession(app, draft.id), { _openedDraftId: draft.id });
   }
   const revision = app._selectionRevision || 0;
-  const state = await app.mutate('/api/sessions', { mode, reuseEmpty: true, ...(pending.size ? { excludeSessionIds: Array.from(pending) } : {}) });
+  const state = await app.mutate('/api/sessions', { mode, reuseEmpty: reuseOtherMode, ...(pending.size ? { excludeSessionIds: Array.from(pending) } : {}) });
   if ((app._selectionRevision || 0) !== revision) { if (app._selectedSessionId) activateSession(app, app._selectedSessionId); return app.state; }
   const added = state.sessions.find(s => !before.some(old => old.id === s.id));
   const id = added ? added.id : draft ? draft.id : state.activeSessionId;

@@ -47,12 +47,11 @@ function fixture(loggedIn = false) {
 
 test('fresh visitors browse all tabs, filters and agreements without login, microphone permission or network', async () => {
   const f = fixture();
-  for (const name of ['chat', 'templates', 'library', 'profile', 'settings', 'history', 'credits']) {
+  for (const name of ['chat', 'templates', 'library', 'materials', 'films', 'settings', 'history', 'credits']) {
     const page = await f.page(name); page.onLoad?.({}); page.onShow();
     assert.equal(page.data.guest, true, name);
-    if (name === 'library') {
+    if (name === 'materials' || name === 'films') {
       page.filter({ currentTarget: { dataset: { kind: 'video' } } });
-      page.section({ currentTarget: { dataset: { section: 'films' } } });
     }
     page.onHide?.(); page.onUnload?.();
   }
@@ -67,7 +66,7 @@ test('guest can edit a prompt, then explicitly choose login on submission or upl
   assert.equal(f.calls.length, 0); await chat.send();
   assert.equal(chat.data.prompt, '用我的素材制作短片');
   assert.deepEqual(f.calls, [['navigate', '/pages/auth/index']]);
-  const library = await f.page('library'); await library.upload();
+  const library = await f.page('materials'); await library.upload();
   assert.equal(f.calls.length, 2); assert.equal(f.recorder.starts, 0);
   const auth = await f.page('auth'); await auth.onShow(); auth.browse();
   assert.deepEqual(f.calls.at(-1), ['tab', '/pages/chat/index']);
